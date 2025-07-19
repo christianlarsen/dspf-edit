@@ -1,0 +1,70 @@
+{
+  "name": "dds-aid",
+  "displayName": "Screen DDS Aid",
+  "description": "Extension that helps you create and modify your screen DDS.",
+  "author": {
+    "name": "Christian Larsen",
+    "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
+  },
+  "publisher": "ChristianLarsen",
+  "version": "0.0.1",
+  "keywords": [
+    "rpg",
+    "ibmi",
+    "rpgle",
+    "sqlrpgle",
+    "as400",
+    "dds",
+    "sda",
+    "strsda",
+    "dds aid",
+    "codegen"
+  ],
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "views": {
+      "explorer": [
+        {
+          "id": "ddsStructureView",
+          "name": "DDS Structure"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "dds-aid.field-description",
+        "title": "Field description"
+      },
+      {
+        "command": "dds-aid.view-structure",
+        "title": "View DDS Structure"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.102.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "20.x",
+    "@typescript-eslint/eslint-plugin": "^8.31.1",
+    "@typescript-eslint/parser": "^8.31.1",
+    "eslint": "^9.25.1",
+    "typescript": "^5.8.3",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.5.2"
+  }
+}
