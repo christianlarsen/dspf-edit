@@ -40,6 +40,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DdsNode = exports.DdsTreeProvider = void 0;
 const vscode = __importStar(require("vscode"));
+const path = __importStar(require("path"));
 const dds_aid_helper_1 = require("./dds-aid.helper");
 class DdsTreeProvider {
     _onDidChangeTreeData = new vscode.EventEmitter();
@@ -61,8 +62,14 @@ class DdsTreeProvider {
         const elements = this.elements;
         if (!element) {
             const file = elements.find(e => e.kind === 'file');
-            const fileNode = file ? new DdsNode(`File`, vscode.TreeItemCollapsibleState.Expanded, file) : undefined;
-            const recordRoot = new DdsNode(`Records`, vscode.TreeItemCollapsibleState.Expanded, {
+            const editor = vscode.window.activeTextEditor;
+            const fileName = editor ? path.basename(editor.document.fileName) : 'Unknown';
+            let fileNode;
+            if (file) {
+                fileNode = new DdsNode(`📂 File (${fileName})`, vscode.TreeItemCollapsibleState.Collapsed, file);
+            }
+            ;
+            const recordRoot = new DdsNode(`📂 Records`, vscode.TreeItemCollapsibleState.Expanded, {
                 kind: 'group',
                 children: elements.filter(e => e.kind === 'record'),
                 lineIndex: -1,
@@ -73,16 +80,33 @@ class DdsTreeProvider {
             return Promise.resolve([fileNode, recordRoot].filter(Boolean));
         }
         ;
+        /*
+                // "File"
+                if (element.ddsElement.kind === 'file') {
+                    const attrs = element.ddsElement.attributes ?? [];
+                    
+                    return Promise.resolve(
+                        attrs.map(attr =>
+                            new DdsNode(`⚙️ ${attr.value}`, vscode.TreeItemCollapsibleState.None, {
+                                kind: 'attribute',
+                                lineIndex: attr.lineIndex,
+                                value: attr.value,
+                                indicators: [],
+                                attributes: [],
+                            })
+                        )
+                    );
+                };
+        */
         // "File"
         if (element.ddsElement.kind === 'file') {
-            const attrs = element.ddsElement.attributes ?? [];
-            return Promise.resolve(attrs.map(attr => new DdsNode(`⚙️ ${attr.value}`, vscode.TreeItemCollapsibleState.None, {
-                kind: 'attribute',
-                lineIndex: attr.lineIndex,
-                value: attr.value,
-                indicators: [],
-                attributes: [],
-            })));
+            const children = [];
+            const attrGroup = this.elements.find(el => el.kind === 'group' && el.attribute === 'Attributes');
+            if (attrGroup) {
+                children.push(new DdsNode(`⚙️ Attributes`, vscode.TreeItemCollapsibleState.Collapsed, attrGroup));
+            }
+            ;
+            return Promise.resolve(children);
         }
         ;
         // "Group"
@@ -108,7 +132,7 @@ class DdsTreeProvider {
                     label = `💡 ${child.name}`;
                 }
                 ;
-                return new DdsNode(label, child.attributes?.length ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None, child);
+                return new DdsNode(label, (child.attributes?.length && child.attributes.length > 0) ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None, child);
             }));
         }
         ;

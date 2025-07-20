@@ -25,6 +25,7 @@ export function parseDdsElements(text: string): DdsElement[] {
         i = nextIndex + 1;
     };
 
+    // Let's put the attributes with their "parents"
     for (const el of ddsElements) {
         if (el.kind === 'attribute') {
             const parent = [...ddsElements]
@@ -37,6 +38,16 @@ export function parseDdsElements(text: string): DdsElement[] {
                 parent.attributes = [...(parent.attributes || []), ...(el.attributes || [])];
             };
         };
+    };
+
+    if (file.attributes && file.attributes.length > 0) {
+        ddsElements.push({
+            kind: 'group',
+            lineIndex: file.lineIndex,
+            attribute: 'Attributes',
+            attributes: file.attributes,
+            children: []
+        });
     };
 
     return ddsElements.filter(el => el.kind !== 'attribute');
@@ -126,6 +137,7 @@ function parseDdsLine(lines: string[], lineIndex: number): { element: DdsElement
     return { element: undefined, nextIndex: lineIndex };
 };
 
+// Describes a "field" (returns row and column)
 export function describeDdsField(field: DdsElement): string {
     if (field.kind !== 'field') return 'Not a field.';
 
@@ -135,6 +147,7 @@ export function describeDdsField(field: DdsElement): string {
     return `${row},${col}`;
 };
 
+// Describes a "constant" (returns row and column)
 export function describeDdsConstant(field: DdsElement): string {
     if (field.kind !== 'constant') return 'Not a constant.';
 
@@ -143,18 +156,21 @@ export function describeDdsConstant(field: DdsElement): string {
     return `${row},${col}`;
 };
 
+// Describes a "record" (returns line with "attributes" of the)
 export function describeDdsRecord(field: DdsElement): string {
     if (field.kind !== 'record') return 'Not a record.';
 
     return `Attributes: ${formatDdsAttributes(field.attributes)}`;
 };
 
+// Describes a "file" (returns a blank string)
 export function describeDdsFile(field: DdsElement): string {
     if (field.kind !== 'file') return 'Not a file.';
 
     return '';
 };
 
+// Parse indicators inside a string and return DdsIndicator[]
 export function parseDdsIndicators(input: string): DdsIndicator[] {
     const indicators: DdsIndicator[] = [];
 
@@ -169,6 +185,7 @@ export function parseDdsIndicators(input: string): DdsIndicator[] {
     return indicators;
 };
 
+// Returns the indicators formatted in a string
 export function formatDdsIndicators(indicators?: DdsIndicator[]): string {
     if (!indicators) return '';
 
@@ -179,6 +196,7 @@ export function formatDdsIndicators(indicators?: DdsIndicator[]): string {
     }).join('');
 };
 
+// Returns attributes formatted in a string
 export function formatDdsAttributes(attributes?: DdsAttribute[]): string {
     if (!attributes || attributes.length === 0) return '';
 
@@ -188,9 +206,11 @@ export function formatDdsAttributes(attributes?: DdsAttribute[]): string {
     }).join(', ');
 };
 
+// Extracts attributes
 function extractAttributes(lineType: string, lines: string[], startIndex: number, getInd: boolean, indicators?: DdsIndicator[]): { attributes: DdsAttribute[]; nextIndex: number } {
     let raw = '';
     let currentIndex = startIndex;
+
     while (currentIndex < lines.length) {
         const line = lines[currentIndex];
         const trimmed = line.substring(5);
@@ -202,14 +222,18 @@ function extractAttributes(lineType: string, lines: string[], startIndex: number
     raw = raw.trim();
     if (!raw) return { attributes: [], nextIndex: currentIndex };
 
-    const attribute: DdsAttribute = {
-        kind: 'attribute',
-        lineIndex: currentIndex,
-        value: lineType === 'C' ? '' : raw,
-        indicators: getInd && indicators ? indicators : []
-    };
-    return { attributes: [attribute], nextIndex: currentIndex };
-}
+    if (lineType === 'C') {
+        return { attributes: [], nextIndex: currentIndex };
+    } else {
+        const attribute: DdsAttribute = {
+            kind: 'attribute',
+            lineIndex: currentIndex,
+            value: lineType === 'C' ? '' : raw,
+            indicators: getInd && indicators ? indicators : []
+        };    
+        return { attributes: [attribute], nextIndex: currentIndex };
+    }
+};
 
 export function getAllDdsElements(text: string): DdsElement[] {
     return parseDdsElements(text);

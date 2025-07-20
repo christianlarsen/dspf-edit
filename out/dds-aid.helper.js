@@ -28,6 +28,7 @@ function parseDdsElements(text) {
         i = nextIndex + 1;
     }
     ;
+    // Let's put the attributes with their "parents"
     for (const el of ddsElements) {
         if (el.kind === 'attribute') {
             const parent = [...ddsElements]
@@ -40,6 +41,16 @@ function parseDdsElements(text) {
             ;
         }
         ;
+    }
+    ;
+    if (file.attributes && file.attributes.length > 0) {
+        ddsElements.push({
+            kind: 'group',
+            lineIndex: file.lineIndex,
+            attribute: 'Attributes',
+            attributes: file.attributes,
+            children: []
+        });
     }
     ;
     return ddsElements.filter(el => el.kind !== 'attribute');
@@ -127,6 +138,7 @@ function parseDdsLine(lines, lineIndex) {
     return { element: undefined, nextIndex: lineIndex };
 }
 ;
+// Describes a "field" (returns row and column)
 function describeDdsField(field) {
     if (field.kind !== 'field')
         return 'Not a field.';
@@ -135,6 +147,7 @@ function describeDdsField(field) {
     return `${row},${col}`;
 }
 ;
+// Describes a "constant" (returns row and column)
 function describeDdsConstant(field) {
     if (field.kind !== 'constant')
         return 'Not a constant.';
@@ -143,18 +156,21 @@ function describeDdsConstant(field) {
     return `${row},${col}`;
 }
 ;
+// Describes a "record" (returns line with "attributes" of the)
 function describeDdsRecord(field) {
     if (field.kind !== 'record')
         return 'Not a record.';
     return `Attributes: ${formatDdsAttributes(field.attributes)}`;
 }
 ;
+// Describes a "file" (returns a blank string)
 function describeDdsFile(field) {
     if (field.kind !== 'file')
         return 'Not a file.';
     return '';
 }
 ;
+// Parse indicators inside a string and return DdsIndicator[]
 function parseDdsIndicators(input) {
     const indicators = [];
     for (let i = 0; i < 3; i++) {
@@ -169,6 +185,7 @@ function parseDdsIndicators(input) {
     return indicators;
 }
 ;
+// Returns the indicators formatted in a string
 function formatDdsIndicators(indicators) {
     if (!indicators)
         return '';
@@ -179,6 +196,7 @@ function formatDdsIndicators(indicators) {
     }).join('');
 }
 ;
+// Returns attributes formatted in a string
 function formatDdsAttributes(attributes) {
     if (!attributes || attributes.length === 0)
         return '';
@@ -188,6 +206,7 @@ function formatDdsAttributes(attributes) {
     }).join(', ');
 }
 ;
+// Extracts attributes
 function extractAttributes(lineType, lines, startIndex, getInd, indicators) {
     let raw = '';
     let currentIndex = startIndex;
@@ -203,14 +222,20 @@ function extractAttributes(lineType, lines, startIndex, getInd, indicators) {
     raw = raw.trim();
     if (!raw)
         return { attributes: [], nextIndex: currentIndex };
-    const attribute = {
-        kind: 'attribute',
-        lineIndex: currentIndex,
-        value: lineType === 'C' ? '' : raw,
-        indicators: getInd && indicators ? indicators : []
-    };
-    return { attributes: [attribute], nextIndex: currentIndex };
+    if (lineType === 'C') {
+        return { attributes: [], nextIndex: currentIndex };
+    }
+    else {
+        const attribute = {
+            kind: 'attribute',
+            lineIndex: currentIndex,
+            value: lineType === 'C' ? '' : raw,
+            indicators: getInd && indicators ? indicators : []
+        };
+        return { attributes: [attribute], nextIndex: currentIndex };
+    }
 }
+;
 function getAllDdsElements(text) {
     return parseDdsElements(text);
 }

@@ -10,8 +10,16 @@ export type DdsElement =
   | DdsField
   | DdsConstant
   | DdsAttribute
-  | DdsGroup;
+  | DdsGroup
+  | DdsAttributeGroup;
 
+export interface DdsAttributeGroup {
+    kind: 'attributeGroup';
+    lineIndex: number;
+    attribute: 'Attributes';
+    attributes: DdsAttribute[];
+};
+  
 export interface DdsIndicator {
   active: boolean,
   number: number
