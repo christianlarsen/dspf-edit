@@ -11,7 +11,9 @@ export type DdsElement =
   | DdsConstant
   | DdsAttribute
   | DdsGroup
-  | DdsAttributeGroup;
+  | DdsAttributeGroup
+  | DdsIndicatorGroup
+  | DdsIndicatorNode;
 
 export interface DdsAttributeGroup {
     kind: 'attributeGroup';
@@ -22,7 +24,15 @@ export interface DdsAttributeGroup {
   
 export interface DdsIndicator {
   active: boolean,
-  number: number
+  number: number,
+};
+
+export interface DdsIndicatorNode {
+  kind: 'indicatornode',
+  indicator : DdsIndicator,
+  lineIndex: number, 
+  attributes?: DdsAttribute[],
+  indicators?: DdsIndicator[]
 };
 
 export interface DdsFile {
@@ -75,3 +85,13 @@ export interface DdsGroup {
   attributes?: DdsAttribute[];
   indicators?: DdsIndicator[];
 };
+
+export interface DdsIndicatorGroup {
+  kind: 'indgroup';
+  children: DdsIndicator[];
+  lineIndex: number;
+  attribute: 'Indicators';
+  attributes? : DdsAttribute[];
+  indicators? : DdsIndicator[];
+};
+

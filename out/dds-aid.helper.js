@@ -48,7 +48,7 @@ function parseDdsElements(text) {
             kind: 'group',
             lineIndex: file.lineIndex,
             attribute: 'Attributes',
-            attributes: file.attributes,
+            attributes: file.attributes ? file.attributes : [],
             children: []
         });
     }
@@ -95,7 +95,7 @@ function parseDdsLine(lines, lineIndex) {
                 row: row,
                 column: col,
                 lineIndex: lineIndex,
-                attributes: attributes,
+                attributes: attributes ? attributes : [],
                 indicators: indicators || undefined,
             },
             nextIndex
@@ -113,7 +113,7 @@ function parseDdsLine(lines, lineIndex) {
                 row: row,
                 column: col,
                 lineIndex: lineIndex,
-                attributes: attributes,
+                attributes: attributes ? attributes : [],
                 indicators: indicators
             },
             nextIndex
@@ -129,7 +129,7 @@ function parseDdsLine(lines, lineIndex) {
                 lineIndex: lineIndex,
                 value: '',
                 indicators: indicators,
-                attributes: attributes
+                attributes: attributes ? attributes : []
             },
             nextIndex
         };
@@ -160,7 +160,7 @@ function describeDdsConstant(field) {
 function describeDdsRecord(field) {
     if (field.kind !== 'record')
         return 'Not a record.';
-    return `Attributes: ${formatDdsAttributes(field.attributes)}`;
+    return '';
 }
 ;
 // Describes a "file" (returns a blank string)
@@ -179,7 +179,10 @@ function parseDdsIndicators(input) {
         const numberStr = segment.slice(1).trim();
         if (numberStr === '')
             continue;
-        indicators.push({ active: activeChar !== 'N', number: parseInt(numberStr, 10) });
+        indicators.push({
+            active: activeChar !== 'N',
+            number: parseInt(numberStr, 10)
+        });
     }
     ;
     return indicators;
@@ -222,7 +225,7 @@ function extractAttributes(lineType, lines, startIndex, getInd, indicators) {
     raw = raw.trim();
     if (!raw)
         return { attributes: [], nextIndex: currentIndex };
-    if (lineType === 'C') {
+    if (lineType === 'C' && currentIndex === startIndex) {
         return { attributes: [], nextIndex: currentIndex };
     }
     else {

@@ -58,8 +58,13 @@ class DdsTreeProvider {
         return element;
     }
     ;
+    shouldHaveAttributesGroup(el) {
+        return el.kind === 'record' || el.kind === 'field' || el.kind === 'constant';
+    }
+    ;
     getChildren(element) {
         const elements = this.elements;
+        // Shows "File" and "Records" nodes.
         if (!element) {
             const file = elements.find(e => e.kind === 'file');
             const editor = vscode.window.activeTextEditor;
@@ -80,76 +85,162 @@ class DdsTreeProvider {
             return Promise.resolve([fileNode, recordRoot].filter(Boolean));
         }
         ;
-        /*
-                // "File"
-                if (element.ddsElement.kind === 'file') {
-                    const attrs = element.ddsElement.attributes ?? [];
-                    
-                    return Promise.resolve(
-                        attrs.map(attr =>
-                            new DdsNode(`⚙️ ${attr.value}`, vscode.TreeItemCollapsibleState.None, {
-                                kind: 'attribute',
-                                lineIndex: attr.lineIndex,
-                                value: attr.value,
-                                indicators: [],
-                                attributes: [],
-                            })
-                        )
-                    );
-                };
-        */
         // "File"
         if (element.ddsElement.kind === 'file') {
             const children = [];
-            const attrGroup = this.elements.find(el => el.kind === 'group' && el.attribute === 'Attributes');
-            if (attrGroup) {
-                children.push(new DdsNode(`⚙️ Attributes`, vscode.TreeItemCollapsibleState.Collapsed, attrGroup));
+            const fileAttributes = element.ddsElement.attributes ?? [];
+            const attrGroup = {
+                kind: 'group',
+                attribute: 'Attributes',
+                lineIndex: element.ddsElement.lineIndex,
+                children: [],
+                attributes: fileAttributes,
+                indicators: []
+            };
+            const hasAttributes = attrGroup.attributes && attrGroup.attributes.length > 0 ? true : false;
+            children.push(new DdsNode(`⚙️ Attributes`, hasAttributes ?
+                vscode.TreeItemCollapsibleState.Collapsed :
+                vscode.TreeItemCollapsibleState.None, attrGroup));
+            return Promise.resolve(children);
+        }
+        ;
+        // "Record"
+        if (element.ddsElement.kind === 'record') {
+            const children = [];
+            const recordAttributes = element.ddsElement.attributes ?? [];
+            const attrGroup = {
+                kind: 'group',
+                attribute: 'Attributes',
+                lineIndex: element.ddsElement.lineIndex,
+                children: [],
+                attributes: recordAttributes,
+                indicators: []
+            };
+            const hasAttributes = attrGroup.attributes && attrGroup.attributes.length > 0 ? true : false;
+            children.push(new DdsNode(`⚙️ Attributes`, hasAttributes ?
+                vscode.TreeItemCollapsibleState.Collapsed :
+                vscode.TreeItemCollapsibleState.None, attrGroup));
+            // Record constant&fields group
+            const thisRecordLine = element.ddsElement.lineIndex;
+            const nextRecord = this.elements.find(el => el.kind === 'record' && el.lineIndex > thisRecordLine);
+            const nextRecordLine = nextRecord ? nextRecord.lineIndex : Number.MAX_SAFE_INTEGER;
+            const fieldsAndConstants = this.elements.filter(el => (el.kind === 'field' || el.kind === 'constant') &&
+                el.lineIndex > thisRecordLine &&
+                el.lineIndex < nextRecordLine);
+            if (fieldsAndConstants.length > 0) {
+                children.push(new DdsNode(`🧾 Fields and Constants`, vscode.TreeItemCollapsibleState.Collapsed, {
+                    kind: 'group',
+                    attribute: 'FieldsAndConstants',
+                    children: fieldsAndConstants,
+                    lineIndex: element.ddsElement.lineIndex,
+                }));
             }
             ;
             return Promise.resolve(children);
         }
         ;
+        // "Field" 
+        if (element.ddsElement.kind === 'field') {
+            const children = [];
+            const fieldIndicators = element.ddsElement.indicators ?? [];
+            const fieldAttributes = element.ddsElement.attributes ?? [];
+            const indiGroup = {
+                kind: 'group',
+                attribute: 'Indicators',
+                lineIndex: element.ddsElement.lineIndex,
+                children: [],
+                attributes: [],
+                indicators: fieldIndicators
+            };
+            const attrGroup = {
+                kind: 'group',
+                attribute: 'Attributes',
+                lineIndex: element.ddsElement.lineIndex,
+                children: [],
+                attributes: fieldAttributes,
+                indicators: []
+            };
+            const hasIndicators = indiGroup.indicators && indiGroup.indicators.length > 0 ? true : false;
+            children.push(new DdsNode(`📶 Indicators`, hasIndicators ?
+                vscode.TreeItemCollapsibleState.Collapsed :
+                vscode.TreeItemCollapsibleState.None, indiGroup));
+            const hasAttributes = attrGroup.attributes && attrGroup.attributes.length > 0 ? true : false;
+            children.push(new DdsNode(`⚙️ Attributes`, hasAttributes ?
+                vscode.TreeItemCollapsibleState.Collapsed :
+                vscode.TreeItemCollapsibleState.None, attrGroup));
+            return Promise.resolve(children);
+        }
+        ;
+        // "Constant"
+        if (element.ddsElement.kind === 'constant') {
+            const children = [];
+            const constantIndicators = element.ddsElement.indicators ?? [];
+            const constantAttributes = element.ddsElement.attributes ?? [];
+            const indiGroup = {
+                kind: 'group',
+                attribute: 'Indicators',
+                lineIndex: element.ddsElement.lineIndex,
+                children: [],
+                attributes: [],
+                indicators: constantIndicators
+            };
+            const attrGroup = {
+                kind: 'group',
+                attribute: 'Attributes',
+                lineIndex: element.ddsElement.lineIndex,
+                children: [],
+                attributes: constantAttributes,
+                indicators: []
+            };
+            const hasIndicators = indiGroup.indicators && indiGroup.indicators.length > 0 ? true : false;
+            children.push(new DdsNode(`📶 Indicators`, hasIndicators ?
+                vscode.TreeItemCollapsibleState.Collapsed :
+                vscode.TreeItemCollapsibleState.None, indiGroup));
+            const hasAttributes = attrGroup.attributes && attrGroup.attributes.length > 0 ? true : false;
+            children.push(new DdsNode(`⚙️ Attributes`, hasAttributes ?
+                vscode.TreeItemCollapsibleState.Collapsed :
+                vscode.TreeItemCollapsibleState.None, attrGroup));
+            return Promise.resolve(children);
+        }
+        ;
         // "Group"
         if (element.ddsElement.kind === 'group') {
-            return Promise.resolve((element.ddsElement.children ?? []).map(rec => new DdsNode(rec.kind === 'record' ? `📄 ${rec.name}` :
-                rec.kind === 'field' ? `🔤 ${rec.name}` :
-                    rec.kind === 'constant' ? `💡 ${rec.name}` :
-                        `📦 ${rec.kind}`, (rec.attributes?.length && rec.attributes.length > 0) ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None, rec)));
-        }
-        ;
-        // "Record"
-        if (element.ddsElement.kind === 'record') {
-            const recordLine = element.ddsElement.lineIndex;
-            const children = elements.filter(e => (e.kind === 'field' || e.kind === 'constant') &&
-                e.lineIndex > recordLine &&
-                !elements.some(parent => parent.kind === 'record' && parent.lineIndex > recordLine && parent.lineIndex < e.lineIndex));
-            return Promise.resolve(children.map(child => {
-                let label = '';
-                if (child.kind === 'field') {
-                    label = `🔤 ${child.name}`;
-                }
-                else if (child.kind === 'constant') {
-                    label = `💡 ${child.name}`;
-                }
-                ;
-                return new DdsNode(label, (child.attributes?.length && child.attributes.length > 0) ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None, child);
-            }));
-        }
-        ;
-        // "Field" or "Constant"
-        // ????? I have to add here :
-        // ????? -> Indicators
-        // ????? -> If field, type+size
-        // ????? -> Attributes
-        if (element.ddsElement.kind === 'field' || element.ddsElement.kind === 'constant') {
-            const attrs = element.ddsElement.attributes ?? [];
-            return Promise.resolve(attrs.map(attr => new DdsNode(`⚙️ ${attr.value}`, vscode.TreeItemCollapsibleState.None, {
-                kind: 'attribute',
-                lineIndex: attr.lineIndex,
-                value: attr.value,
-                indicators: [],
-                attributes: []
-            })));
+            const groupAttr = element.ddsElement.attribute;
+            // "Attributes" group
+            if (groupAttr === 'Attributes') {
+                const group = element.ddsElement;
+                const attrs = group.attributes ?? [];
+                return Promise.resolve(attrs.length === 0 ?
+                    [] :
+                    attrs.map(attr => new DdsNode(`⚙️ ${'value' in attr ? attr.value : 'Attribute'}`, vscode.TreeItemCollapsibleState.None, {
+                        ...attr,
+                        kind: 'attribute',
+                    })));
+                // "Indicators" group
+            }
+            else if (groupAttr === 'Indicators') {
+                const group = element.ddsElement;
+                const indis = group.indicators ?? [];
+                return Promise.resolve(indis.length === 0 ?
+                    [] :
+                    indis.map(indi => new DdsNode(`${indi.number.toString().padStart(2, '0')}: ${indi.active ? 'ON' : 'OFF'}`, vscode.TreeItemCollapsibleState.None, {
+                        kind: 'indicatornode',
+                        indicator: indi,
+                        attributes: [],
+                        indicators: [],
+                        lineIndex: 0
+                    })));
+                // "Record/Field/Constant" group		
+            }
+            else {
+                return Promise.resolve((element.ddsElement.children ?? []).map(rec => new DdsNode(rec.kind === 'record' ? `📄 ${rec.name}` :
+                    rec.kind === 'field' ? `🔤 ${rec.name}` :
+                        rec.kind === 'constant' ? `💡 ${rec.name}` :
+                            `📦 ${rec.kind}`, this.shouldHaveAttributesGroup(rec) ?
+                    vscode.TreeItemCollapsibleState.Collapsed :
+                    vscode.TreeItemCollapsibleState.None, rec)));
+            }
+            ;
         }
         ;
         return Promise.resolve([]);
@@ -192,6 +283,7 @@ class DdsNode extends vscode.TreeItem {
         ;
     }
     ;
+    // Get "toop tip" for the "node"
     getTooltip(ddsElement) {
         switch (ddsElement.kind) {
             case 'record':
