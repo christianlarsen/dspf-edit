@@ -154,7 +154,7 @@ class DdsTreeProvider {
             };
             const attrGroup = {
                 kind: 'group',
-                attribute: 'Attributes',
+                attribute: 'FieldAttributes',
                 lineIndex: element.ddsElement.lineIndex,
                 children: [],
                 attributes: fieldAttributes,
@@ -186,7 +186,7 @@ class DdsTreeProvider {
             };
             const attrGroup = {
                 kind: 'group',
-                attribute: 'Attributes',
+                attribute: 'ConstantAttributes',
                 lineIndex: element.ddsElement.lineIndex,
                 children: [],
                 attributes: constantAttributes,
@@ -212,9 +212,29 @@ class DdsTreeProvider {
                 const attrs = group.attributes ?? [];
                 return Promise.resolve(attrs.length === 0 ?
                     [] :
-                    attrs.map(attr => new DdsNode(`⚙️ ${'value' in attr ? attr.value : 'Attribute'}`, vscode.TreeItemCollapsibleState.None, {
+                    attrs.map(attr => new DdsNode(`⚙️ ${'value' in attr ? attr.value : 'Attribute'} `, vscode.TreeItemCollapsibleState.None, {
                         ...attr,
                         kind: 'attribute',
+                    })));
+            }
+            else if (groupAttr === 'ConstantAttributes') {
+                const group = element.ddsElement;
+                const attrs = group.attributes ?? [];
+                return Promise.resolve(attrs.length === 0 ?
+                    [] :
+                    attrs.map(attr => new DdsNode(`⚙️ ${'value' in attr ? attr.value : 'Attribute'} `, vscode.TreeItemCollapsibleState.None, {
+                        ...attr,
+                        kind: 'constantAttribute',
+                    })));
+            }
+            else if (groupAttr === 'FieldAttributes') {
+                const group = element.ddsElement;
+                const attrs = group.attributes ?? [];
+                return Promise.resolve(attrs.length === 0 ?
+                    [] :
+                    attrs.map(attr => new DdsNode(`⚙️ ${'value' in attr ? attr.value : 'Attribute'} `, vscode.TreeItemCollapsibleState.None, {
+                        ...attr,
+                        kind: 'fieldAttribute',
                     })));
                 // "Indicators" group
             }
@@ -277,6 +297,10 @@ class DdsNode extends vscode.TreeItem {
                 return (0, dds_aid_helper_1.describeDdsConstant)(ddsElement);
             case 'attribute':
                 return '';
+            case 'constantAttribute':
+                return (0, dds_aid_helper_1.formatDdsIndicators)(ddsElement.indicators);
+            case 'fieldAttribute':
+                return (0, dds_aid_helper_1.formatDdsIndicators)(ddsElement.indicators);
             default:
                 return '';
         }

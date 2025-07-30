@@ -45,8 +45,30 @@
       {
         "command": "dds-aid.view-structure",
         "title": "View DDS Structure"
+      },
+      {
+        "command": "dds-aid.change-position",
+        "title": "Change Position"
+      },
+      {
+        "command": "dds-aid.center",
+        "title": "Center"
       }
-    ]
+    ],
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "dds-aid.change-position",
+          "when": "view == ddsStructureView && (viewItem == constant || viewItem == field)",
+          "group": "navigation"
+        },
+        {
+          "command": "dds-aid.center",
+          "when": "view == ddsStructureView && (viewItem == constant || viewItem == field)",
+          "group": "navigation"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

@@ -5,6 +5,7 @@
     dds-aid.model.ts
 */
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.fileSizeAttributes = void 0;
 ;
 ;
 ;
@@ -15,4 +16,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 ;
 ;
 ;
+;
+;
+exports.fileSizeAttributes = {
+    maxRow: 0,
+    maxCol: 0
+};
 //# sourceMappingURL=dds-aid.model.js.map

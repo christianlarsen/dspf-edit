@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { DdsElement, DdsGroup } from './dds-aid.model';
-import { describeDdsField, describeDdsConstant, describeDdsRecord, describeDdsFile } from './dds-aid.helper';
+import { describeDdsField, describeDdsConstant, describeDdsRecord, describeDdsFile, formatDdsIndicators } from './dds-aid.helper';
 
 export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 	private _onDidChangeTreeData: vscode.EventEmitter<DdsNode | undefined | void> = new vscode.EventEmitter<DdsNode | undefined | void>();
@@ -153,7 +153,7 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 			};
 			const attrGroup : DdsGroup = {
 				kind: 'group',
-				attribute: 'Attributes',
+				attribute: 'FieldAttributes',
 				lineIndex: element.ddsElement.lineIndex,
 				children: [],
 				attributes: fieldAttributes,
@@ -198,7 +198,7 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 			};
 			const attrGroup: DdsGroup = {
 				kind: 'group',
-				attribute: 'Attributes',
+				attribute: 'ConstantAttributes',
 				lineIndex: element.ddsElement.lineIndex,
 				children: [],
 				attributes: constantAttributes,
@@ -240,13 +240,49 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 				return Promise.resolve(
 					attrs.length === 0 ?
 					[] :
-					attrs.map(attr =>
+					attrs.map(attr => 
 						new DdsNode(
-							`⚙️ ${'value' in attr ? attr.value : 'Attribute'}`,
+							`⚙️ ${'value' in attr ? attr.value : 'Attribute'} `,
 							vscode.TreeItemCollapsibleState.None,
 							{
 								...attr,
 								kind: 'attribute',
+							}
+						)
+					)
+				);
+			} else if (groupAttr === 'ConstantAttributes') {
+				const group = element.ddsElement as DdsGroup;
+				const attrs = group.attributes ?? [];
+
+				return Promise.resolve(
+					attrs.length === 0 ?
+					[] :
+					attrs.map(attr => 
+						new DdsNode(
+							`⚙️ ${'value' in attr ? attr.value : 'Attribute'} `,
+							vscode.TreeItemCollapsibleState.None,
+							{
+								...attr,
+								kind: 'constantAttribute',
+							}
+						)
+					)
+				);
+			} else if (groupAttr === 'FieldAttributes') {
+				const group = element.ddsElement as DdsGroup;
+				const attrs = group.attributes ?? [];
+
+				return Promise.resolve(
+					attrs.length === 0 ?
+					[] :
+					attrs.map(attr => 
+						new DdsNode(
+							`⚙️ ${'value' in attr ? attr.value : 'Attribute'} `,
+							vscode.TreeItemCollapsibleState.None,
+							{
+								...attr,
+								kind: 'fieldAttribute',
 							}
 						)
 					)
@@ -322,6 +358,10 @@ export class DdsNode extends vscode.TreeItem {
 				return describeDdsConstant(ddsElement);
 			case 'attribute':
 				return '';
+			case 'constantAttribute':
+				return formatDdsIndicators(ddsElement.indicators);
+			case 'fieldAttribute':
+				return formatDdsIndicators(ddsElement.indicators);
 			default:
 				return '';
 		};

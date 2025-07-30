@@ -3,7 +3,7 @@
 	"RPG structure"
 	dds-aid.helper.ts
 */
-import { DdsElement, DdsIndicator, DdsFile, DdsAttribute } from './dds-aid.model';
+import { DdsElement, DdsIndicator, DdsFile, DdsAttribute, fileSizeAttributes } from './dds-aid.model';
 
 export function parseDdsElements(text: string): DdsElement[] {
     const lines = text.split(/\r?\n/);
@@ -48,7 +48,19 @@ export function parseDdsElements(text: string): DdsElement[] {
             attributes: file.attributes ? file.attributes : [],
             children: []
         });
+        if (file.attributes && file.attributes.length > 0) {
+            const dspsizLine = file.attributes.find(line => line.value.includes("DSPSIZ("));
+            if (dspsizLine) {
+                const match = dspsizLine.value.match(/DSPSIZ\s*\(\s*(\d+)\s+(\d+)/);
+                
+                if (match) {
+                    fileSizeAttributes.maxRow = parseInt(match[1], 10);
+                    fileSizeAttributes.maxCol = parseInt(match[2], 10);
+                };
+            };
+        };
     };
+
 
     return ddsElements.filter(el => el.kind !== 'attribute');
 };
@@ -186,19 +198,24 @@ export function parseDdsIndicators(input: string): DdsIndicator[] {
             }
         );
     };
-
+    indicators.sort((a,b) => a.number - b.number);
+   
     return indicators;
 };
 
 // Returns the indicators formatted in a string
 export function formatDdsIndicators(indicators?: DdsIndicator[]): string {
     if (!indicators) return '';
+    if (indicators.length === 0) return '';
 
-    return indicators.map(ind => {
-        const status = ind.active ? ' ' : 'N';
-        const number = ind.number.toString().padStart(2, '0');
-        return `${status}${number}`;
-    }).join('');
+    const indicatorStr = `[${        
+            indicators.map(ind => {
+                const status = ind.active ? ' ' : 'N';
+                const number = ind.number.toString().padStart(2, '0');
+                return `${status}${number}`;
+            }).join('')}]`; 
+
+    return indicatorStr;
 };
 
 // Returns attributes formatted in a string

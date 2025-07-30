@@ -9,6 +9,12 @@ exports.parseDdsIndicators = parseDdsIndicators;
 exports.formatDdsIndicators = formatDdsIndicators;
 exports.formatDdsAttributes = formatDdsAttributes;
 exports.getAllDdsElements = getAllDdsElements;
+/*
+    Christian Larsen, 2025
+    "RPG structure"
+    dds-aid.helper.ts
+*/
+const dds_aid_model_1 = require("./dds-aid.model");
 function parseDdsElements(text) {
     const lines = text.split(/\r?\n/);
     const ddsElements = [];
@@ -51,6 +57,19 @@ function parseDdsElements(text) {
             attributes: file.attributes ? file.attributes : [],
             children: []
         });
+        if (file.attributes && file.attributes.length > 0) {
+            const dspsizLine = file.attributes.find(line => line.value.includes("DSPSIZ("));
+            if (dspsizLine) {
+                const match = dspsizLine.value.match(/DSPSIZ\s*\(\s*(\d+)\s+(\d+)/);
+                if (match) {
+                    dds_aid_model_1.fileSizeAttributes.maxRow = parseInt(match[1], 10);
+                    dds_aid_model_1.fileSizeAttributes.maxCol = parseInt(match[2], 10);
+                }
+                ;
+            }
+            ;
+        }
+        ;
     }
     ;
     return ddsElements.filter(el => el.kind !== 'attribute');
@@ -185,6 +204,7 @@ function parseDdsIndicators(input) {
         });
     }
     ;
+    indicators.sort((a, b) => a.number - b.number);
     return indicators;
 }
 ;
@@ -192,11 +212,14 @@ function parseDdsIndicators(input) {
 function formatDdsIndicators(indicators) {
     if (!indicators)
         return '';
-    return indicators.map(ind => {
+    if (indicators.length === 0)
+        return '';
+    const indicatorStr = `[${indicators.map(ind => {
         const status = ind.active ? ' ' : 'N';
         const number = ind.number.toString().padStart(2, '0');
         return `${status}${number}`;
-    }).join('');
+    }).join('')}]`;
+    return indicatorStr;
 }
 ;
 // Returns attributes formatted in a string
