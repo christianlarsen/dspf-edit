@@ -1,8 +1,8 @@
 "use strict";
 /*
-    Christian Larsen, 2025
-    "RPG structure"
-    dds-aid.model.ts
+  Christian Larsen, 2025
+  "RPG structure"
+  dds-aid.model.ts
 */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fileSizeAttributes = void 0;

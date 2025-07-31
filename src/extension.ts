@@ -165,7 +165,7 @@ export function activate(context: vscode.ExtensionContext) {
 			await vscode.workspace.applyEdit(workspaceEdit);
 
 			vscode.window.showInformationMessage(
-				`Moved ${element.name} centered`
+				`${element.name} centered`
 			);
 		})
 	);

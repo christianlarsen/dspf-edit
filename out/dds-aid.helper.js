@@ -57,15 +57,13 @@ function parseDdsElements(text) {
             attributes: file.attributes ? file.attributes : [],
             children: []
         });
-        if (file.attributes && file.attributes.length > 0) {
-            const dspsizLine = file.attributes.find(line => line.value.includes("DSPSIZ("));
-            if (dspsizLine) {
-                const match = dspsizLine.value.match(/DSPSIZ\s*\(\s*(\d+)\s+(\d+)/);
-                if (match) {
-                    dds_aid_model_1.fileSizeAttributes.maxRow = parseInt(match[1], 10);
-                    dds_aid_model_1.fileSizeAttributes.maxCol = parseInt(match[2], 10);
-                }
-                ;
+        // Retrieves the "size" of the screen from the DSPSIZ file attribute
+        const dspsizLine = file.attributes.find(line => line.value.includes("DSPSIZ("));
+        if (dspsizLine) {
+            const match = dspsizLine.value.match(/DSPSIZ\s*\(\s*(\d+)\s+(\d+)/);
+            if (match) {
+                dds_aid_model_1.fileSizeAttributes.maxRow = parseInt(match[1], 10);
+                dds_aid_model_1.fileSizeAttributes.maxCol = parseInt(match[2], 10);
             }
             ;
         }
@@ -123,8 +121,20 @@ function parseDdsLine(lines, lineIndex) {
     ;
     // "Constant"
     if (!fieldName && row && col) {
-        const value = trimmed.substring(39).trim();
-        const { attributes, nextIndex } = extractAttributes('C', lines, lineIndex, true, indicators);
+        let fullValue = trimmed.substring(39, 79);
+        let continuationIndex = lineIndex;
+        while (lines[continuationIndex].charAt(79) === '-') {
+            continuationIndex++;
+            const nextLine = lines[continuationIndex];
+            if (!nextLine)
+                break;
+            const nextTrimmed = nextLine.substring(5);
+            const continuedValue = nextTrimmed.substring(39, 79);
+            fullValue = fullValue.slice(0, -1) + continuedValue;
+        }
+        ;
+        const value = fullValue.trim();
+        const { attributes, nextIndex } = extractAttributes('C', lines, continuationIndex, true, indicators);
         return {
             element: {
                 kind: 'constant',
@@ -135,10 +145,28 @@ function parseDdsLine(lines, lineIndex) {
                 attributes: attributes ? attributes : [],
                 indicators: indicators
             },
-            nextIndex
+            nextIndex: continuationIndex
         };
     }
     ;
+    /*
+        if (!fieldName && row && col) {
+            const value = trimmed.substring(39).trim();
+            const { attributes, nextIndex } = extractAttributes('C', lines, lineIndex, true, indicators);
+            return {
+                element: {
+                    kind: 'constant',
+                    name: value,
+                    row: row,
+                    column: col,
+                    lineIndex: lineIndex,
+                    attributes: attributes ? attributes : [],
+                    indicators: indicators
+                },
+                nextIndex
+            };
+        };
+    */
     // "Attributes"
     const { attributes, nextIndex } = extractAttributes('A', lines, lineIndex, true, indicators);
     if (attributes.length > 0) {

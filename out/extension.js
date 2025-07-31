@@ -176,7 +176,7 @@ function activate(context) {
         const uri = editor.document.uri;
         workspaceEdit.replace(uri, new vscode.Range(lineIndex, 0, lineIndex, line.length), updatedLine);
         await vscode.workspace.applyEdit(workspaceEdit);
-        vscode.window.showInformationMessage(`Moved ${element.name} centered`);
+        vscode.window.showInformationMessage(`${element.name} centered`);
     }));
 }
 ;

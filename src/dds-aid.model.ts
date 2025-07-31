@@ -1,7 +1,7 @@
 /*
-	Christian Larsen, 2025
-	"RPG structure"
-	dds-aid.model.ts
+  Christian Larsen, 2025
+  "RPG structure"
+  dds-aid.model.ts
 */
 
 export type DdsElement =
@@ -17,9 +17,9 @@ export type DdsElement =
 
 export interface DdsFile {
   kind: 'file';
-  lineIndex : number ;
+  lineIndex: number;
   attributes?: DdsAttribute[];
-};  
+};
 
 export interface DdsRecord {
   kind: 'record';
@@ -67,12 +67,12 @@ export interface DdsConstantAttribute {
 };
 
 export interface DdsAttributeGroup {
-    kind: 'attributeGroup';
-    lineIndex: number;
-    attribute: 'Attributes';
-    attributes: DdsAttribute[];
+  kind: 'attributeGroup';
+  lineIndex: number;
+  attribute: 'Attributes';
+  attributes: DdsAttribute[];
 };
-  
+
 export interface DdsIndicator {
   active: boolean,
   number: number,
@@ -80,8 +80,8 @@ export interface DdsIndicator {
 
 export interface DdsIndicators {
   kind: 'indicatornode',
-  indicator : DdsIndicator,
-  lineIndex: number, 
+  indicator: DdsIndicator,
+  lineIndex: number,
   attributes?: DdsAttribute[],
   indicators?: DdsIndicator[]
 };
@@ -98,17 +98,17 @@ export interface DdsGroup {
   kind: 'group';
   children: DdsElement[];
   lineIndex: number;
-  attribute : string,
+  attribute: string,
   attributes?: DdsAttribute[];
   indicators?: DdsIndicator[];
 };
 
 interface DdsSizeAttributes {
-  maxRow : number,
-  maxCol : number
+  maxRow: number,
+  maxCol: number
 };
 
-export let fileSizeAttributes : DdsSizeAttributes = {
-  maxRow : 0,
-  maxCol : 0
+export let fileSizeAttributes: DdsSizeAttributes = {
+  maxRow: 0,
+  maxCol: 0
 };
