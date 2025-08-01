@@ -3,6 +3,7 @@
     "RPG structure"
     dds-aid.helper.ts
 */
+import * as vscode from 'vscode';
 import { DdsElement, DdsIndicator, DdsFile, DdsAttribute, fileSizeAttributes } from './dds-aid.model';
 
 export function parseDdsElements(text: string): DdsElement[] {
@@ -144,24 +145,6 @@ function parseDdsLine(lines: string[], lineIndex: number): { element: DdsElement
         };
     };
 
-    /*
-        if (!fieldName && row && col) {
-            const value = trimmed.substring(39).trim();
-            const { attributes, nextIndex } = extractAttributes('C', lines, lineIndex, true, indicators);
-            return {
-                element: {
-                    kind: 'constant',
-                    name: value,
-                    row: row,
-                    column: col,
-                    lineIndex: lineIndex,
-                    attributes: attributes ? attributes : [],
-                    indicators: indicators
-                },
-                nextIndex
-            };
-        };
-    */
     // "Attributes"
     const { attributes, nextIndex } = extractAttributes('A', lines, lineIndex, true, indicators);
     if (attributes.length > 0) {
@@ -290,4 +273,24 @@ function extractAttributes(lineType: string, lines: string[], startIndex: number
 export function getAllDdsElements(text: string): DdsElement[] {
     return parseDdsElements(text);
 }
+
+export function findEndLineIndex(document: vscode.TextDocument, startLineIndex: number): number {
+	let endLineIndex = startLineIndex;
+
+	for (let i = startLineIndex; i < document.lineCount; i++) {
+		const line = document.lineAt(i).text;
+
+		const isContinuedConstant =
+			line.startsWith("     A") &&
+			line.charAt(79) === "-";
+
+		if (isContinuedConstant) {
+			endLineIndex = i + 1;
+		} else {
+			break;
+		};
+	};
+
+	return endLineIndex;
+};
 

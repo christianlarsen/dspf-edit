@@ -53,10 +53,19 @@
       {
         "command": "dds-aid.center",
         "title": "Center"
+      },
+      {
+        "command": "dds-aid.edit-constant",
+        "title": "Edit"
       }
     ],
     "menus": {
       "view/item/context": [
+        {
+          "command": "dds-aid.edit-constant",
+          "when": "view == ddsStructureView && viewItem == constant",
+          "group": "navigation"
+        },
         {
           "command": "dds-aid.change-position",
           "when": "view == ddsStructureView && (viewItem == constant || viewItem == field)",

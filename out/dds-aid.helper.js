@@ -9,11 +9,7 @@ exports.parseDdsIndicators = parseDdsIndicators;
 exports.formatDdsIndicators = formatDdsIndicators;
 exports.formatDdsAttributes = formatDdsAttributes;
 exports.getAllDdsElements = getAllDdsElements;
-/*
-    Christian Larsen, 2025
-    "RPG structure"
-    dds-aid.helper.ts
-*/
+exports.findEndLineIndex = findEndLineIndex;
 const dds_aid_model_1 = require("./dds-aid.model");
 function parseDdsElements(text) {
     const lines = text.split(/\r?\n/);
@@ -149,24 +145,6 @@ function parseDdsLine(lines, lineIndex) {
         };
     }
     ;
-    /*
-        if (!fieldName && row && col) {
-            const value = trimmed.substring(39).trim();
-            const { attributes, nextIndex } = extractAttributes('C', lines, lineIndex, true, indicators);
-            return {
-                element: {
-                    kind: 'constant',
-                    name: value,
-                    row: row,
-                    column: col,
-                    lineIndex: lineIndex,
-                    attributes: attributes ? attributes : [],
-                    indicators: indicators
-                },
-                nextIndex
-            };
-        };
-    */
     // "Attributes"
     const { attributes, nextIndex } = extractAttributes('A', lines, lineIndex, true, indicators);
     if (attributes.length > 0) {
@@ -293,4 +271,22 @@ function extractAttributes(lineType, lines, startIndex, getInd, indicators) {
 function getAllDdsElements(text) {
     return parseDdsElements(text);
 }
+function findEndLineIndex(document, startLineIndex) {
+    let endLineIndex = startLineIndex;
+    for (let i = startLineIndex; i < document.lineCount; i++) {
+        const line = document.lineAt(i).text;
+        const isContinuedConstant = line.startsWith("     A") &&
+            line.charAt(79) === "-";
+        if (isContinuedConstant) {
+            endLineIndex = i + 1;
+        }
+        else {
+            break;
+        }
+        ;
+    }
+    ;
+    return endLineIndex;
+}
+;
 //# sourceMappingURL=dds-aid.helper.js.map
