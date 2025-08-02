@@ -65,7 +65,13 @@
       {
         "command": "dspf-edit.copy-record",
         "title": "Copy"
+      },
+      {
+        "command": "dspf-edit.delete-record",
+        "title": "Delete",
+        "icon" : "debug-stop"
       }
+
     ],
     "menus": {
       "view/item/context": [
@@ -91,7 +97,13 @@
         },
         {
           "command": "dspf-edit.copy-record",
-          "when": "view == ddsStructureView && viewItem == record"
+          "when": "view == ddsStructureView && viewItem == record",
+          "group": "records_navigation1@1"
+        },
+        {
+          "command": "dspf-edit.delete-record",
+          "when": "view == ddsStructureView && viewItem == record",
+          "group": "records_navigation1@2"
         }
       ]
     }
