@@ -58,8 +58,16 @@ function centerPosition(context) {
         // Calculates the center position of the field/constant
         // New "row" (is the same)
         const newRow = element.row;
+        let newCol;
         // New "col"
-        const newCol = Math.floor((dspf_edit_model_1.fileSizeAttributes.maxCol - element.name.length) / 2) + 1;
+        switch (element.kind) {
+            case 'constant':
+                newCol = Math.floor((dspf_edit_model_1.fileSizeAttributes.maxCol - element.name.length) / 2) + 1;
+                break;
+            case 'field':
+                newCol = Math.floor((dspf_edit_model_1.fileSizeAttributes.maxCol - element.length) / 2) + 1;
+                break;
+        }
         if (newCol < 1) {
             return;
         }
