@@ -41,28 +41,28 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
-const dds_aid_parser_1 = require("./dds-aid.parser");
-const dds_aid_helper_1 = require("./dds-aid.helper");
-const dds_aid_providers_1 = require("./dds-aid.providers");
-const dds_aid_change_position_1 = require("./dds-aid.change-position");
-const dds_aid_center_1 = require("./dds-aid.center");
-const dds_aid_edit_constant_1 = require("./dds-aid.edit-constant");
-const dds_aid_edit_field_1 = require("./dds-aid.edit-field");
-const dds_aid_view_structure_1 = require("./dds-aid.view-structure");
-const dds_aid_generate_structure_1 = require("./dds-aid.generate-structure");
+const dspf_edit_parser_1 = require("./dspf-edit.parser");
+const dspf_edit_helper_1 = require("./dspf-edit.helper");
+const dspf_edit_providers_1 = require("./dspf-edit.providers");
+const dspf_edit_change_position_1 = require("./dspf-edit.change-position");
+const dspf_edit_center_1 = require("./dspf-edit.center");
+const dspf_edit_edit_constant_1 = require("./dspf-edit.edit-constant");
+const dspf_edit_edit_field_1 = require("./dspf-edit.edit-field");
+const dspf_edit_view_structure_1 = require("./dspf-edit.view-structure");
+const dspf_edit_generate_structure_1 = require("./dspf-edit.generate-structure");
 // Activate extension
 function activate(context) {
     // Registers the tree data provider
-    const treeProvider = new dds_aid_providers_1.DdsTreeProvider();
+    const treeProvider = new dspf_edit_providers_1.DdsTreeProvider();
     vscode.window.registerTreeDataProvider('ddsStructureView', treeProvider);
     // Generates the DDS structure
-    (0, dds_aid_generate_structure_1.generateStructure)(treeProvider);
+    (0, dspf_edit_generate_structure_1.generateStructure)(treeProvider);
     // If the document changes, the extension re-generates the DDS structure
     context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(event => {
         if (event.document === vscode.window.activeTextEditor?.document &&
-            (0, dds_aid_helper_1.isDdsFile)(event.document)) {
+            (0, dspf_edit_helper_1.isDdsFile)(event.document)) {
             const text = event.document.getText();
-            treeProvider.setElements((0, dds_aid_parser_1.parseDocument)(text));
+            treeProvider.setElements((0, dspf_edit_parser_1.parseDocument)(text));
             treeProvider.refresh();
         }
         else {
@@ -73,9 +73,9 @@ function activate(context) {
     }));
     // If user changes active editor, the extension re-generates the DDS structure
     context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(editor => {
-        if (editor && (0, dds_aid_helper_1.isDdsFile)(editor.document)) {
+        if (editor && (0, dspf_edit_helper_1.isDdsFile)(editor.document)) {
             const text = editor.document.getText();
-            treeProvider.setElements((0, dds_aid_parser_1.parseDocument)(text));
+            treeProvider.setElements((0, dspf_edit_parser_1.parseDocument)(text));
             treeProvider.refresh();
         }
         else {
@@ -86,15 +86,15 @@ function activate(context) {
     }));
     // Commands
     // "View-Structure" command
-    (0, dds_aid_view_structure_1.viewStructure)(context, treeProvider);
+    (0, dspf_edit_view_structure_1.viewStructure)(context, treeProvider);
     // "Edit-Constant" command
-    (0, dds_aid_edit_constant_1.editConstant)(context);
+    (0, dspf_edit_edit_constant_1.editConstant)(context);
     // "Edit-Field" command
-    (0, dds_aid_edit_field_1.editField)(context);
+    (0, dspf_edit_edit_field_1.editField)(context);
     // "Change-Position" command
-    (0, dds_aid_change_position_1.changePosition)(context);
+    (0, dspf_edit_change_position_1.changePosition)(context);
     // "Center" command
-    (0, dds_aid_center_1.centerPosition)(context);
+    (0, dspf_edit_center_1.centerPosition)(context);
 }
 ;
 function deactivate() { }

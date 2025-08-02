@@ -1,7 +1,7 @@
 /*
   Christian Larsen, 2025
   "RPG structure"
-  dds-aid.model.ts
+  dspf-edit.model.ts
 */
 
 export type DdsElement =

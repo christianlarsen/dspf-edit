@@ -1,13 +1,13 @@
 /*
 	Christian Larsen, 2025
 	"RPG structure"
-	dds-aid.providers.ts
+	dspf-edit.providers.ts
 */
 
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { DdsElement, DdsGroup } from './dds-aid.model';
-import { describeDdsField, describeDdsConstant, describeDdsRecord, describeDdsFile, formatDdsIndicators } from './dds-aid.helper';
+import { DdsElement, DdsGroup } from './dspf-edit.model';
+import { describeDdsField, describeDdsConstant, describeDdsRecord, describeDdsFile, formatDdsIndicators } from './dspf-edit.helper';
 
 export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 	private _onDidChangeTreeData: vscode.EventEmitter<DdsNode | undefined | void> = new vscode.EventEmitter<DdsNode | undefined | void>();

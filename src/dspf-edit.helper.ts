@@ -1,10 +1,10 @@
 /*
     Christian Larsen, 2025
     "RPG structure"
-    dds-aid.helper.ts
+    dspf-edit.helper.ts
 */
 import * as vscode from 'vscode';
-import { DdsElement, DdsIndicator, DdsFile, DdsAttribute, fileSizeAttributes } from './dds-aid.model';
+import { DdsElement, DdsIndicator, DdsFile, DdsAttribute, fileSizeAttributes } from './dspf-edit.model';
 
 
 // Describes a "field" (returns row and column)

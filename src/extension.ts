@@ -5,15 +5,15 @@
 */
 
 import * as vscode from 'vscode';
-import { parseDocument } from './dds-aid.parser';
-import { isDdsFile } from './dds-aid.helper';
-import { DdsTreeProvider} from './dds-aid.providers';
-import { changePosition } from './dds-aid.change-position';
-import { centerPosition } from './dds-aid.center';
-import { editConstant } from './dds-aid.edit-constant';
-import { editField } from './dds-aid.edit-field';
-import { viewStructure } from './dds-aid.view-structure';
-import { generateStructure } from './dds-aid.generate-structure';
+import { parseDocument } from './dspf-edit.parser';
+import { isDdsFile } from './dspf-edit.helper';
+import { DdsTreeProvider} from './dspf-edit.providers';
+import { changePosition } from './dspf-edit.change-position';
+import { centerPosition } from './dspf-edit.center';
+import { editConstant } from './dspf-edit.edit-constant';
+import { editField } from './dspf-edit.edit-field';
+import { viewStructure } from './dspf-edit.view-structure';
+import { generateStructure } from './dspf-edit.generate-structure';
 
 // Activate extension
 export function activate(context: vscode.ExtensionContext) {

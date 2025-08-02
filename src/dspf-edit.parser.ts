@@ -1,10 +1,10 @@
 /*
     Christian Larsen, 2025
     "RPG structure"
-    dds-aid.parser.ts
+    dspf-edit.parser.ts
 */
 
-import { DdsElement, DdsIndicator, DdsFile, DdsAttribute, fileSizeAttributes } from './dds-aid.model';
+import { DdsElement, DdsIndicator, DdsFile, DdsAttribute, fileSizeAttributes } from './dspf-edit.model';
 
 export function parseDocument(text: string): DdsElement[] {
     const lines = text.split(/\r?\n/);

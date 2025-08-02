@@ -1,17 +1,17 @@
 /*
     Christian Larsen, 2025
     "RPG structure"
-    dds-aid.center.ts
+    dspf-edit.center.ts
 */
 
 import * as vscode from 'vscode';
-import { DdsNode } from './dds-aid.providers';
-import { fileSizeAttributes } from './dds-aid.model';
+import { DdsNode } from './dspf-edit.providers';
+import { fileSizeAttributes } from './dspf-edit.model';
 
 export function centerPosition(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(
-        vscode.commands.registerCommand("dds-aid.center", async (node: DdsNode) => {
+        vscode.commands.registerCommand("dspf-edit.center", async (node: DdsNode) => {
             const element = node.ddsElement;
 
             if (element.kind !== "field" && element.kind !== "constant") {

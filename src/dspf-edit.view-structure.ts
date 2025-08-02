@@ -1,13 +1,13 @@
 /*
 	Christian Larsen, 2025
 	"RPG structure"
-	dds-aid.view-structure.ts
+	dspf-edit.view-structure.ts
 */
 
 import * as vscode from 'vscode';
-import { DdsTreeProvider } from './dds-aid.providers';
-import { isDdsFile } from './dds-aid.helper';
-import { parseDocument } from './dds-aid.parser';
+import { DdsTreeProvider } from './dspf-edit.providers';
+import { isDdsFile } from './dspf-edit.helper';
+import { parseDocument } from './dspf-edit.parser';
 
 export function viewStructure(context: vscode.ExtensionContext, treeProvider: DdsTreeProvider) {
 

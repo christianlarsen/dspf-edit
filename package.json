@@ -1,7 +1,7 @@
 {
-  "name": "dds-aid",
-  "displayName": "Screen DDS Aid",
-  "description": "Extension that helps you create and modify your screen DDS.",
+  "name": "dspf-edit",
+  "displayName": "Display file DDS edit",
+  "description": "Extension that helps you create and modify your display file DDS on IBM i",
   "author": {
     "name": "Christian Larsen",
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
@@ -17,8 +17,8 @@
     "dds",
     "sda",
     "strsda",
-    "dds aid",
-    "codegen"
+    "display",
+    "dspf"
   ],
   "engines": {
     "vscode": "^1.75.0"
@@ -33,55 +33,55 @@
       "explorer": [
         {
           "id": "ddsStructureView",
-          "name": "DDS Structure"
+          "name": "DSPF Structure"
         }
       ]
     },
     "commands": [
       {
-        "command": "dds-aid.field-description",
+        "command": "dspf-edit.field-description",
         "title": "Field description"
       },
       {
-        "command": "dds-aid.view-structure",
+        "command": "dspf-edit.view-structure",
         "title": "View DDS Structure"
       },
       {
-        "command": "dds-aid.change-position",
+        "command": "dspf-edit.change-position",
         "title": "Change Position"
       },
       {
-        "command": "dds-aid.center",
+        "command": "dspf-edit.center",
         "title": "Center"
       },
       {
-        "command": "dds-aid.edit-constant",
+        "command": "dspf-edit.edit-constant",
         "title": "Edit"
       },
       {
-        "command": "dds-aid.edit-field",
+        "command": "dspf-edit.edit-field",
         "title": "Edit"
       }
     ],
     "menus": {
       "view/item/context": [
         {
-          "command": "dds-aid.edit-constant",
+          "command": "dspf-edit.edit-constant",
           "when": "view == ddsStructureView && viewItem == constant",
           "group": "navigation1@1"
         },
         {
-          "command": "dds-aid.edit-field",
+          "command": "dspf-edit.edit-field",
           "when": "view == ddsStructureView && viewItem == field",
           "group": "navigation1@1"
         },
         {
-          "command": "dds-aid.center",
+          "command": "dspf-edit.center",
           "when": "view == ddsStructureView && (viewItem == constant || viewItem == field)",
           "group": "navigation2@2"
         },
         {
-          "command": "dds-aid.change-position",
+          "command": "dspf-edit.change-position",
           "when": "view == ddsStructureView && (viewItem == constant || viewItem == field)",
           "group": "navigation2@3"
         }
