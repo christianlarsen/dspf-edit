@@ -32,8 +32,9 @@ export interface DdsField {
   kind: 'field';
   name: string;
   type: string;
-  row: number;
-  column: number;
+  row?: number;
+  column?: number;
+  hidden?: boolean;
   lineIndex: number;
   attributes?: DdsAttribute[];
   indicators?: DdsIndicator[];

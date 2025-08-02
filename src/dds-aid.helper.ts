@@ -11,10 +11,13 @@ import { DdsElement, DdsIndicator, DdsFile, DdsAttribute, fileSizeAttributes } f
 export function describeDdsField(field: DdsElement): string {
     if (field.kind !== 'field') return 'Not a field.';
 
-    const row = field.row?.toString().padStart(2, '0') ?? '--';
-    const col = field.column?.toString().padStart(2, '0') ?? '--';
-
-    return `${row},${col}`;
+    if (!field.hidden) {
+        const row = field.row?.toString().padStart(2, '0') ?? '--';
+        const col = field.column?.toString().padStart(2, '0') ?? '--';
+        return `${row},${col}`;
+    } else {
+        return '(hidden)';
+    };
 };
 
 // Describes a "constant" (returns row and column)

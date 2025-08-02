@@ -74,8 +74,10 @@ function parseDdsLine(lines, lineIndex) {
         return { element: undefined, nextIndex: lineIndex };
     const indicators = parseDdsIndicators(trimmed.substring(2, 11));
     const fieldName = trimmed.substring(13, 23).trim();
-    const row = Number(trimmed.substring(34, 37).trim());
-    const col = Number(trimmed.substring(36, 39).trim());
+    const rowText = trimmed.substring(34, 37).trim();
+    const colText = trimmed.substring(36, 39).trim();
+    const row = rowText ? Number(rowText) : undefined;
+    const col = colText ? Number(colText) : undefined;
     // "Record"
     if (trimmed[11] === 'R') {
         const name = trimmed.substring(13, 23).trim();
@@ -97,14 +99,16 @@ function parseDdsLine(lines, lineIndex) {
         const length = trimmed.substring(27, 29).trim();
         const decimals = trimmed[31] !== ' ' ? Number(trimmed.substring(30, 31).trim()) : undefined;
         const usage = trimmed[32] !== ' ' ? trimmed[32] : undefined;
+        const isHidden = trimmed[32] === 'H';
         const { attributes, nextIndex } = extractAttributes('F', lines, lineIndex, true, indicators);
         return {
             element: {
                 kind: 'field',
                 name: fieldName,
                 type: type,
-                row: row,
-                column: col,
+                row: isHidden ? undefined : row,
+                column: isHidden ? undefined : col,
+                hidden: isHidden,
                 lineIndex: lineIndex,
                 attributes: attributes ? attributes : [],
                 indicators: indicators || undefined,
