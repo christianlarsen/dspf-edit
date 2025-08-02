@@ -11,6 +11,7 @@ import { DdsTreeProvider} from './dds-aid.providers';
 import { changePosition } from './dds-aid.change-position';
 import { centerPosition } from './dds-aid.center';
 import { editConstant } from './dds-aid.edit-constant';
+import { editField } from './dds-aid.edit-field';
 import { viewStructure } from './dds-aid.view-structure';
 import { generateStructure } from './dds-aid.generate-structure';
 
@@ -59,6 +60,9 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// "Edit-Constant" command
 	editConstant(context);
+
+	// "Edit-Field" command
+	editField(context);
 
 	// "Change-Position" command
 	changePosition(context);

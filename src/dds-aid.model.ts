@@ -32,6 +32,9 @@ export interface DdsField {
   kind: 'field';
   name: string;
   type: string;
+  length : number;
+  decimals : number;
+  usage : string;
   row?: number;
   column?: number;
   hidden?: boolean;

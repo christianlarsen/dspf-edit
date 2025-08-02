@@ -11,12 +11,18 @@ import { DdsElement, DdsIndicator, DdsFile, DdsAttribute, fileSizeAttributes } f
 export function describeDdsField(field: DdsElement): string {
     if (field.kind !== 'field') return 'Not a field.';
 
-    if (!field.hidden) {
+    const length = field.length;
+    const decimals = field.decimals;
+
+    const sizeText = decimals && decimals > 0 ? `(${length}:${decimals})` : `(${length})`;
+    const type = field.type;
+
+    if (field.hidden) {
+        return `${sizeText}${type} (Hidden)`;
+    } else {
         const row = field.row?.toString().padStart(2, '0') ?? '--';
         const col = field.column?.toString().padStart(2, '0') ?? '--';
-        return `${row},${col}`;
-    } else {
-        return '(hidden)';
+        return `${sizeText}${type} [${col},${row}]`;
     };
 };
 
@@ -26,7 +32,7 @@ export function describeDdsConstant(field: DdsElement): string {
 
     const row = field.row?.toString().padStart(2, '0') ?? '--';
     const col = field.column?.toString().padStart(2, '0') ?? '--';
-    return `${row},${col}`;
+    return `[${row},${col}]`;
 };
 
 // Describes a "record" (returns line with "attributes" of the)
@@ -68,28 +74,36 @@ export function formatDdsAttributes(attributes?: DdsAttribute[]): string {
 };
 
 export function findEndLineIndex(document: vscode.TextDocument, startLineIndex: number): number {
-	let endLineIndex = startLineIndex;
+    let endLineIndex = startLineIndex;
 
-	for (let i = startLineIndex; i < document.lineCount; i++) {
-		const line = document.lineAt(i).text;
+    for (let i = startLineIndex; i < document.lineCount; i++) {
+        const line = document.lineAt(i).text;
 
-		const isContinuedConstant =
-			line.startsWith("     A") &&
-			line.charAt(79) === "-";
+        const isContinuedConstant =
+            line.startsWith("     A") &&
+            line.charAt(79) === "-";
 
-		if (isContinuedConstant) {
-			endLineIndex = i + 1;
-		} else {
-			break;
-		};
-	};
+        if (isContinuedConstant) {
+            endLineIndex = i + 1;
+        } else {
+            break;
+        };
+    };
 
-	return endLineIndex;
+    return endLineIndex;
 };
 
 export function isDdsFile(document: vscode.TextDocument): boolean {
     const ddsExtensions = ['.dspf'];
     return ddsExtensions.some(ext => document.fileName.toLowerCase().endsWith(ext));
 };
-  
+
+export function parseSize(newSize: string): { length: number, decimals: number } {
+    const [intPart, decPart] = newSize.split(',');
+
+    const length = parseInt(intPart, 10);
+    const decimals = decPart ? parseInt(decPart, 10) : 0;
+
+    return { length, decimals };
+};
 

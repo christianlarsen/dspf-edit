@@ -8,17 +8,22 @@ exports.formatDdsIndicators = formatDdsIndicators;
 exports.formatDdsAttributes = formatDdsAttributes;
 exports.findEndLineIndex = findEndLineIndex;
 exports.isDdsFile = isDdsFile;
+exports.parseSize = parseSize;
 // Describes a "field" (returns row and column)
 function describeDdsField(field) {
     if (field.kind !== 'field')
         return 'Not a field.';
-    if (!field.hidden) {
-        const row = field.row?.toString().padStart(2, '0') ?? '--';
-        const col = field.column?.toString().padStart(2, '0') ?? '--';
-        return `${row},${col}`;
+    const length = field.length;
+    const decimals = field.decimals;
+    const sizeText = decimals && decimals > 0 ? `(${length}:${decimals})` : `(${length})`;
+    const type = field.type;
+    if (field.hidden) {
+        return `${sizeText}${type} (Hidden)`;
     }
     else {
-        return '(hidden)';
+        const row = field.row?.toString().padStart(2, '0') ?? '--';
+        const col = field.column?.toString().padStart(2, '0') ?? '--';
+        return `${sizeText}${type} [${col},${row}]`;
     }
     ;
 }
@@ -29,7 +34,7 @@ function describeDdsConstant(field) {
         return 'Not a constant.';
     const row = field.row?.toString().padStart(2, '0') ?? '--';
     const col = field.column?.toString().padStart(2, '0') ?? '--';
-    return `${row},${col}`;
+    return `[${row},${col}]`;
 }
 ;
 // Describes a "record" (returns line with "attributes" of the)
@@ -91,6 +96,13 @@ function findEndLineIndex(document, startLineIndex) {
 function isDdsFile(document) {
     const ddsExtensions = ['.dspf'];
     return ddsExtensions.some(ext => document.fileName.toLowerCase().endsWith(ext));
+}
+;
+function parseSize(newSize) {
+    const [intPart, decPart] = newSize.split(',');
+    const length = parseInt(intPart, 10);
+    const decimals = decPart ? parseInt(decPart, 10) : 0;
+    return { length, decimals };
 }
 ;
 //# sourceMappingURL=dds-aid.helper.js.map

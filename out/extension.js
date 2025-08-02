@@ -47,6 +47,7 @@ const dds_aid_providers_1 = require("./dds-aid.providers");
 const dds_aid_change_position_1 = require("./dds-aid.change-position");
 const dds_aid_center_1 = require("./dds-aid.center");
 const dds_aid_edit_constant_1 = require("./dds-aid.edit-constant");
+const dds_aid_edit_field_1 = require("./dds-aid.edit-field");
 const dds_aid_view_structure_1 = require("./dds-aid.view-structure");
 const dds_aid_generate_structure_1 = require("./dds-aid.generate-structure");
 // Activate extension
@@ -88,6 +89,8 @@ function activate(context) {
     (0, dds_aid_view_structure_1.viewStructure)(context, treeProvider);
     // "Edit-Constant" command
     (0, dds_aid_edit_constant_1.editConstant)(context);
+    // "Edit-Field" command
+    (0, dds_aid_edit_field_1.editField)(context);
     // "Change-Position" command
     (0, dds_aid_change_position_1.changePosition)(context);
     // "Center" command

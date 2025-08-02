@@ -96,9 +96,9 @@ function parseDdsLine(lines: string[], lineIndex: number): { element: DdsElement
     // "Field"
     if (fieldName) {
         const type = trimmed[29];
-        const length = trimmed.substring(27, 29).trim();
-        const decimals = trimmed[31] !== ' ' ? Number(trimmed.substring(30, 31).trim()) : undefined;
-        const usage = trimmed[32] !== ' ' ? trimmed[32] : undefined;
+        const length = Number(trimmed.substring(27, 29).trim());
+        const decimals = trimmed[31] !== ' ' ? Number(trimmed.substring(30, 31).trim()) : 0;
+        const usage = trimmed[32] !== ' ' ? trimmed[32] : ' ';
         const isHidden = trimmed[32] === 'H';
         const { attributes, nextIndex } = extractAttributes('F', lines, lineIndex, true, indicators);
         return {
@@ -106,6 +106,9 @@ function parseDdsLine(lines: string[], lineIndex: number): { element: DdsElement
                 kind: 'field',
                 name: fieldName,
                 type: type,
+                length : length,
+                decimals : decimals,
+                usage : usage,
                 row: isHidden ? undefined : row,
                 column: isHidden ? undefined : col,
                 hidden : isHidden,
