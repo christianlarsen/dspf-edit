@@ -97,7 +97,7 @@ function parseDdsLine(lines, lineIndex) {
     if (fieldName) {
         const type = trimmed[29];
         const length = Number(trimmed.substring(27, 29).trim());
-        const decimals = trimmed[31] !== ' ' ? Number(trimmed.substring(30, 31).trim()) : 0;
+        const decimals = trimmed.substring(30, 32) !== ' ' ? Number(trimmed.substring(30, 32).trim()) : 0;
         const usage = trimmed[32] !== ' ' ? trimmed[32] : ' ';
         const isHidden = trimmed[32] === 'H';
         const { attributes, nextIndex } = extractAttributes('F', lines, lineIndex, true, indicators);
