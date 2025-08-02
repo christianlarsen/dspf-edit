@@ -50,6 +50,7 @@ const dspf_edit_edit_constant_1 = require("./dspf-edit.edit-constant");
 const dspf_edit_edit_field_1 = require("./dspf-edit.edit-field");
 const dspf_edit_view_structure_1 = require("./dspf-edit.view-structure");
 const dspf_edit_generate_structure_1 = require("./dspf-edit.generate-structure");
+const dspf_edit_copy_record_1 = require("./dspf-edit.copy-record");
 // Activate extension
 function activate(context) {
     // Registers the tree data provider
@@ -95,6 +96,8 @@ function activate(context) {
     (0, dspf_edit_change_position_1.changePosition)(context);
     // "Center" command
     (0, dspf_edit_center_1.centerPosition)(context);
+    // "Copy-Record" command
+    (0, dspf_edit_copy_record_1.copyRecord)(context);
 }
 ;
 function deactivate() { }

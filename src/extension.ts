@@ -14,6 +14,7 @@ import { editConstant } from './dspf-edit.edit-constant';
 import { editField } from './dspf-edit.edit-field';
 import { viewStructure } from './dspf-edit.view-structure';
 import { generateStructure } from './dspf-edit.generate-structure';
+import { copyRecord } from './dspf-edit.copy-record';
 
 // Activate extension
 export function activate(context: vscode.ExtensionContext) {
@@ -69,6 +70,9 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// "Center" command
 	centerPosition(context);
+
+	// "Copy-Record" command
+	copyRecord(context);
 
 
 };
