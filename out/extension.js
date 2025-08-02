@@ -67,13 +67,17 @@ function activate(context) {
             treeProvider.refresh();
         }
     }));
-    context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(editor => {
-        if (editor) {
-            const text = editor.document.getText();
-            treeProvider.setElements((0, dds_aid_helper_1.parseDdsElements)(text));
-            treeProvider.refresh();
-        }
-    }));
+    /*
+        context.subscriptions.push(
+            vscode.window.onDidChangeActiveTextEditor(editor => {
+                if (editor) {
+                    const text = editor.document.getText();
+                    treeProvider.setElements(parseDdsElements(text));
+                    treeProvider.refresh();
+                }
+            })
+        );
+    */
     // "View-Structure" command
     context.subscriptions.push(vscode.commands.registerCommand('dds-aid.view-structure', () => {
         const editor = vscode.window.activeTextEditor;

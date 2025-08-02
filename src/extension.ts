@@ -10,6 +10,7 @@ import { DdsTreeProvider} from './dds-aid.providers';
 import { changePosition } from './dds-aid.change-position';
 import { centerPosition } from './dds-aid.center';
 import { editConstant } from './dds-aid.edit-constant';
+import { viewStructure } from './dds-aid.view-structure';
 
 // Activate extension
 export function activate(context: vscode.ExtensionContext) {
@@ -37,27 +38,10 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
-	context.subscriptions.push(
-		vscode.window.onDidChangeActiveTextEditor(editor => {
-			if (editor) {
-				const text = editor.document.getText();
-				treeProvider.setElements(parseDdsElements(text));
-				treeProvider.refresh();
-			}
-		})
-	);
+	// Commands
 
 	// "View-Structure" command
-	context.subscriptions.push(
-		vscode.commands.registerCommand('dds-aid.view-structure', () => {
-			const editor = vscode.window.activeTextEditor;
-			if (editor) {
-				const text = editor.document.getText();
-				treeProvider.setElements(parseDdsElements(text));
-				treeProvider.refresh();
-			}
-		})
-	);
+	viewStructure(context, treeProvider);
 
 	// "Change-Position" command
 	changePosition(context);
