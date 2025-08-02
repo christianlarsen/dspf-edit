@@ -41,58 +41,57 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
+const dds_aid_parser_1 = require("./dds-aid.parser");
 const dds_aid_helper_1 = require("./dds-aid.helper");
 const dds_aid_providers_1 = require("./dds-aid.providers");
 const dds_aid_change_position_1 = require("./dds-aid.change-position");
 const dds_aid_center_1 = require("./dds-aid.center");
 const dds_aid_edit_constant_1 = require("./dds-aid.edit-constant");
+const dds_aid_view_structure_1 = require("./dds-aid.view-structure");
+const dds_aid_generate_structure_1 = require("./dds-aid.generate-structure");
 // Activate extension
 function activate(context) {
     // Registers the tree data provider
     const treeProvider = new dds_aid_providers_1.DdsTreeProvider();
     vscode.window.registerTreeDataProvider('ddsStructureView', treeProvider);
     // Generates the DDS structure
-    const editor = vscode.window.activeTextEditor;
-    if (editor) {
-        const text = editor.document.getText();
-        treeProvider.setElements((0, dds_aid_helper_1.parseDdsElements)(text));
-        treeProvider.refresh();
-    }
-    ;
-    // If the document changes, the extension re-generate the DDS structure
+    (0, dds_aid_generate_structure_1.generateStructure)(treeProvider);
+    // If the document changes, the extension re-generates the DDS structure
     context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(event => {
-        if (event.document === vscode.window.activeTextEditor?.document) {
+        if (event.document === vscode.window.activeTextEditor?.document &&
+            (0, dds_aid_helper_1.isDdsFile)(event.document)) {
             const text = event.document.getText();
-            treeProvider.setElements((0, dds_aid_helper_1.parseDdsElements)(text));
+            treeProvider.setElements((0, dds_aid_parser_1.parseDdsElements)(text));
             treeProvider.refresh();
         }
+        else {
+            treeProvider.setElements([]);
+            treeProvider.refresh();
+        }
+        ;
     }));
-    /*
-        context.subscriptions.push(
-            vscode.window.onDidChangeActiveTextEditor(editor => {
-                if (editor) {
-                    const text = editor.document.getText();
-                    treeProvider.setElements(parseDdsElements(text));
-                    treeProvider.refresh();
-                }
-            })
-        );
-    */
-    // "View-Structure" command
-    context.subscriptions.push(vscode.commands.registerCommand('dds-aid.view-structure', () => {
-        const editor = vscode.window.activeTextEditor;
-        if (editor) {
+    // If user changes active editor, the extension re-generates the DDS structure
+    context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(editor => {
+        if (editor && (0, dds_aid_helper_1.isDdsFile)(editor.document)) {
             const text = editor.document.getText();
-            treeProvider.setElements((0, dds_aid_helper_1.parseDdsElements)(text));
+            treeProvider.setElements((0, dds_aid_parser_1.parseDdsElements)(text));
             treeProvider.refresh();
         }
+        else {
+            treeProvider.setElements([]);
+            treeProvider.refresh();
+        }
+        ;
     }));
+    // Commands
+    // "View-Structure" command
+    (0, dds_aid_view_structure_1.viewStructure)(context, treeProvider);
+    // "Edit-Constant" command
+    (0, dds_aid_edit_constant_1.editConstant)(context);
     // "Change-Position" command
     (0, dds_aid_change_position_1.changePosition)(context);
     // "Center" command
     (0, dds_aid_center_1.centerPosition)(context);
-    // "Edit-Constant" command
-    (0, dds_aid_edit_constant_1.editConstant)(context);
 }
 ;
 function deactivate() { }

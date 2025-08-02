@@ -2,7 +2,7 @@
 /*
     Christian Larsen, 2025
     "RPG structure"
-    dds-aid.view-structure.ts
+    dds-aid.generate-structure.ts
 */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -38,25 +38,22 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.viewStructure = viewStructure;
+exports.generateStructure = generateStructure;
 const vscode = __importStar(require("vscode"));
 const dds_aid_helper_1 = require("./dds-aid.helper");
 const dds_aid_parser_1 = require("./dds-aid.parser");
-function viewStructure(context, treeProvider) {
-    context.subscriptions.push(vscode.commands.registerCommand('dds-aid.view-structure', () => {
-        const editor = vscode.window.activeTextEditor;
-        const document = editor?.document;
-        if (editor && document && (0, dds_aid_helper_1.isDdsFile)(document)) {
-            const text = editor.document.getText();
-            treeProvider.setElements((0, dds_aid_parser_1.parseDdsElements)(text));
-            treeProvider.refresh();
-        }
-        else {
-            treeProvider.setElements([]);
-            treeProvider.refresh();
-        }
-        ;
-    }));
+function generateStructure(treeProvider) {
+    const editor = vscode.window.activeTextEditor;
+    if (editor && (0, dds_aid_helper_1.isDdsFile)(editor.document)) {
+        const text = editor.document.getText();
+        treeProvider.setElements((0, dds_aid_parser_1.parseDdsElements)(text));
+        treeProvider.refresh();
+    }
+    else {
+        treeProvider.setElements([]);
+        treeProvider.refresh();
+    }
+    ;
 }
 ;
-//# sourceMappingURL=dds-aid.view-structure.js.map
+//# sourceMappingURL=dds-aid.generate-structure.js.map

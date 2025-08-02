@@ -64,17 +64,17 @@
         {
           "command": "dds-aid.edit-constant",
           "when": "view == ddsStructureView && viewItem == constant",
-          "group": "navigation"
-        },
-        {
-          "command": "dds-aid.change-position",
-          "when": "view == ddsStructureView && (viewItem == constant || viewItem == field)",
-          "group": "navigation"
+          "group": "navigation1@1"
         },
         {
           "command": "dds-aid.center",
           "when": "view == ddsStructureView && (viewItem == constant || viewItem == field)",
-          "group": "navigation"
+          "group": "navigation2@2"
+        },
+        {
+          "command": "dds-aid.change-position",
+          "when": "view == ddsStructureView && (viewItem == constant || viewItem == field)",
+          "group": "navigation2@3"
         }
       ]
     }
