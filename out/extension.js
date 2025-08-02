@@ -61,7 +61,7 @@ function activate(context) {
         if (event.document === vscode.window.activeTextEditor?.document &&
             (0, dds_aid_helper_1.isDdsFile)(event.document)) {
             const text = event.document.getText();
-            treeProvider.setElements((0, dds_aid_parser_1.parseDdsElements)(text));
+            treeProvider.setElements((0, dds_aid_parser_1.parseDocument)(text));
             treeProvider.refresh();
         }
         else {
@@ -74,7 +74,7 @@ function activate(context) {
     context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(editor => {
         if (editor && (0, dds_aid_helper_1.isDdsFile)(editor.document)) {
             const text = editor.document.getText();
-            treeProvider.setElements((0, dds_aid_parser_1.parseDdsElements)(text));
+            treeProvider.setElements((0, dds_aid_parser_1.parseDocument)(text));
             treeProvider.refresh();
         }
         else {

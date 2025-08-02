@@ -5,7 +5,7 @@
 */
 
 import * as vscode from 'vscode';
-import { parseDdsElements } from './dds-aid.parser';
+import { parseDocument } from './dds-aid.parser';
 import { isDdsFile } from './dds-aid.helper';
 import { DdsTreeProvider} from './dds-aid.providers';
 import { changePosition } from './dds-aid.change-position';
@@ -30,7 +30,7 @@ export function activate(context: vscode.ExtensionContext) {
 			if (event.document === vscode.window.activeTextEditor?.document &&
 				isDdsFile(event.document)) {
 				const text = event.document.getText();
-				treeProvider.setElements(parseDdsElements(text));
+				treeProvider.setElements(parseDocument(text));
 				treeProvider.refresh();
 			} else {
 				treeProvider.setElements([]);
@@ -43,7 +43,7 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.window.onDidChangeActiveTextEditor(editor => {
 			if (editor && isDdsFile(editor.document)) {
 				const text = editor.document.getText();
-				treeProvider.setElements(parseDdsElements(text));
+				treeProvider.setElements(parseDocument(text));
 				treeProvider.refresh();
 		  	} else {
 				treeProvider.setElements([]);

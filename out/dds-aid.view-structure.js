@@ -48,7 +48,7 @@ function viewStructure(context, treeProvider) {
         const document = editor?.document;
         if (editor && document && (0, dds_aid_helper_1.isDdsFile)(document)) {
             const text = editor.document.getText();
-            treeProvider.setElements((0, dds_aid_parser_1.parseDdsElements)(text));
+            treeProvider.setElements((0, dds_aid_parser_1.parseDocument)(text));
             treeProvider.refresh();
         }
         else {

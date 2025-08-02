@@ -6,7 +6,7 @@
 
 import { DdsElement, DdsIndicator, DdsFile, DdsAttribute, fileSizeAttributes } from './dds-aid.model';
 
-export function parseDdsElements(text: string): DdsElement[] {
+export function parseDocument(text: string): DdsElement[] {
     const lines = text.split(/\r?\n/);
     const ddsElements: DdsElement[] = [];
 
@@ -215,5 +215,5 @@ function extractAttributes(lineType: string, lines: string[], startIndex: number
 };
 
 export function getAllDdsElements(text: string): DdsElement[] {
-    return parseDdsElements(text);
+    return parseDocument(text);
 };

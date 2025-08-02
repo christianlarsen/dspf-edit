@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsTreeProvider } from './dds-aid.providers';
 import { isDdsFile } from './dds-aid.helper';
-import { parseDdsElements } from './dds-aid.parser';
+import { parseDocument } from './dds-aid.parser';
 
 export function viewStructure(context: vscode.ExtensionContext, treeProvider: DdsTreeProvider) {
 
@@ -17,7 +17,7 @@ export function viewStructure(context: vscode.ExtensionContext, treeProvider: Dd
 			const document = editor?.document;
 			if (editor && document && isDdsFile(document)) {
 				const text = editor.document.getText();
-				treeProvider.setElements(parseDdsElements(text));
+				treeProvider.setElements(parseDocument(text));
 				treeProvider.refresh();
 			} else {
 				treeProvider.setElements([]);

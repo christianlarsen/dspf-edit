@@ -5,11 +5,11 @@
     dds-aid.parser.ts
 */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.parseDdsElements = parseDdsElements;
+exports.parseDocument = parseDocument;
 exports.parseDdsIndicators = parseDdsIndicators;
 exports.getAllDdsElements = getAllDdsElements;
 const dds_aid_model_1 = require("./dds-aid.model");
-function parseDdsElements(text) {
+function parseDocument(text) {
     const lines = text.split(/\r?\n/);
     const ddsElements = [];
     // Adds element 'file' as root
@@ -213,7 +213,7 @@ function extractAttributes(lineType, lines, startIndex, getInd, indicators) {
 }
 ;
 function getAllDdsElements(text) {
-    return parseDdsElements(text);
+    return parseDocument(text);
 }
 ;
 //# sourceMappingURL=dds-aid.parser.js.map
