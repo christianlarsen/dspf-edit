@@ -15,7 +15,8 @@ import { editField } from './dspf-edit.edit-field';
 import { viewStructure } from './dspf-edit.view-structure';
 import { generateStructure } from './dspf-edit.generate-structure';
 import { copyRecord } from './dspf-edit.copy-record';
-import { deleteRecord } from './dspf-edit.delete-record copy';
+import { deleteRecord } from './dspf-edit.delete-record';
+import { newRecord } from './dspf-edit.new-record';
 
 // Activate extension
 export function activate(context: vscode.ExtensionContext) {
@@ -77,6 +78,9 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// "Delete-Record" command
 	deleteRecord(context);
+
+	// "New-Record" command
+	newRecord(context);
 
 };
 
