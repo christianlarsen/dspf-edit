@@ -102,6 +102,8 @@ function newRecord(context) {
         let numRows;
         let numCols;
         let newCtrlName;
+        let newSflSiz;
+        let newSflPag;
         // If type is "WINDOW" or "SFLWDW", we need the row,col,nrow,ncol
         if (newType === "WINDOW" || newType === "SFLWDW") {
             startRow = await vscode.window.showInputBox({
@@ -156,6 +158,42 @@ function newRecord(context) {
             newCtrlName = newCtrlName?.toUpperCase();
             if (!newCtrlName)
                 return;
+            // Records in subfile
+            newSflSiz = await vscode.window.showInputBox({
+                title: `Set records in subfile`,
+                placeHolder: `10`,
+                validateInput: value => {
+                    const num = Number(value.trim());
+                    if (!value.trim()) {
+                        return "Must enter a valid size.";
+                    }
+                    if (isNaN(num) || num < 1 || num > 9999) {
+                        return "Value must be a number between 1 and 9999.";
+                    }
+                    return null;
+                }
+            });
+            if (!newSflSiz)
+                return;
+            newSflSiz = Number(newSflSiz);
+            // Records per page
+            newSflPag = await vscode.window.showInputBox({
+                title: `Set records per page`,
+                placeHolder: `9`,
+                validateInput: value => {
+                    const num = Number(value.trim());
+                    if (!value.trim()) {
+                        return "Must enter a valid page size.";
+                    }
+                    if (isNaN(num) || num < 1 || num > 9999) {
+                        return "Value must be a number between 1 and 9999.";
+                    }
+                    return null;
+                }
+            });
+            if (!newSflPag)
+                return;
+            newSflPag = Number(newSflPag);
         }
         ;
         let lines = [];
@@ -179,6 +217,10 @@ function newRecord(context) {
                 if (newCtrlName) {
                     lines[1] = ' '.repeat(5) + 'A' + ' '.repeat(10) + 'R' + ' ' + newCtrlName.padEnd(10, ' ') +
                         ' '.repeat(16) + 'SFLCTL(' + newName.trim() + ')';
+                    lines[2] = ' '.repeat(5) + 'A' + ' '.repeat(38) + 'WINDOW(' + startRow?.toString() + ' ' +
+                        startCol?.toString() + ' ' + numRows?.toString() + ' ' + numCols?.toString() + ')';
+                    lines[3] = ' '.repeat(5) + 'A' + ' '.repeat(38) + 'SFLSIZ(' + String(newSflSiz).padEnd(4, '0') + ')';
+                    lines[4] = ' '.repeat(5) + 'A' + ' '.repeat(38) + 'SFLPAG(' + String(newSflPag).padEnd(4, '0') + ')';
                 }
                 ;
                 break;
