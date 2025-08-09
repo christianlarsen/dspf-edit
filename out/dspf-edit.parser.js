@@ -12,6 +12,7 @@ const dspf_edit_model_1 = require("./dspf-edit.model");
 function parseDocument(text) {
     const lines = text.split(/\r?\n/);
     const ddsElements = [];
+    dspf_edit_model_1.records.length = 0;
     // Adds element 'file' as root
     const file = {
         kind: 'file',
@@ -54,10 +55,33 @@ function parseDocument(text) {
         // Retrieves the "size" of the screen from the DSPSIZ file attribute
         const dspsizLine = file.attributes.find(line => line.value.includes("DSPSIZ("));
         if (dspsizLine) {
-            const match = dspsizLine.value.match(/DSPSIZ\s*\(\s*(\d+)\s+(\d+)/);
-            if (match) {
-                dspf_edit_model_1.fileSizeAttributes.maxRow = parseInt(match[1], 10);
-                dspf_edit_model_1.fileSizeAttributes.maxCol = parseInt(match[2], 10);
+            const matchAll = dspsizLine.value.match(/DSPSIZ\s*\(([^)]+)\)/i);
+            if (matchAll) {
+                const inside = matchAll[1].trim();
+                const sizeRegex = /(\d+)\s+(\d+)(?:\s+([^\s)]+))?/g;
+                let sizes = [];
+                let m;
+                while ((m = sizeRegex.exec(inside)) !== null) {
+                    sizes.push({
+                        row: parseInt(m[1], 10),
+                        col: parseInt(m[2], 10),
+                        name: m[3] ? m[3] : ''
+                    });
+                }
+                ;
+                dspf_edit_model_1.fileSizeAttributes.numDsply = sizes.length;
+                if (sizes[0]) {
+                    dspf_edit_model_1.fileSizeAttributes.maxRow1 = sizes[0].row;
+                    dspf_edit_model_1.fileSizeAttributes.maxCol1 = sizes[0].col;
+                    dspf_edit_model_1.fileSizeAttributes.nameDsply1 = sizes[0].name;
+                }
+                ;
+                if (sizes[1]) {
+                    dspf_edit_model_1.fileSizeAttributes.maxRow2 = sizes[1].row;
+                    dspf_edit_model_1.fileSizeAttributes.maxCol2 = sizes[1].col;
+                    dspf_edit_model_1.fileSizeAttributes.nameDsply2 = sizes[1].name;
+                }
+                ;
             }
             ;
         }
@@ -82,6 +106,7 @@ function parseDdsLine(lines, lineIndex) {
     if (trimmed[11] === 'R') {
         const name = trimmed.substring(13, 23).trim();
         const { attributes, nextIndex } = extractAttributes('R', lines, lineIndex, false);
+        dspf_edit_model_1.records.push(name);
         return {
             element: {
                 kind: 'record',

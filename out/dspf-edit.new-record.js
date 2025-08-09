@@ -40,6 +40,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.newRecord = newRecord;
 const vscode = __importStar(require("vscode"));
+const dspf_edit_helper_1 = require("./dspf-edit.helper");
 function newRecord(context) {
     context.subscriptions.push(vscode.commands.registerCommand("dspf-edit.new-record", async (node) => {
         const element = node.ddsElement;
@@ -75,8 +76,10 @@ function newRecord(context) {
                     return "The name cannot start with a number.";
                 }
                 ;
-                // ??? Check if name exists in other records... 
-                // ???
+                if ((0, dspf_edit_helper_1.recordExists)(value)) {
+                    return "Record name already exists.";
+                }
+                ;
                 return null;
             }
         });
@@ -150,8 +153,10 @@ function newRecord(context) {
                         return "The name cannot start with a number.";
                     }
                     ;
-                    // ??? Check if name exists in other records... 
-                    // ???
+                    if ((0, dspf_edit_helper_1.recordExists)(value)) {
+                        return "Record name already exists.";
+                    }
+                    ;
                     return null;
                 }
             });

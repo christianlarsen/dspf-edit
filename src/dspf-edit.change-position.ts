@@ -27,15 +27,15 @@ export function changePosition(context: vscode.ExtensionContext) {
 
             // New "row"
             const newRow = await vscode.window.showInputBox({
-                title: `Set new row (1-${fileSizeAttributes.maxRow}) for ${element.name}`,
+                title: `Set new row (1-${fileSizeAttributes.maxRow1}) for ${element.name}`,
                 value: String(element.row),
                 validateInput: value => {
                     const num = Number(value);
                     if (!/^\d+$/.test(value)) {
                         return "Must be a number";
                     };
-                    if (num < 1 || num > fileSizeAttributes.maxRow) {
-                        return `Row must be between 1 and ${fileSizeAttributes.maxRow}`;
+                    if (num < 1 || num > fileSizeAttributes.maxRow1) {
+                        return `Row must be between 1 and ${fileSizeAttributes.maxRow1}`;
                     };
                     return null;
                 }
@@ -44,15 +44,15 @@ export function changePosition(context: vscode.ExtensionContext) {
 
             // New "col"
             const newCol = await vscode.window.showInputBox({
-                title: `Set new column (1-${fileSizeAttributes.maxCol}) for ${element.name}`,
+                title: `Set new column (1-${fileSizeAttributes.maxCol1}) for ${element.name}`,
                 value: String(element.column),
                 validateInput: value => {
                     const num = Number(value);
                     if (!/^\d+$/.test(value)) {
                         return "Must be a number";
                     };
-                    if (num < 1 || num > fileSizeAttributes.maxCol) {
-                        return `Row must be between 1 and ${fileSizeAttributes.maxCol}`;
+                    if (num < 1 || num > fileSizeAttributes.maxCol1) {
+                        return `Row must be between 1 and ${fileSizeAttributes.maxCol1}`;
                     };
                     return null;
                 }

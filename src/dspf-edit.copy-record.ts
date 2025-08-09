@@ -6,6 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
+import { recordExists } from './dspf-edit.helper';
 
 export function copyRecord(context: vscode.ExtensionContext) {
 
@@ -23,6 +24,7 @@ export function copyRecord(context: vscode.ExtensionContext) {
                 vscode.window.showWarningMessage("No active editor found.");
                 return;
             };
+            const document = editor.document;
 
             // New name for new record
             let newName = await vscode.window.showInputBox({
@@ -44,8 +46,9 @@ export function copyRecord(context: vscode.ExtensionContext) {
                     if (/^\d/.test(value)) {
                         return "The name cannot start with a number.";
                     };
-                    // ??? Check if name exists in other records... 
-                    // ???
+                    if (recordExists(value)) {
+                        return "Record name already exists.";
+                    };
 
                     return null;
                 }
@@ -58,8 +61,7 @@ export function copyRecord(context: vscode.ExtensionContext) {
             // Looks for last line of record to copy
             // (looks for next "R" in position 17, or end of file)
             let endLineIndex = lineIndex;
-            const document = editor.document;
-
+            
             for (let i = lineIndex+1; i < document.lineCount; i++) {
                 const line = document.lineAt(i).text;
         

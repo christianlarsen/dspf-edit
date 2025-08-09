@@ -79,7 +79,7 @@ function editField(context) {
                 ;
                 const col = element.column ?? 1;
                 const totalLength = value.length + 2;
-                if (col + totalLength - 1 > dspf_edit_model_1.fileSizeAttributes.maxCol) {
+                if (col + totalLength - 1 > dspf_edit_model_1.fileSizeAttributes.maxCol1) {
                     return "Text too long for screen size.";
                 }
                 ;

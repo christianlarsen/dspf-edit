@@ -9,6 +9,8 @@ exports.formatDdsAttributes = formatDdsAttributes;
 exports.findEndLineIndex = findEndLineIndex;
 exports.isDdsFile = isDdsFile;
 exports.parseSize = parseSize;
+exports.recordExists = recordExists;
+const dspf_edit_model_1 = require("./dspf-edit.model");
 // Describes a "field" (returns row and column)
 function describeDdsField(field) {
     if (field.kind !== 'field')
@@ -103,6 +105,15 @@ function parseSize(newSize) {
     const length = parseInt(intPart, 10);
     const decimals = decPart ? parseInt(decPart, 10) : 0;
     return { length, decimals };
+}
+;
+function recordExists(recordName) {
+    let exists = false;
+    if (dspf_edit_model_1.records.includes(recordName.toUpperCase())) {
+        exists = true;
+    }
+    ;
+    return exists;
 }
 ;
 //# sourceMappingURL=dspf-edit.helper.js.map

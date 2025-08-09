@@ -40,6 +40,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.copyRecord = copyRecord;
 const vscode = __importStar(require("vscode"));
+const dspf_edit_helper_1 = require("./dspf-edit.helper");
 function copyRecord(context) {
     context.subscriptions.push(vscode.commands.registerCommand("dspf-edit.copy-record", async (node) => {
         const element = node.ddsElement;
@@ -54,6 +55,7 @@ function copyRecord(context) {
             return;
         }
         ;
+        const document = editor.document;
         // New name for new record
         let newName = await vscode.window.showInputBox({
             title: `Set new record name`,
@@ -79,8 +81,10 @@ function copyRecord(context) {
                     return "The name cannot start with a number.";
                 }
                 ;
-                // ??? Check if name exists in other records... 
-                // ???
+                if ((0, dspf_edit_helper_1.recordExists)(value)) {
+                    return "Record name already exists.";
+                }
+                ;
                 return null;
             }
         });
@@ -92,7 +96,6 @@ function copyRecord(context) {
         // Looks for last line of record to copy
         // (looks for next "R" in position 17, or end of file)
         let endLineIndex = lineIndex;
-        const document = editor.document;
         for (let i = lineIndex + 1; i < document.lineCount; i++) {
             const line = document.lineAt(i).text;
             const newRecordFound = line.startsWith("     A") &&

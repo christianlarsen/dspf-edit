@@ -4,7 +4,7 @@
     dspf-edit.helper.ts
 */
 import * as vscode from 'vscode';
-import { DdsElement, DdsIndicator, DdsFile, DdsAttribute, fileSizeAttributes } from './dspf-edit.model';
+import { DdsElement, DdsIndicator, DdsAttribute, records } from './dspf-edit.model';
 
 
 // Describes a "field" (returns row and column)
@@ -107,3 +107,13 @@ export function parseSize(newSize: string): { length: number, decimals: number }
     return { length, decimals };
 };
 
+export function recordExists(recordName : string) : boolean {
+
+    let exists : boolean = false;
+
+    if (records.includes(recordName.toUpperCase())) {
+        exists = true;
+    };
+    return exists;
+
+};

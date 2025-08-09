@@ -57,7 +57,7 @@ function changePosition(context) {
         ;
         // New "row"
         const newRow = await vscode.window.showInputBox({
-            title: `Set new row (1-${dspf_edit_model_1.fileSizeAttributes.maxRow}) for ${element.name}`,
+            title: `Set new row (1-${dspf_edit_model_1.fileSizeAttributes.maxRow1}) for ${element.name}`,
             value: String(element.row),
             validateInput: value => {
                 const num = Number(value);
@@ -65,8 +65,8 @@ function changePosition(context) {
                     return "Must be a number";
                 }
                 ;
-                if (num < 1 || num > dspf_edit_model_1.fileSizeAttributes.maxRow) {
-                    return `Row must be between 1 and ${dspf_edit_model_1.fileSizeAttributes.maxRow}`;
+                if (num < 1 || num > dspf_edit_model_1.fileSizeAttributes.maxRow1) {
+                    return `Row must be between 1 and ${dspf_edit_model_1.fileSizeAttributes.maxRow1}`;
                 }
                 ;
                 return null;
@@ -76,7 +76,7 @@ function changePosition(context) {
             return;
         // New "col"
         const newCol = await vscode.window.showInputBox({
-            title: `Set new column (1-${dspf_edit_model_1.fileSizeAttributes.maxCol}) for ${element.name}`,
+            title: `Set new column (1-${dspf_edit_model_1.fileSizeAttributes.maxCol1}) for ${element.name}`,
             value: String(element.column),
             validateInput: value => {
                 const num = Number(value);
@@ -84,8 +84,8 @@ function changePosition(context) {
                     return "Must be a number";
                 }
                 ;
-                if (num < 1 || num > dspf_edit_model_1.fileSizeAttributes.maxCol) {
-                    return `Row must be between 1 and ${dspf_edit_model_1.fileSizeAttributes.maxCol}`;
+                if (num < 1 || num > dspf_edit_model_1.fileSizeAttributes.maxCol1) {
+                    return `Row must be between 1 and ${dspf_edit_model_1.fileSizeAttributes.maxCol1}`;
                 }
                 ;
                 return null;

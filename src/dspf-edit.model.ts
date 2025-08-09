@@ -108,11 +108,23 @@ export interface DdsGroup {
 };
 
 interface DdsSizeAttributes {
-  maxRow: number,
-  maxCol: number
+  numDsply : number,
+  maxRow1: number,
+  maxCol1: number,
+  nameDsply1 : string,
+  maxRow2: number,
+  maxCol2: number
+  nameDsply2 : string
 };
 
 export let fileSizeAttributes: DdsSizeAttributes = {
-  maxRow: 0,
-  maxCol: 0
+  numDsply : 0,
+  maxRow1: 0,
+  maxCol1: 0,
+  nameDsply1 : '',
+  maxRow2: 0,
+  maxCol2: 0,
+  nameDsply2 : ''
 };
+
+export let records : string[] = [];

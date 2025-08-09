@@ -32,10 +32,10 @@ export function centerPosition(context: vscode.ExtensionContext) {
             // New "col"
             switch(element.kind) {
                 case 'constant' :
-                    newCol = Math.floor((fileSizeAttributes.maxCol - element.name.length) / 2) + 1;
+                    newCol = Math.floor((fileSizeAttributes.maxCol1 - element.name.length) / 2) + 1;
                     break;
                 case 'field' :
-                    newCol = Math.floor((fileSizeAttributes.maxCol - element.length) / 2) + 1;
+                    newCol = Math.floor((fileSizeAttributes.maxCol1 - element.length) / 2) + 1;
                     break;
             }
             if (newCol < 1) {

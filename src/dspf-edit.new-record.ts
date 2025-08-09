@@ -6,6 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
+import { recordExists } from './dspf-edit.helper';
 
 export function newRecord(context: vscode.ExtensionContext) {
 
@@ -41,8 +42,9 @@ export function newRecord(context: vscode.ExtensionContext) {
                     if (/^\d/.test(value)) {
                         return "The name cannot start with a number.";
                     };
-                    // ??? Check if name exists in other records... 
-                    // ???
+                    if (recordExists(value)) {
+                        return "Record name already exists.";
+                    };
 
                     return null;
                 }
@@ -120,10 +122,11 @@ export function newRecord(context: vscode.ExtensionContext) {
                         };
                         if (/^\d/.test(value)) {
                             return "The name cannot start with a number.";
+                        };                    
+                        if (recordExists(value)) {
+                            return "Record name already exists.";
                         };
-                        // ??? Check if name exists in other records... 
-                        // ???
-
+    
                         return null;
                     }
                 });
