@@ -62,7 +62,7 @@ export function parseDocument(text: string): DdsElement[] {
                                 name: el.name,
                                 row: el.row ? el.row : 0,      
                                 col: el.column ? el.column : 0,     
-                                length: el.length
+                                length: el.length ? el.length : 0
                             });
                         };
                     }
@@ -173,6 +173,7 @@ function parseDdsLine(lines: string[], lineIndex: number): { element: DdsElement
         const decimals = trimmed.substring(30, 32) !== ' ' ? Number(trimmed.substring(30, 32).trim()) : 0;
         const usage = trimmed[32] !== ' ' ? trimmed[32] : ' ';
         const isHidden = trimmed[32] === 'H';
+        const isReferenced = trimmed[23] === 'R';
         const { attributes, nextIndex } = extractAttributes('F', lines, lineIndex, true, indicators);
         return {
             element: {
@@ -185,6 +186,7 @@ function parseDdsLine(lines: string[], lineIndex: number): { element: DdsElement
                 row: isHidden ? undefined : row,
                 column: isHidden ? undefined : col,
                 hidden: isHidden,
+                referenced : isReferenced,
                 lineIndex: lineIndex,
                 attributes: attributes ? attributes : [],
                 indicators: indicators || undefined,

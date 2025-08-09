@@ -18,7 +18,10 @@ export function centerPosition(context: vscode.ExtensionContext) {
                 vscode.window.showWarningMessage("Only fields and constants can be centered.");
                 return;
             };
-
+            if (element.kind === "field" && element.referenced === true) {
+                vscode.window.showWarningMessage("Referenced fields cannot be centered.");
+                return;
+            };
             const editor = vscode.window.activeTextEditor;
             if (!editor) {
                 vscode.window.showWarningMessage("No active editor found.");
@@ -35,10 +38,14 @@ export function centerPosition(context: vscode.ExtensionContext) {
                     newCol = Math.floor((fileSizeAttributes.maxCol1 - element.name.length) / 2) + 1;
                     break;
                 case 'field' :
-                    newCol = Math.floor((fileSizeAttributes.maxCol1 - element.length) / 2) + 1;
+                    if (element.length) {
+                        newCol = Math.floor((fileSizeAttributes.maxCol1 - element.length) / 2) + 1;
+                    } else {
+                        newCol = element.column;
+                    }
                     break;
             }
-            if (newCol < 1) {
+            if (!newCol || newCol < 1) {
                 return;
             };
 

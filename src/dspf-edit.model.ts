@@ -31,13 +31,14 @@ export interface DdsRecord {
 export interface DdsField {
   kind: 'field';
   name: string;
-  type: string;
-  length : number;
-  decimals : number;
-  usage : string;
+  type?: string;
+  length?: number;
+  decimals?: number;
+  usage: string;
   row?: number;
   column?: number;
   hidden?: boolean;
+  referenced?: boolean;
   lineIndex: number;
   attributes?: DdsAttribute[];
   indicators?: DdsIndicator[];

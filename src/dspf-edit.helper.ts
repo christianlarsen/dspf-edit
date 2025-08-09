@@ -20,6 +20,10 @@ export function describeDdsField(field: DdsElement): string {
 
     if (field.hidden) {
         return `${sizeText}${type} (Hidden)`;
+    } else if (field.referenced) {
+        const row = field.row?.toString().padStart(2, '0') ?? '--';
+        const col = field.column?.toString().padStart(2, '0') ?? '--';
+        return `(Referenced) [${col},${row}]`;
     } else {
         const row = field.row?.toString().padStart(2, '0') ?? '--';
         const col = field.column?.toString().padStart(2, '0') ?? '--';

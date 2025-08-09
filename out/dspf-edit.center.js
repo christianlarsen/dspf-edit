@@ -49,6 +49,11 @@ function centerPosition(context) {
             return;
         }
         ;
+        if (element.kind === "field" && element.referenced === true) {
+            vscode.window.showWarningMessage("Referenced fields cannot be centered.");
+            return;
+        }
+        ;
         const editor = vscode.window.activeTextEditor;
         if (!editor) {
             vscode.window.showWarningMessage("No active editor found.");
@@ -65,10 +70,15 @@ function centerPosition(context) {
                 newCol = Math.floor((dspf_edit_model_1.fileSizeAttributes.maxCol1 - element.name.length) / 2) + 1;
                 break;
             case 'field':
-                newCol = Math.floor((dspf_edit_model_1.fileSizeAttributes.maxCol1 - element.length) / 2) + 1;
+                if (element.length) {
+                    newCol = Math.floor((dspf_edit_model_1.fileSizeAttributes.maxCol1 - element.length) / 2) + 1;
+                }
+                else {
+                    newCol = element.column;
+                }
                 break;
         }
-        if (newCol < 1) {
+        if (!newCol || newCol < 1) {
             return;
         }
         ;
