@@ -68,10 +68,12 @@
       },
       {
         "command": "dspf-edit.delete-record",
-        "title": "Delete",
-        "icon" : "debug-stop"
+        "title": "Delete"
+      },
+      {
+        "command": "dspf-edit.new-record",
+        "title": "New Record"
       }
-
     ],
     "menus": {
       "view/item/context": [
@@ -104,6 +106,11 @@
           "command": "dspf-edit.delete-record",
           "when": "view == ddsStructureView && viewItem == record",
           "group": "records_navigation1@2"
+        },
+        {
+          "command": "dspf-edit.new-record",
+          "when": "view == ddsStructureView && (viewItem == file || viewItem == record)",
+          "group": "file_navigation1@1"
         }
       ]
     }
