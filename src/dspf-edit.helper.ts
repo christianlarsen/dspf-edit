@@ -4,10 +4,9 @@
     dspf-edit.helper.ts
 */
 import * as vscode from 'vscode';
-import {
-    DdsElement, DdsIndicator, DdsAttribute, records, fieldsPerRecord, ConstantInfo, FieldInfo
-} from './dspf-edit.model';
-
+import { DdsElement, DdsIndicator, DdsAttribute, records, fieldsPerRecord, ConstantInfo, FieldInfo } from './dspf-edit.model';
+import { DdsTreeProvider } from './dspf-edit.providers';
+import { parseDocument } from './dspf-edit.parser';
 
 // Describes a "field" (returns row and column)
 export function describeDdsField(field: DdsElement): string {
@@ -145,3 +144,22 @@ export function findOverlapsInRecord(record: fieldsPerRecord) {
     }
     return overlaps;
 };
+
+export function updateTreeProvider(treeProvider: DdsTreeProvider, document?: vscode.TextDocument) {
+	try {
+		if (document && isDdsFile(document)) {
+			const text = document.getText();
+			const elements = parseDocument(text);
+			treeProvider.setElements(elements);
+		} else {
+			treeProvider.setElements([]);
+		};
+		treeProvider.refresh();
+	} catch (error) {
+		console.error('Error updating DDS tree:', error);
+		vscode.window.showErrorMessage('Error parsing DDS file');
+		treeProvider.setElements([]);
+		treeProvider.refresh();
+	};
+};
+

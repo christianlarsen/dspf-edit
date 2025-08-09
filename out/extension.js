@@ -53,6 +53,8 @@ const dspf_edit_generate_structure_1 = require("./dspf-edit.generate-structure")
 const dspf_edit_copy_record_1 = require("./dspf-edit.copy-record");
 const dspf_edit_delete_record_1 = require("./dspf-edit.delete-record");
 const dspf_edit_new_record_1 = require("./dspf-edit.new-record");
+// Variable para el timeout del debounce
+let updateTimeout;
 // Activate extension
 function activate(context) {
     // Registers the tree data provider
@@ -62,49 +64,98 @@ function activate(context) {
     (0, dspf_edit_generate_structure_1.generateStructure)(treeProvider);
     // If the document changes, the extension re-generates the DDS structure
     context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(event => {
-        if (event.document === vscode.window.activeTextEditor?.document &&
-            (0, dspf_edit_helper_1.isDdsFile)(event.document)) {
-            const text = event.document.getText();
-            treeProvider.setElements((0, dspf_edit_parser_1.parseDocument)(text));
-            treeProvider.refresh();
+        if (event.document === vscode.window.activeTextEditor?.document) {
+            debounceUpdate(treeProvider, event.document);
         }
-        else {
-            treeProvider.setElements([]);
-            treeProvider.refresh();
-        }
-        ;
     }));
     // If user changes active editor, the extension re-generates the DDS structure
     context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(editor => {
-        if (editor && (0, dspf_edit_helper_1.isDdsFile)(editor.document)) {
-            const text = editor.document.getText();
-            treeProvider.setElements((0, dspf_edit_parser_1.parseDocument)(text));
-            treeProvider.refresh();
+        debounceUpdate(treeProvider, editor?.document);
+    }));
+    ;
+    const commands = [
+        { name: 'viewStructure', handler: dspf_edit_view_structure_1.viewStructure, needsTreeProvider: true },
+        { name: 'editConstant', handler: dspf_edit_edit_constant_1.editConstant, needsTreeProvider: false },
+        { name: 'editField', handler: dspf_edit_edit_field_1.editField, needsTreeProvider: false },
+        { name: 'changePosition', handler: dspf_edit_change_position_1.changePosition, needsTreeProvider: false },
+        { name: 'centerPosition', handler: dspf_edit_center_1.centerPosition, needsTreeProvider: false },
+        { name: 'copyRecord', handler: dspf_edit_copy_record_1.copyRecord, needsTreeProvider: false },
+        { name: 'deleteRecord', handler: dspf_edit_delete_record_1.deleteRecord, needsTreeProvider: false },
+        { name: 'newRecord', handler: dspf_edit_new_record_1.newRecord, needsTreeProvider: false }
+    ];
+    // Register all commands
+    commands.forEach(cmd => {
+        if (cmd.needsTreeProvider) {
+            cmd.handler(context, treeProvider);
+        }
+        else {
+            cmd.handler(context);
+        }
+    });
+    /*
+        // "View-Structure" command
+        viewStructure(context, treeProvider);
+    
+        // "Edit-Constant" command
+        editConstant(context);
+    
+        // "Edit-Field" command
+        editField(context);
+    
+        // "Change-Position" command
+        changePosition(context);
+    
+        // "Center" command
+        centerPosition(context);
+    
+        // "Copy-Record" command
+        copyRecord(context);
+    
+        // "Delete-Record" command
+        deleteRecord(context);
+    
+        // "New-Record" command
+        newRecord(context);
+    */
+}
+;
+function deactivate() {
+    if (updateTimeout) {
+        clearTimeout(updateTimeout);
+        updateTimeout = undefined;
+    }
+    ;
+}
+;
+function debounceUpdate(treeProvider, document) {
+    if (updateTimeout) {
+        clearTimeout(updateTimeout);
+    }
+    updateTimeout = setTimeout(() => {
+        updateTreeProvider(treeProvider, document);
+    }, 150);
+}
+;
+function updateTreeProvider(treeProvider, document) {
+    try {
+        if (document && (0, dspf_edit_helper_1.isDdsFile)(document)) {
+            const text = document.getText();
+            const elements = (0, dspf_edit_parser_1.parseDocument)(text);
+            treeProvider.setElements(elements);
         }
         else {
             treeProvider.setElements([]);
-            treeProvider.refresh();
         }
         ;
-    }));
-    // Commands
-    // "View-Structure" command
-    (0, dspf_edit_view_structure_1.viewStructure)(context, treeProvider);
-    // "Edit-Constant" command
-    (0, dspf_edit_edit_constant_1.editConstant)(context);
-    // "Edit-Field" command
-    (0, dspf_edit_edit_field_1.editField)(context);
-    // "Change-Position" command
-    (0, dspf_edit_change_position_1.changePosition)(context);
-    // "Center" command
-    (0, dspf_edit_center_1.centerPosition)(context);
-    // "Copy-Record" command
-    (0, dspf_edit_copy_record_1.copyRecord)(context);
-    // "Delete-Record" command
-    (0, dspf_edit_delete_record_1.deleteRecord)(context);
-    // "New-Record" command
-    (0, dspf_edit_new_record_1.newRecord)(context);
+        treeProvider.refresh();
+    }
+    catch (error) {
+        console.error('Error updating DDS tree:', error);
+        vscode.window.showErrorMessage('Error parsing DDS file');
+        treeProvider.setElements([]);
+        treeProvider.refresh();
+    }
+    ;
 }
 ;
-function deactivate() { }
 //# sourceMappingURL=extension.js.map
