@@ -5,8 +5,6 @@
 */
 
 import { DdsElement, DdsRecord, DdsIndicator, DdsFile, DdsAttribute, fileSizeAttributes, records, fieldsPerRecords } from './dspf-edit.model';
-import { findOverlapsInRecord } from './dspf-edit.helper';
-import * as vscode from 'vscode';
 
 export function parseDocument(text: string): DdsElement[] {
     const lines = text.split(/\r?\n/);
@@ -123,6 +121,8 @@ export function parseDocument(text: string): DdsElement[] {
             };
         };
     };
+    /* Pending TODO
+    // - Check indicators!!
 
     for (const rec of fieldsPerRecords) {
         const overlaps = findOverlapsInRecord(rec);
@@ -130,6 +130,7 @@ export function parseDocument(text: string): DdsElement[] {
             vscode.window.showWarningMessage(`Overlaping found on ${rec.record}`);
         };
     };
+    */
 
     return ddsElements.filter(el => el.kind !== 'attribute');
 };
