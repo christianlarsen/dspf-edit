@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { DdsElement, DdsGroup } from './dspf-edit.model';
-import { describeDdsField, describeDdsConstant, describeDdsRecord, describeDdsFile, formatDdsIndicators } from './dspf-edit.helper';
+import { describeDdsField, describeDdsConstant, describeDdsRecord, describeDdsFile, formatDdsIndicators, goToLine } from './dspf-edit.helper';
 
 export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 	private _onDidChangeTreeData: vscode.EventEmitter<DdsNode | undefined | void> = new vscode.EventEmitter<DdsNode | undefined | void>();
@@ -343,6 +343,23 @@ export class DdsNode extends vscode.TreeItem {
 		this.tooltip = this.getTooltip(ddsElement);
 		this.description = this.getDescription(ddsElement);
 		this.contextValue = ddsElement.kind;
+
+		if (this.shouldHaveNavigationCommand(ddsElement)) {
+			this.command = {
+				command: 'ddsEdit.goToLine',
+				title: `Go to ${ddsElement.kind}`,
+				arguments: [ddsElement.lineIndex + 1]
+			};
+		}
+	};
+
+	private shouldHaveNavigationCommand(ddsElement: DdsElement): boolean {
+		return (
+			ddsElement.lineIndex !== undefined && 
+			(ddsElement.kind === 'record' || 
+			 ddsElement.kind === 'field' || 
+			 ddsElement.kind === 'constant')
+		);
 	};
 
 	// Get description of the "node"

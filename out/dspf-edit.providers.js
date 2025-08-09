@@ -282,6 +282,20 @@ class DdsNode extends vscode.TreeItem {
         this.tooltip = this.getTooltip(ddsElement);
         this.description = this.getDescription(ddsElement);
         this.contextValue = ddsElement.kind;
+        if (this.shouldHaveNavigationCommand(ddsElement)) {
+            this.command = {
+                command: 'ddsEdit.goToLine',
+                title: `Go to ${ddsElement.kind}`,
+                arguments: [ddsElement.lineIndex + 1]
+            };
+        }
+    }
+    ;
+    shouldHaveNavigationCommand(ddsElement) {
+        return (ddsElement.lineIndex !== undefined &&
+            (ddsElement.kind === 'record' ||
+                ddsElement.kind === 'field' ||
+                ddsElement.kind === 'constant'));
     }
     ;
     // Get description of the "node"

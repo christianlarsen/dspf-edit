@@ -41,8 +41,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
-const dspf_edit_parser_1 = require("./dspf-edit.parser");
-const dspf_edit_helper_1 = require("./dspf-edit.helper");
 const dspf_edit_providers_1 = require("./dspf-edit.providers");
 const dspf_edit_change_position_1 = require("./dspf-edit.change-position");
 const dspf_edit_center_1 = require("./dspf-edit.center");
@@ -53,7 +51,7 @@ const dspf_edit_generate_structure_1 = require("./dspf-edit.generate-structure")
 const dspf_edit_copy_record_1 = require("./dspf-edit.copy-record");
 const dspf_edit_delete_record_1 = require("./dspf-edit.delete-record");
 const dspf_edit_new_record_1 = require("./dspf-edit.new-record");
-// Variable para el timeout del debounce
+const dspf_edit_helper_1 = require("./dspf-edit.helper");
 let updateTimeout;
 // Activate extension
 function activate(context) {
@@ -92,31 +90,17 @@ function activate(context) {
             cmd.handler(context);
         }
     });
-    /*
-        // "View-Structure" command
-        viewStructure(context, treeProvider);
-    
-        // "Edit-Constant" command
-        editConstant(context);
-    
-        // "Edit-Field" command
-        editField(context);
-    
-        // "Change-Position" command
-        changePosition(context);
-    
-        // "Center" command
-        centerPosition(context);
-    
-        // "Copy-Record" command
-        copyRecord(context);
-    
-        // "Delete-Record" command
-        deleteRecord(context);
-    
-        // "New-Record" command
-        newRecord(context);
-    */
+    const goToLineCommand = vscode.commands.registerCommand('ddsEdit.goToLine', (lineNumber) => {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            vscode.window.showErrorMessage('No hay editor activo');
+            return;
+        }
+        const position = new vscode.Position(lineNumber - 1, 0);
+        editor.selection = new vscode.Selection(position, position);
+        editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+    });
+    context.subscriptions.push(goToLineCommand);
 }
 ;
 function deactivate() {
@@ -132,30 +116,8 @@ function debounceUpdate(treeProvider, document) {
         clearTimeout(updateTimeout);
     }
     updateTimeout = setTimeout(() => {
-        updateTreeProvider(treeProvider, document);
+        (0, dspf_edit_helper_1.updateTreeProvider)(treeProvider, document);
     }, 150);
-}
-;
-function updateTreeProvider(treeProvider, document) {
-    try {
-        if (document && (0, dspf_edit_helper_1.isDdsFile)(document)) {
-            const text = document.getText();
-            const elements = (0, dspf_edit_parser_1.parseDocument)(text);
-            treeProvider.setElements(elements);
-        }
-        else {
-            treeProvider.setElements([]);
-        }
-        ;
-        treeProvider.refresh();
-    }
-    catch (error) {
-        console.error('Error updating DDS tree:', error);
-        vscode.window.showErrorMessage('Error parsing DDS file');
-        treeProvider.setElements([]);
-        treeProvider.refresh();
-    }
-    ;
 }
 ;
 //# sourceMappingURL=extension.js.map

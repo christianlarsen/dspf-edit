@@ -146,20 +146,32 @@ export function findOverlapsInRecord(record: fieldsPerRecord) {
 };
 
 export function updateTreeProvider(treeProvider: DdsTreeProvider, document?: vscode.TextDocument) {
-	try {
-		if (document && isDdsFile(document)) {
-			const text = document.getText();
-			const elements = parseDocument(text);
-			treeProvider.setElements(elements);
-		} else {
-			treeProvider.setElements([]);
-		};
-		treeProvider.refresh();
-	} catch (error) {
-		console.error('Error updating DDS tree:', error);
-		vscode.window.showErrorMessage('Error parsing DDS file');
-		treeProvider.setElements([]);
-		treeProvider.refresh();
-	};
+    try {
+        if (document && isDdsFile(document)) {
+            const text = document.getText();
+            const elements = parseDocument(text);
+            treeProvider.setElements(elements);
+        } else {
+            treeProvider.setElements([]);
+        };
+        treeProvider.refresh();
+    } catch (error) {
+        console.error('Error updating DDS tree:', error);
+        vscode.window.showErrorMessage('Error parsing DDS file');
+        treeProvider.setElements([]);
+        treeProvider.refresh();
+    };
 };
 
+export function goToLine(lineNumber: number): void {
+    const editor = vscode.window.activeTextEditor;
+
+    if (!editor) {
+        vscode.window.showErrorMessage('No active editor.');
+        return;
+    };
+
+    const position = new vscode.Position(lineNumber - 1, 0);
+    editor.selection = new vscode.Selection(position, position);
+    editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+};
