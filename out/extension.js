@@ -51,6 +51,7 @@ const dspf_edit_generate_structure_1 = require("./dspf-edit.generate-structure")
 const dspf_edit_copy_record_1 = require("./dspf-edit.copy-record");
 const dspf_edit_delete_record_1 = require("./dspf-edit.delete-record");
 const dspf_edit_new_record_1 = require("./dspf-edit.new-record");
+const dspf_edit_goto_line_1 = require("./dspf-edit.goto-line");
 const dspf_edit_helper_1 = require("./dspf-edit.helper");
 let updateTimeout;
 // Activate extension
@@ -79,7 +80,8 @@ function activate(context) {
         { name: 'centerPosition', handler: dspf_edit_center_1.centerPosition, needsTreeProvider: false },
         { name: 'copyRecord', handler: dspf_edit_copy_record_1.copyRecord, needsTreeProvider: false },
         { name: 'deleteRecord', handler: dspf_edit_delete_record_1.deleteRecord, needsTreeProvider: false },
-        { name: 'newRecord', handler: dspf_edit_new_record_1.newRecord, needsTreeProvider: false }
+        { name: 'newRecord', handler: dspf_edit_new_record_1.newRecord, needsTreeProvider: false },
+        { name: 'goToLine', handler: dspf_edit_goto_line_1.goToLineHandler, needsTreeProvider: false }
     ];
     // Register all commands
     commands.forEach(cmd => {
@@ -90,17 +92,6 @@ function activate(context) {
             cmd.handler(context);
         }
     });
-    const goToLineCommand = vscode.commands.registerCommand('ddsEdit.goToLine', (lineNumber) => {
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-            vscode.window.showErrorMessage('No hay editor activo');
-            return;
-        }
-        const position = new vscode.Position(lineNumber - 1, 0);
-        editor.selection = new vscode.Selection(position, position);
-        editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
-    });
-    context.subscriptions.push(goToLineCommand);
 }
 ;
 function deactivate() {
