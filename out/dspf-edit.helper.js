@@ -10,6 +10,7 @@ exports.findEndLineIndex = findEndLineIndex;
 exports.isDdsFile = isDdsFile;
 exports.parseSize = parseSize;
 exports.recordExists = recordExists;
+exports.findOverlapsInRecord = findOverlapsInRecord;
 const dspf_edit_model_1 = require("./dspf-edit.model");
 // Describes a "field" (returns row and column)
 function describeDdsField(field) {
@@ -114,6 +115,28 @@ function recordExists(recordName) {
     }
     ;
     return exists;
+}
+;
+function findOverlapsInRecord(record) {
+    const overlaps = [];
+    const elements = [
+        ...record.fields.map(f => ({ ...f, kind: "field" })),
+        ...record.constants.map(c => ({ ...c, kind: "constant" }))
+    ];
+    for (let i = 0; i < elements.length; i++) {
+        for (let j = i + 1; j < elements.length; j++) {
+            const e1 = elements[i];
+            const e2 = elements[j];
+            if (e1.row === e2.row) {
+                const e1End = e1.col + e1.length - 1;
+                const e2End = e2.col + e2.length - 1;
+                if (e1.col <= e2End && e2.col <= e1End) {
+                    overlaps.push({ a: e1, b: e2 });
+                }
+            }
+        }
+    }
+    return overlaps;
 }
 ;
 //# sourceMappingURL=dspf-edit.helper.js.map

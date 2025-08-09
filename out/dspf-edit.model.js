@@ -5,7 +5,7 @@
   dspf-edit.model.ts
 */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.records = exports.fileSizeAttributes = void 0;
+exports.fieldsPerRecords = exports.records = exports.fileSizeAttributes = void 0;
 ;
 ;
 ;
@@ -27,5 +27,9 @@ exports.fileSizeAttributes = {
     maxCol2: 0,
     nameDsply2: ''
 };
+;
+;
+;
 exports.records = [];
+exports.fieldsPerRecords = [];
 //# sourceMappingURL=dspf-edit.model.js.map

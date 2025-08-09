@@ -4,12 +4,15 @@
     dspf-edit.parser.ts
 */
 
-import { DdsElement, DdsIndicator, DdsFile, DdsAttribute, fileSizeAttributes, records } from './dspf-edit.model';
+import { DdsElement, DdsRecord, DdsIndicator, DdsFile, DdsAttribute, fileSizeAttributes, records, fieldsPerRecords } from './dspf-edit.model';
+import { findOverlapsInRecord } from './dspf-edit.helper';
+import * as vscode from 'vscode';
 
 export function parseDocument(text: string): DdsElement[] {
     const lines = text.split(/\r?\n/);
     const ddsElements: DdsElement[] = [];
     records.length = 0;
+    fieldsPerRecords.length = 0;
 
     // Adds element 'file' as root
     const file: DdsFile = {
@@ -42,6 +45,44 @@ export function parseDocument(text: string): DdsElement[] {
         };
     };
 
+    // Let's put the fields and constants with their "parents" (in the fieldsPerRecords structure)
+    for (const el of ddsElements) {
+        if ((el.kind === 'field' && el.hidden != true) || el.kind === 'constant') {
+            const parentRecord = [...ddsElements]
+                .reverse()
+                .find(p =>
+                    p.lineIndex < el.lineIndex &&
+                    p.kind === 'record'
+                ) as DdsRecord | undefined;
+
+            if (parentRecord) {
+                const recordEntry = fieldsPerRecords.find(r => r.record === parentRecord.name);
+                if (recordEntry) {
+                    if (el.kind === 'field') {
+                        if (!recordEntry.fields.some(field => field.name === el.name)) {
+                            recordEntry.fields.push({
+                                name: el.name,
+                                row: el.row ? el.row : 0,      
+                                col: el.column ? el.column : 0,     
+                                length: el.length
+                            });
+                        };
+                    }
+                    else if (el.kind === 'constant') {
+                        if (!recordEntry.constants.some(constant => constant.name === el.name)) {
+                            recordEntry.constants.push({
+                                name: el.name.slice(1, -1),
+                                row: el.row ? el.row : 0,
+                                col: el.column ? el.column : 0,
+                                length: el.name.slice(1, -1).length
+                            });
+                        }
+                    };
+                };
+            };
+        };
+    };
+
     if (file.attributes && file.attributes.length > 0) {
         ddsElements.push({
             kind: 'group',
@@ -59,7 +100,7 @@ export function parseDocument(text: string): DdsElement[] {
                 const inside = matchAll[1].trim();
                 const sizeRegex = /(\d+)\s+(\d+)(?:\s+([^\s)]+))?/g;
 
-                let sizes : { row : number; col : number; name : string } [] = [];
+                let sizes: { row: number; col: number; name: string }[] = [];
                 let m;
                 while ((m = sizeRegex.exec(inside)) !== null) {
                     sizes.push({
@@ -80,6 +121,13 @@ export function parseDocument(text: string): DdsElement[] {
                     fileSizeAttributes.nameDsply2 = sizes[1].name;
                 };
             };
+        };
+    };
+
+    for (const rec of fieldsPerRecords) {
+        const overlaps = findOverlapsInRecord(rec);
+        if (overlaps.length > 0) {
+            vscode.window.showWarningMessage(`Overlaping found on ${rec.record}`);
         };
     };
 
@@ -104,6 +152,7 @@ function parseDdsLine(lines: string[], lineIndex: number): { element: DdsElement
         const name = trimmed.substring(13, 23).trim();
         const { attributes, nextIndex } = extractAttributes('R', lines, lineIndex, false);
         records.push(name);
+        fieldsPerRecords.push({ record: name, fields: [], constants: [] });
 
         return {
             element: {
@@ -120,7 +169,7 @@ function parseDdsLine(lines: string[], lineIndex: number): { element: DdsElement
     if (fieldName) {
         const type = trimmed[29];
         const length = Number(trimmed.substring(27, 29).trim());
-        const decimals = trimmed.substring(30,32) !== ' ' ? Number(trimmed.substring(30, 32).trim()) : 0;
+        const decimals = trimmed.substring(30, 32) !== ' ' ? Number(trimmed.substring(30, 32).trim()) : 0;
         const usage = trimmed[32] !== ' ' ? trimmed[32] : ' ';
         const isHidden = trimmed[32] === 'H';
         const { attributes, nextIndex } = extractAttributes('F', lines, lineIndex, true, indicators);
@@ -129,12 +178,12 @@ function parseDdsLine(lines: string[], lineIndex: number): { element: DdsElement
                 kind: 'field',
                 name: fieldName,
                 type: type,
-                length : length,
-                decimals : decimals,
-                usage : usage,
+                length: length,
+                decimals: decimals,
+                usage: usage,
                 row: isHidden ? undefined : row,
                 column: isHidden ? undefined : col,
-                hidden : isHidden,
+                hidden: isHidden,
                 lineIndex: lineIndex,
                 attributes: attributes ? attributes : [],
                 indicators: indicators || undefined,
@@ -145,7 +194,7 @@ function parseDdsLine(lines: string[], lineIndex: number): { element: DdsElement
 
     // "Constant"
     if (!fieldName && row && col) {
-        let fullValue = trimmed.substring(39, 79); 
+        let fullValue = trimmed.substring(39, 79);
         let continuationIndex = lineIndex;
 
         while (lines[continuationIndex].charAt(79) === '-') {

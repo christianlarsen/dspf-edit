@@ -127,4 +127,25 @@ export let fileSizeAttributes: DdsSizeAttributes = {
   nameDsply2 : ''
 };
 
+export interface FieldInfo {
+  name: string;
+  row: number;
+  col: number;
+  length: number;
+};
+
+export interface ConstantInfo {
+  name: string;
+  row: number;
+  col: number;
+  length: number;
+};
+
+export interface fieldsPerRecord {
+  record: string;
+  fields: FieldInfo[];
+  constants: ConstantInfo[];
+};
+
 export let records : string[] = [];
+export let fieldsPerRecords : fieldsPerRecord[] = [];

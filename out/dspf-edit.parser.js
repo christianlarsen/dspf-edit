@@ -4,15 +4,51 @@
     "RPG structure"
     dspf-edit.parser.ts
 */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parseDocument = parseDocument;
 exports.parseDdsIndicators = parseDdsIndicators;
 exports.getAllDdsElements = getAllDdsElements;
 const dspf_edit_model_1 = require("./dspf-edit.model");
+const dspf_edit_helper_1 = require("./dspf-edit.helper");
+const vscode = __importStar(require("vscode"));
 function parseDocument(text) {
     const lines = text.split(/\r?\n/);
     const ddsElements = [];
     dspf_edit_model_1.records.length = 0;
+    dspf_edit_model_1.fieldsPerRecords.length = 0;
     // Adds element 'file' as root
     const file = {
         kind: 'file',
@@ -38,6 +74,46 @@ function parseDocument(text) {
                 (p.kind === 'field' || p.kind === 'constant' || p.kind === 'record' || p.kind === 'file'));
             if (parent) {
                 parent.attributes = [...(parent.attributes || []), ...(el.attributes || [])];
+            }
+            ;
+        }
+        ;
+    }
+    ;
+    // Let's put the fields and constants with their "parents" (in the fieldsPerRecords structure)
+    for (const el of ddsElements) {
+        if ((el.kind === 'field' && el.hidden != true) || el.kind === 'constant') {
+            const parentRecord = [...ddsElements]
+                .reverse()
+                .find(p => p.lineIndex < el.lineIndex &&
+                p.kind === 'record');
+            if (parentRecord) {
+                const recordEntry = dspf_edit_model_1.fieldsPerRecords.find(r => r.record === parentRecord.name);
+                if (recordEntry) {
+                    if (el.kind === 'field') {
+                        if (!recordEntry.fields.some(field => field.name === el.name)) {
+                            recordEntry.fields.push({
+                                name: el.name,
+                                row: el.row ? el.row : 0,
+                                col: el.column ? el.column : 0,
+                                length: el.length
+                            });
+                        }
+                        ;
+                    }
+                    else if (el.kind === 'constant') {
+                        if (!recordEntry.constants.some(constant => constant.name === el.name)) {
+                            recordEntry.constants.push({
+                                name: el.name.slice(1, -1),
+                                row: el.row ? el.row : 0,
+                                col: el.column ? el.column : 0,
+                                length: el.name.slice(1, -1).length
+                            });
+                        }
+                    }
+                    ;
+                }
+                ;
             }
             ;
         }
@@ -88,6 +164,14 @@ function parseDocument(text) {
         ;
     }
     ;
+    for (const rec of dspf_edit_model_1.fieldsPerRecords) {
+        const overlaps = (0, dspf_edit_helper_1.findOverlapsInRecord)(rec);
+        if (overlaps.length > 0) {
+            vscode.window.showWarningMessage(`Overlaping found on ${rec.record}`);
+        }
+        ;
+    }
+    ;
     return ddsElements.filter(el => el.kind !== 'attribute');
 }
 ;
@@ -107,6 +191,7 @@ function parseDdsLine(lines, lineIndex) {
         const name = trimmed.substring(13, 23).trim();
         const { attributes, nextIndex } = extractAttributes('R', lines, lineIndex, false);
         dspf_edit_model_1.records.push(name);
+        dspf_edit_model_1.fieldsPerRecords.push({ record: name, fields: [], constants: [] });
         return {
             element: {
                 kind: 'record',
