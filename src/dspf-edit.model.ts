@@ -40,6 +40,7 @@ export interface DdsField {
   hidden?: boolean;
   referenced?: boolean;
   lineIndex: number;
+  recordname : string;
   attributes?: DdsAttribute[];
   indicators?: DdsIndicator[];
 };
@@ -52,13 +53,13 @@ export interface DdsFieldAttribute {
   attributes?: DdsAttribute[];
 };
 
-
 export interface DdsConstant {
   kind: 'constant';
   name: string;
   row: number;
   column: number;
   lineIndex: number;
+  recordname: string;
   attributes?: DdsAttribute[];
   indicators?: DdsIndicator[];
 };
@@ -133,6 +134,7 @@ export interface FieldInfo {
   row: number;
   col: number;
   length: number;
+  attributes: string[];
 };
 
 export interface ConstantInfo {
@@ -140,6 +142,7 @@ export interface ConstantInfo {
   row: number;
   col: number;
   length: number;
+  attributes: string[];
 };
 
 export interface fieldsPerRecord {

@@ -5,10 +5,12 @@
     dspf-edit.parser.ts
 */
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.currentDdsElements = void 0;
 exports.parseDocument = parseDocument;
 exports.parseDdsIndicators = parseDdsIndicators;
 exports.getAllDdsElements = getAllDdsElements;
 const dspf_edit_model_1 = require("./dspf-edit.model");
+exports.currentDdsElements = [];
 function parseDocument(text) {
     const lines = text.split(/\r?\n/);
     const ddsElements = [];
@@ -22,11 +24,13 @@ function parseDocument(text) {
     };
     ddsElements.push(file);
     // Go through all lines and parse them
+    let record = '';
     let i = 0;
     while (i < lines.length) {
-        const { element, nextIndex } = parseDdsLine(lines, i);
+        const { element, nextIndex, lastrecord } = parseDdsLine(lines, i, record);
         if (element)
             ddsElements.push(element);
+        record = lastrecord;
         i = nextIndex + 1;
     }
     ;
@@ -46,6 +50,7 @@ function parseDocument(text) {
     }
     ;
     // Let's put the fields and constants with their "parents" (in the fieldsPerRecords structure)
+    // and the attributes with their fields and constants
     for (const el of ddsElements) {
         if ((el.kind === 'field' && el.hidden != true) || el.kind === 'constant') {
             const parentRecord = [...ddsElements]
@@ -61,7 +66,8 @@ function parseDocument(text) {
                                 name: el.name,
                                 row: el.row ? el.row : 0,
                                 col: el.column ? el.column : 0,
-                                length: el.length ? el.length : 0
+                                length: el.length ? el.length : 0,
+                                attributes: el.attributes?.map(attr => attr.value).filter(Boolean) || []
                             });
                         }
                         ;
@@ -72,9 +78,11 @@ function parseDocument(text) {
                                 name: el.name.slice(1, -1),
                                 row: el.row ? el.row : 0,
                                 col: el.column ? el.column : 0,
-                                length: el.name.slice(1, -1).length
+                                length: el.name.slice(1, -1).length,
+                                attributes: el.attributes?.map(attr => attr.value).filter(Boolean) || []
                             });
                         }
+                        ;
                     }
                     ;
                 }
@@ -139,14 +147,15 @@ function parseDocument(text) {
         };
     };
     */
+    exports.currentDdsElements = ddsElements;
     return ddsElements.filter(el => el.kind !== 'attribute');
 }
 ;
-function parseDdsLine(lines, lineIndex) {
+function parseDdsLine(lines, lineIndex, lastrecord) {
     const line = lines[lineIndex];
     const trimmed = line.substring(5);
     if (trimmed.startsWith('A*'))
-        return { element: undefined, nextIndex: lineIndex };
+        return { element: undefined, nextIndex: lineIndex, lastrecord: lastrecord };
     const indicators = parseDdsIndicators(trimmed.substring(2, 11));
     const fieldName = trimmed.substring(13, 23).trim();
     const rowText = trimmed.substring(34, 37).trim();
@@ -156,6 +165,7 @@ function parseDdsLine(lines, lineIndex) {
     // "Record"
     if (trimmed[11] === 'R') {
         const name = trimmed.substring(13, 23).trim();
+        lastrecord = name;
         const { attributes, nextIndex } = extractAttributes('R', lines, lineIndex, false);
         dspf_edit_model_1.records.push(name);
         dspf_edit_model_1.fieldsPerRecords.push({ record: name, fields: [], constants: [] });
@@ -166,7 +176,8 @@ function parseDdsLine(lines, lineIndex) {
                 name,
                 attributes
             },
-            nextIndex
+            nextIndex,
+            lastrecord
         };
     }
     ;
@@ -192,10 +203,12 @@ function parseDdsLine(lines, lineIndex) {
                 hidden: isHidden,
                 referenced: isReferenced,
                 lineIndex: lineIndex,
+                recordname: lastrecord,
                 attributes: attributes ? attributes : [],
                 indicators: indicators || undefined,
             },
-            nextIndex
+            nextIndex,
+            lastrecord
         };
     }
     ;
@@ -222,10 +235,12 @@ function parseDdsLine(lines, lineIndex) {
                 row: row,
                 column: col,
                 lineIndex: lineIndex,
+                recordname: lastrecord,
                 attributes: attributes ? attributes : [],
                 indicators: indicators
             },
-            nextIndex: continuationIndex
+            nextIndex: continuationIndex,
+            lastrecord
         };
     }
     ;
@@ -240,11 +255,12 @@ function parseDdsLine(lines, lineIndex) {
                 indicators: indicators,
                 attributes: attributes ? attributes : []
             },
-            nextIndex
+            nextIndex,
+            lastrecord
         };
     }
     ;
-    return { element: undefined, nextIndex: lineIndex };
+    return { element: undefined, nextIndex: lineIndex, lastrecord };
 }
 ;
 // Parse indicators inside a string and return DdsIndicator[]

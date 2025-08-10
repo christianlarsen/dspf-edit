@@ -6,7 +6,8 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
-import { fileSizeAttributes } from './dspf-edit.model';
+import { fileSizeAttributes, DdsRecord } from './dspf-edit.model';
+import { currentDdsElements } from './dspf-edit.parser';
 
 export function centerPosition(context: vscode.ExtensionContext) {
 
@@ -28,18 +29,24 @@ export function centerPosition(context: vscode.ExtensionContext) {
                 return;
             };
 
+            // Finds the size of the record where the field or constant is
+            // Looks for a "WINDOW" attribute in the record "element.recordname"
+            const windowSize = getRecordWindowSize(element.recordname);
+            const maxCols = windowSize.cols;
+
             // Calculates the center position of the field/constant
             // New "row" (is the same)
             const newRow = element.row;
             let newCol;
+
             // New "col"
             switch(element.kind) {
                 case 'constant' :
-                    newCol = Math.floor((fileSizeAttributes.maxCol1 - element.name.length) / 2) + 1;
+                    newCol = Math.floor((maxCols - (element.name.length - 2)) / 2) + 1;
                     break;
                 case 'field' :
                     if (element.length) {
-                        newCol = Math.floor((fileSizeAttributes.maxCol1 - element.length) / 2) + 1;
+                        newCol = Math.floor((maxCols - element.length) / 2) + 1;
                     } else {
                         newCol = element.column;
                     }
@@ -63,8 +70,35 @@ export function centerPosition(context: vscode.ExtensionContext) {
             await vscode.workspace.applyEdit(workspaceEdit);
 
             vscode.window.showInformationMessage(
-                `${element.name} centered`
+                `${element.name} centered in ${maxCols} columns`
             );
         })
     );
+};
+
+function getRecordWindowSize(recordName: string): { cols: number; rows: number } {
+
+    const recordElement = currentDdsElements.find(el => 
+        el.kind === 'record' && el.name === recordName
+    ) as DdsRecord | undefined;
+    
+    if (recordElement && recordElement.attributes) {
+        // Search for WINDOW attribute in the record attributes
+        for (const attribute of recordElement.attributes) {
+            const windowMatch = attribute.value.match(/WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\)/i);
+            if (windowMatch) {
+                // WINDOW(startRow startCol rows cols)
+                return {
+                    rows: parseInt(windowMatch[3], 10),
+                    cols: parseInt(windowMatch[4], 10)
+                };
+            };
+        };
+    };
+    
+    // If WINDOW not found, use default size
+    return {
+        rows: fileSizeAttributes.maxRow1,
+        cols: fileSizeAttributes.maxCol1
+    };
 };

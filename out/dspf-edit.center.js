@@ -41,6 +41,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.centerPosition = centerPosition;
 const vscode = __importStar(require("vscode"));
 const dspf_edit_model_1 = require("./dspf-edit.model");
+const dspf_edit_parser_1 = require("./dspf-edit.parser");
 function centerPosition(context) {
     context.subscriptions.push(vscode.commands.registerCommand("dspf-edit.center", async (node) => {
         const element = node.ddsElement;
@@ -60,6 +61,10 @@ function centerPosition(context) {
             return;
         }
         ;
+        // Finds the size of the record where the field or constant is
+        // Looks for a "WINDOW" attribute in the record "element.recordname"
+        const windowSize = getRecordWindowSize(element.recordname);
+        const maxCols = windowSize.cols;
         // Calculates the center position of the field/constant
         // New "row" (is the same)
         const newRow = element.row;
@@ -67,11 +72,11 @@ function centerPosition(context) {
         // New "col"
         switch (element.kind) {
             case 'constant':
-                newCol = Math.floor((dspf_edit_model_1.fileSizeAttributes.maxCol1 - element.name.length) / 2) + 1;
+                newCol = Math.floor((maxCols - (element.name.length - 2)) / 2) + 1;
                 break;
             case 'field':
                 if (element.length) {
-                    newCol = Math.floor((dspf_edit_model_1.fileSizeAttributes.maxCol1 - element.length) / 2) + 1;
+                    newCol = Math.floor((maxCols - element.length) / 2) + 1;
                 }
                 else {
                     newCol = element.column;
@@ -91,8 +96,33 @@ function centerPosition(context) {
         const uri = editor.document.uri;
         workspaceEdit.replace(uri, new vscode.Range(lineIndex, 0, lineIndex, line.length), updatedLine);
         await vscode.workspace.applyEdit(workspaceEdit);
-        vscode.window.showInformationMessage(`${element.name} centered`);
+        vscode.window.showInformationMessage(`${element.name} centered in ${maxCols} columns`);
     }));
+}
+;
+function getRecordWindowSize(recordName) {
+    const recordElement = dspf_edit_parser_1.currentDdsElements.find(el => el.kind === 'record' && el.name === recordName);
+    if (recordElement && recordElement.attributes) {
+        // Search for WINDOW attribute in the record attributes
+        for (const attribute of recordElement.attributes) {
+            const windowMatch = attribute.value.match(/WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\)/i);
+            if (windowMatch) {
+                // WINDOW(startRow startCol rows cols)
+                return {
+                    rows: parseInt(windowMatch[3], 10),
+                    cols: parseInt(windowMatch[4], 10)
+                };
+            }
+            ;
+        }
+        ;
+    }
+    ;
+    // If WINDOW not found, use default size
+    return {
+        rows: dspf_edit_model_1.fileSizeAttributes.maxRow1,
+        cols: dspf_edit_model_1.fileSizeAttributes.maxCol1
+    };
 }
 ;
 //# sourceMappingURL=dspf-edit.center.js.map
