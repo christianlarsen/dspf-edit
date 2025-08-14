@@ -78,7 +78,7 @@ export function addButtons(context: vscode.ExtensionContext) {
 
             for (const btn of buttons) {
                 numButton += 1;
-                const text = `${btn.key}=${btn.label}`;
+                const text = `${btn.key.toUpperCase()}=${btn.label}`;
                 
                 if (currentCol + text.length > maxCols - 1) {
                     currentRow--;
