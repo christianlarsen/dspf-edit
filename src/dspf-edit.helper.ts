@@ -4,7 +4,7 @@
     dspf-edit.helper.ts
 */
 import * as vscode from 'vscode';
-import { DdsElement, DdsIndicator, DdsAttribute, records, fieldsPerRecord, ConstantInfo, FieldInfo } from './dspf-edit.model';
+import { DdsElement, DdsIndicator, DdsAttribute, records, FieldsPerRecord, ConstantInfo, FieldInfo } from './dspf-edit.model';
 import { DdsTreeProvider } from './dspf-edit.providers';
 import { parseDocument } from './dspf-edit.parser';
 
@@ -123,7 +123,7 @@ export function recordExists(recordName: string): boolean {
 
 };
 
-export function findOverlapsInRecord(record: fieldsPerRecord) {
+export function findOverlapsInRecord(record: FieldsPerRecord) {
     const overlaps: { a: FieldInfo | ConstantInfo, b: FieldInfo | ConstantInfo }[] = [];
 
     const elements = [

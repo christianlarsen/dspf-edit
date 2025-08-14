@@ -33,7 +33,7 @@ export function centerPosition(context: vscode.ExtensionContext) {
             // Looks for a "WINDOW" attribute in the record "element.recordname"
             const windowSize = getRecordWindowSize(element.recordname);
             const maxCols = windowSize.cols;
-
+            
             // Calculates the center position of the field/constant
             // New "row" (is the same)
             const newRow = element.row;

@@ -17,6 +17,7 @@ import { deleteRecord } from './dspf-edit.delete-record';
 import { newRecord } from './dspf-edit.new-record';
 import { goToLineHandler } from './dspf-edit.goto-line';
 import { updateTreeProvider } from './dspf-edit.helper';
+import { addButtons } from './dspf-edit.add-buttons';
 
 let updateTimeout: NodeJS.Timeout | undefined;
 
@@ -61,7 +62,8 @@ export function activate(context: vscode.ExtensionContext) {
 		{ name: 'copyRecord', handler: copyRecord as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'deleteRecord', handler: deleteRecord as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'newRecord', handler: newRecord as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
-		{ name: 'goToLine', handler: goToLineHandler as (context: vscode.ExtensionContext) => void, needsTreeProvider: false }
+		{ name: 'goToLine', handler: goToLineHandler as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
+		{ name: 'addButtons', handler: addButtons as (context: vscode.ExtensionContext) => void, needsTreeProvider: false }
 	];
 
 	// Register all commands

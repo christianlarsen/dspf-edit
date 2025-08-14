@@ -4,315 +4,723 @@
     dspf-edit.parser.ts
 */
 
-import { DdsElement, DdsRecord, DdsIndicator, DdsFile, DdsAttribute, fileSizeAttributes, records, fieldsPerRecords } from './dspf-edit.model';
+import { 
+    DdsElement, 
+    DdsRecord, 
+    DdsIndicator, 
+    DdsFile, 
+    DdsAttribute, 
+    DdsSize,
+    fileSizeAttributes, 
+    records, 
+    fieldsPerRecords,
+    getDefaultSize
+} from './dspf-edit.model';
 
+
+// Global state to store current parsed DDS elements
 export let currentDdsElements: DdsElement[] = [];
 
+/**
+ * Main parser function that processes DDS document text and returns structured elements
+ * @param text - Raw DDS document text to parse
+ * @returns Array of parsed DDS elements
+ */
 export function parseDocument(text: string): DdsElement[] {
     const lines = text.split(/\r?\n/);
     const ddsElements: DdsElement[] = [];
+    
+    // Clear global state
+    clearGlobalState();
+    
+    // Initialize with root file element
+    const rootFile = createRootFileElement();
+    ddsElements.push(rootFile);
+    
+    // Parse all lines sequentially
+    const parsedElements = parseAllLines(lines);
+    ddsElements.push(...parsedElements);
+    
+    // Post-processing: establish parent-child relationships
+    linkAttributesToParents(ddsElements);
+    linkFieldsAndConstantsToRecords(ddsElements);
+    
+    // Process file-level attributes if they exist
+    processFileAttributes(rootFile, ddsElements);
+
+    // Process record sizes after all parsing is complete
+    processRecordSizes(ddsElements);
+
+    // Compute end line for each record
+    assignRecordEndIndices(ddsElements, lines.length);
+    
+    // Store globally and return filtered elements
+    currentDdsElements = ddsElements;
+    return ddsElements.filter(el => el.kind !== 'attribute');
+};
+
+/**
+ * Clears global state arrays used during parsing
+ */
+function clearGlobalState(): void {
     records.length = 0;
     fieldsPerRecords.length = 0;
+};
 
-    // Adds element 'file' as root
-    const file: DdsFile = {
+/**
+ * Creates the root file element that serves as the document container
+ * @returns DdsFile element representing the root
+ */
+function createRootFileElement(): DdsFile {
+    return {
         kind: 'file',
         lineIndex: 0,
         attributes: []
     };
-    ddsElements.push(file);
+};
 
-    // Go through all lines and parse them
-    let record = '';
-    let i = 0;
-    while (i < lines.length) {
-        const { element, nextIndex, lastrecord } = parseDdsLine(lines, i, record);
-        if (element) ddsElements.push(element);
-        record = lastrecord;
-
-        i = nextIndex + 1;
+/**
+ * Parses all lines in the document and returns the resulting elements
+ * @param lines - Array of document lines to parse
+ * @returns Array of parsed DDS elements
+ */
+function parseAllLines(lines: string[]): DdsElement[] {
+    const elements: DdsElement[] = [];
+    let currentRecord = '';
+    let lineIndex = 0;
+    
+    while (lineIndex < lines.length) {
+        const parseResult = parseSingleDdsLine(lines, lineIndex, currentRecord);
+        
+        if (parseResult.element) {
+            elements.push(parseResult.element);
+        };
+        
+        currentRecord = parseResult.lastRecord;
+        lineIndex = parseResult.nextIndex + 1;
     };
+    
+    return elements;
+};
 
-    // Let's put the attributes with their "parents"
-    for (const el of ddsElements) {
-        if (el.kind === 'attribute') {
+/**
+ * Parses a single DDS line and returns the resulting element and parsing state
+ * @param lines - All document lines (for multi-line parsing)
+ * @param lineIndex - Current line being parsed
+ * @param lastRecord - Name of the last record processed
+ * @returns Parsing result with element, next index, and current record
+ */
+function parseSingleDdsLine(
+    lines: string[], 
+    lineIndex: number, 
+    lastRecord: string
+): { element: DdsElement | undefined; nextIndex: number; lastRecord: string } {
+    
+    const line = lines[lineIndex];
+    const trimmedLine = line.substring(5); // Skip sequence number area
+    
+    // Skip comment lines
+    if (trimmedLine.startsWith('A*')) {
+        return { element: undefined, nextIndex: lineIndex, lastRecord };
+    };
+    
+    // Extract common line components
+    const lineComponents = extractLineComponents(trimmedLine);
+    
+    // Determine element type and parse accordingly
+    if (isRecordLine(trimmedLine)) {
+        return parseRecordElement(lines, lineIndex, trimmedLine, lastRecord);
+    };
+    
+    if (isFieldLine(lineComponents.fieldName)) {
+        return parseFieldElement(lines, lineIndex, trimmedLine, lineComponents, lastRecord);
+    };
+    
+    if (isConstantLine(lineComponents)) {
+        return parseConstantElement(lines, lineIndex, trimmedLine, lineComponents, lastRecord);
+    };
+    
+    // Default to attribute parsing
+    return parseAttributeElement(lines, lineIndex, trimmedLine, lineComponents, lastRecord);
+};
+
+/**
+ * Extracts common components from a DDS line
+ * @param trimmedLine - Line with sequence number area removed
+ * @returns Object containing parsed line components
+ */
+function extractLineComponents(trimmedLine: string) {
+    const indicators = parseDdsIndicators(trimmedLine.substring(2, 11));
+    const fieldName = trimmedLine.substring(13, 23).trim();
+    const rowText = trimmedLine.substring(34, 37).trim();
+    const colText = trimmedLine.substring(36, 39).trim();
+    const row = rowText ? Number(rowText) : undefined;
+    const col = colText ? Number(colText) : undefined;
+    
+    return { indicators, fieldName, row, col };
+};
+
+/**
+ * Checks if the line represents a record definition
+ * @param trimmedLine - Line to check
+ * @returns True if line is a record definition
+ */
+function isRecordLine(trimmedLine: string): boolean {
+    return trimmedLine[11] === 'R';
+};
+
+/**
+ * Checks if the line represents a field definition
+ * @param fieldName - Extracted field name from line
+ * @returns True if line is a field definition
+ */
+function isFieldLine(fieldName: string): boolean {
+    return Boolean(fieldName);
+};
+
+/**
+ * Checks if the line represents a constant definition
+ * @param components - Extracted line components
+ * @returns True if line is a constant definition
+ */
+function isConstantLine(components: { fieldName: string; row?: number; col?: number }): boolean {
+    return !components.fieldName && Boolean(components.row) && Boolean(components.col);
+};
+
+/**
+ * Parses a record element from the current line
+ * @param lines - All document lines
+ * @param lineIndex - Current line index
+ * @param trimmedLine - Current line content
+ * @param lastRecord - Previous record name
+ * @returns Parsing result with record element
+ */
+function parseRecordElement(
+    lines: string[], 
+    lineIndex: number, 
+    trimmedLine: string, 
+    lastRecord: string
+) {
+    const name = trimmedLine.substring(13, 23).trim();
+    const { attributes, nextIndex } = extractAttributes('R', lines, lineIndex, false);
+    
+    // Update global state
+    records.push(name);
+    fieldsPerRecords.push({
+        record: name,
+        fields: [],
+        constants: [],
+        startIndex: lineIndex,
+        endIndex: 0
+      });
+    
+    const element: DdsRecord = {
+        kind: 'record',
+        lineIndex,
+        name,
+        attributes
+    };
+    
+    return { element, nextIndex, lastRecord: name };
+};
+
+/**
+ * Parses a field element from the current line
+ * @param lines - All document lines
+ * @param lineIndex - Current line index
+ * @param trimmedLine - Current line content
+ * @param components - Extracted line components
+ * @param lastRecord - Current record name
+ * @returns Parsing result with field element
+ */
+function parseFieldElement(
+    lines: string[], 
+    lineIndex: number, 
+    trimmedLine: string, 
+    components: any, 
+    lastRecord: string
+) {
+    const type = trimmedLine[29];
+    const length = Number(trimmedLine.substring(27, 29).trim());
+    const decimals = trimmedLine.substring(30, 32) !== ' ' ? Number(trimmedLine.substring(30, 32).trim()) : 0;
+    const usage = trimmedLine[32] !== ' ' ? trimmedLine[32] : ' ';
+    const isHidden = trimmedLine[32] === 'H';
+    const isReferenced = trimmedLine[23] === 'R';
+    
+    const { attributes, nextIndex } = extractAttributes('F', lines, lineIndex, true, components.indicators);
+    
+    const element = {
+        kind: 'field' as const,
+        name: components.fieldName,
+        type: type,
+        length: length,
+        decimals: decimals,
+        usage: usage,
+        row: isHidden ? undefined : components.row,
+        column: isHidden ? undefined : components.col,
+        hidden: isHidden,
+        referenced: isReferenced,
+        lineIndex: lineIndex,
+        recordname: lastRecord,
+        attributes: attributes || [],
+        indicators: components.indicators || undefined,
+    };
+    
+    return { element, nextIndex, lastRecord };
+};
+
+/**
+ * Parses a constant element from the current line(s), handling multi-line constants
+ * @param lines - All document lines
+ * @param lineIndex - Current line index
+ * @param trimmedLine - Current line content
+ * @param components - Extracted line components
+ * @param lastRecord - Current record name
+ * @returns Parsing result with constant element
+ */
+function parseConstantElement(
+    lines: string[], 
+    lineIndex: number, 
+    trimmedLine: string, 
+    components: any, 
+    lastRecord: string
+) {
+    // Handle multi-line constants
+    const { fullValue, lastLineIndex } = extractMultiLineConstant(lines, lineIndex, trimmedLine);
+    const { attributes, nextIndex } = extractAttributes('C', lines, lastLineIndex, true, components.indicators);
+    
+    const element = {
+        kind: 'constant' as const,
+        name: fullValue,
+        row: components.row!,
+        column: components.col!,
+        lineIndex: lineIndex,
+        recordname: lastRecord,
+        attributes: attributes || [],
+        indicators: components.indicators
+    };
+    
+    return { element, nextIndex: lastLineIndex, lastRecord };
+};
+
+/**
+ * Extracts multi-line constant values, following continuation characters
+ * @param lines - All document lines
+ * @param startIndex - Starting line index
+ * @param trimmedLine - Initial line content
+ * @returns Full constant value and last line index used
+ */
+function extractMultiLineConstant(
+    lines: string[], 
+    startIndex: number, 
+    trimmedLine: string
+): { fullValue: string; lastLineIndex: number } {
+    
+    let fullValue = trimmedLine.substring(39, 79);
+    let continuationIndex = startIndex;
+    
+    // Follow continuation lines (marked with '-' at position 79)
+    while (lines[continuationIndex]?.charAt(79) === '-') {
+        continuationIndex++;
+        const nextLine = lines[continuationIndex];
+        if (!nextLine) break;
+        
+        const nextTrimmed = nextLine.substring(5);
+        const continuedValue = nextTrimmed.substring(39, 79);
+        fullValue = fullValue.slice(0, -1) + continuedValue; // Remove '-' and append
+    };
+    
+    return { fullValue: fullValue.trim(), lastLineIndex: continuationIndex };
+};
+
+/**
+ * Parses attribute elements from the current line
+ * @param lines - All document lines
+ * @param lineIndex - Current line index
+ * @param trimmedLine - Current line content
+ * @param components - Extracted line components
+ * @param lastRecord - Current record name
+ * @returns Parsing result with attribute element or undefined
+ */
+function parseAttributeElement(
+    lines: string[], 
+    lineIndex: number, 
+    trimmedLine: string, 
+    components: any, 
+    lastRecord: string
+) {
+    const { attributes, nextIndex } = extractAttributes('A', lines, lineIndex, true, components.indicators);
+    
+    if (attributes.length > 0) {
+        const element = {
+            kind: 'attribute' as const,
+            lineIndex: lineIndex,
+            value: '',
+            indicators: components.indicators,
+            attributes: attributes
+        };
+        return { element, nextIndex, lastRecord };
+    };
+    
+    return { element: undefined, nextIndex: lineIndex, lastRecord };
+};
+
+/**
+ * Parses indicator specifications from a DDS line segment
+ * @param input - 9-character string containing indicator specifications
+ * @returns Array of parsed indicator objects
+ */
+export function parseDdsIndicators(input: string): DdsIndicator[] {
+    const indicators: DdsIndicator[] = [];
+    
+    // Process 3 indicator positions (3 characters each)
+    for (let i = 0; i < 3; i++) {
+        const segment = input.slice(i * 3, i * 3 + 3);
+        const activeChar = segment[0] || ' ';
+        const numberStr = segment.slice(1).trim();
+        
+        if (numberStr === '') continue;
+        
+        indicators.push({
+            active: activeChar !== 'N',
+            number: parseInt(numberStr, 10)
+        });
+    };
+    
+    // Sort indicators by number for consistent ordering
+    indicators.sort((a, b) => a.number - b.number);
+    return indicators;
+};
+
+
+/**
+ * Extracts attribute specifications from DDS lines, handling multi-line attributes
+ * @param lineType - Type of line being processed ('R', 'F', 'C', 'A')
+ * @param lines - All document lines
+ * @param startIndex - Starting line index
+ * @param includeIndicators - Whether to include indicator information
+ * @param indicators - Indicator objects to associate with attributes
+ * @returns Extracted attributes and next line index
+ */
+function extractAttributes(
+    lineType: string, 
+    lines: string[], 
+    startIndex: number, 
+    includeIndicators: boolean, 
+    indicators?: DdsIndicator[]
+): { attributes: DdsAttribute[]; nextIndex: number } {
+    
+    let rawAttributeText = '';
+    let currentIndex = startIndex;
+    
+    // Collect attribute text across potentially multiple lines
+    while (currentIndex < lines.length) {
+        const line = lines[currentIndex];
+        const trimmed = line.substring(5);
+        const attributePart = trimmed.substring(39, 75);
+        
+        // Remove continuation character and append
+        rawAttributeText += attributePart.replace(/-$/, '');
+        
+        // Stop if no continuation character found
+        if (!attributePart.trim().endsWith('-')) break;
+        currentIndex++;
+    };
+    
+    rawAttributeText = rawAttributeText.trim();
+    
+    // Return empty attributes if no content found
+    if (!rawAttributeText) {
+        return { attributes: [], nextIndex: currentIndex };
+    };
+    
+    // Special handling for constants at the same line index
+    if (lineType === 'C' && currentIndex === startIndex) {
+        return { attributes: [], nextIndex: currentIndex };
+    };
+    
+    // Create attribute object
+    const attribute: DdsAttribute = {
+        kind: 'attribute',
+        lineIndex: currentIndex,
+        value: lineType === 'C' ? '' : rawAttributeText,
+        indicators: includeIndicators && indicators ? indicators : []
+    };
+    
+    return { attributes: [attribute], nextIndex: currentIndex };
+};
+
+/**
+ * Links attribute elements to their parent elements (file, record, field, constant)
+ * @param ddsElements - Array of all parsed DDS elements
+ */
+function linkAttributesToParents(ddsElements: DdsElement[]): void {
+    for (const element of ddsElements) {
+        if (element.kind === 'attribute') {
+            // Find the most recent parent element before this attribute
             const parent = [...ddsElements]
                 .reverse()
-                .find(p =>
-                    p.lineIndex < el.lineIndex &&
+                .find(p => 
+                    p.lineIndex < element.lineIndex &&
                     (p.kind === 'field' || p.kind === 'constant' || p.kind === 'record' || p.kind === 'file')
                 );
+            
             if (parent) {
-                parent.attributes = [...(parent.attributes || []), ...(el.attributes || [])];
+                parent.attributes = [
+                    ...(parent.attributes || []), 
+                    ...(element.attributes || [])
+                ];
             };
         };
     };
+};
 
-    // Let's put the fields and constants with their "parents" (in the fieldsPerRecords structure)
-    // and the attributes with their fields and constants
-    for (const el of ddsElements) {
-        if ((el.kind === 'field' && el.hidden != true) || el.kind === 'constant') {
+/**
+ * Links field and constant elements to their parent records in the global structure
+ * @param ddsElements - Array of all parsed DDS elements
+ */
+function linkFieldsAndConstantsToRecords(ddsElements: DdsElement[]): void {
+    for (const element of ddsElements) {
+        if ((element.kind === 'field' && element.hidden !== true) || element.kind === 'constant') {
+            // Find parent record for this field/constant
             const parentRecord = [...ddsElements]
                 .reverse()
-                .find(p =>
-                    p.lineIndex < el.lineIndex &&
+                .find(p => 
+                    p.lineIndex < element.lineIndex && 
                     p.kind === 'record'
                 ) as DdsRecord | undefined;
-
+            
             if (parentRecord) {
                 const recordEntry = fieldsPerRecords.find(r => r.record === parentRecord.name);
+                
                 if (recordEntry) {
-                    if (el.kind === 'field') {
-                        if (!recordEntry.fields.some(field => field.name === el.name)) {
-                            recordEntry.fields.push({
-                                name: el.name,
-                                row: el.row ? el.row : 0,
-                                col: el.column ? el.column : 0,
-                                length: el.length ? el.length : 0,
-                                attributes: el.attributes?.map(attr => attr.value).filter(Boolean) || []
-                            });
-                        };
-                    }
-                    else if (el.kind === 'constant') {
-                        if (!recordEntry.constants.some(constant => constant.name === el.name)) {
-                            recordEntry.constants.push({
-                                name: el.name.slice(1, -1),
-                                row: el.row ? el.row : 0,
-                                col: el.column ? el.column : 0,
-                                length: el.name.slice(1, -1).length,
-                                attributes: el.attributes?.map(attr => attr.value).filter(Boolean) || []
-                            });
-                        };
+                    if (element.kind === 'field') {
+                        addFieldToRecord(element, recordEntry);
+                    } else if (element.kind === 'constant') {
+                        addConstantToRecord(element, recordEntry);
                     };
                 };
             };
         };
     };
+};
 
-    if (file.attributes && file.attributes.length > 0) {
-        ddsElements.push({
-            kind: 'group',
-            lineIndex: file.lineIndex,
-            attribute: 'Attributes',
-            attributes: file.attributes ? file.attributes : [],
-            children: []
+/**
+ * Adds a field element to its parent record entry
+ * @param field - Field element to add
+ * @param recordEntry - Record entry to add field to
+ */
+function addFieldToRecord(field: any, recordEntry: any): void {
+    // Avoid duplicate fields
+    if (!recordEntry.fields.some((f: any) => f.name === field.name)) {
+        recordEntry.fields.push({
+            name: field.name,
+            row: field.row || 0,
+            col: field.column || 0,
+            length: field.length || 0,
+            attributes: field.attributes?.map((attr: any) => attr.value).filter(Boolean) || []
         });
-        // Retrieves the "size" of the screen from the DSPSIZ file attribute
-        const dspsizLine = file.attributes.find(line => line.value.includes("DSPSIZ("));
-        if (dspsizLine) {
-            const matchAll = dspsizLine.value.match(/DSPSIZ\s*\(([^)]+)\)/i);
-
-            if (matchAll) {
-                const inside = matchAll[1].trim();
-                const sizeRegex = /(\d+)\s+(\d+)(?:\s+([^\s)]+))?/g;
-
-                let sizes: { row: number; col: number; name: string }[] = [];
-                let m;
-                while ((m = sizeRegex.exec(inside)) !== null) {
-                    sizes.push({
-                        row: parseInt(m[1], 10),
-                        col: parseInt(m[2], 10),
-                        name: m[3] ? m[3] : ''
-                    });
-                };
-                fileSizeAttributes.numDsply = sizes.length;
-                if (sizes[0]) {
-                    fileSizeAttributes.maxRow1 = sizes[0].row;
-                    fileSizeAttributes.maxCol1 = sizes[0].col;
-                    fileSizeAttributes.nameDsply1 = sizes[0].name;
-                };
-                if (sizes[1]) {
-                    fileSizeAttributes.maxRow2 = sizes[1].row;
-                    fileSizeAttributes.maxCol2 = sizes[1].col;
-                    fileSizeAttributes.nameDsply2 = sizes[1].name;
-                };
-            };
-        };
-    };
-    /* Pending TODO
-    // - Check indicators!!
-
-    for (const rec of fieldsPerRecords) {
-        const overlaps = findOverlapsInRecord(rec);
-        if (overlaps.length > 0) {
-            vscode.window.showWarningMessage(`Overlaping found on ${rec.record}`);
-        };
-    };
-    */
-   
-    currentDdsElements = ddsElements;
-
-    return ddsElements.filter(el => el.kind !== 'attribute');
-};
-
-function parseDdsLine(lines: string[], lineIndex: number, lastrecord: string): { element: DdsElement | undefined; nextIndex: number; lastrecord: string } {
-    const line = lines[lineIndex];
-    const trimmed = line.substring(5);
-
-    if (trimmed.startsWith('A*')) return { element: undefined, nextIndex: lineIndex, lastrecord: lastrecord };
-
-    const indicators = parseDdsIndicators(trimmed.substring(2, 11));
-    const fieldName = trimmed.substring(13, 23).trim();
-    const rowText = trimmed.substring(34, 37).trim();
-    const colText = trimmed.substring(36, 39).trim();
-    const row = rowText ? Number(rowText) : undefined;
-    const col = colText ? Number(colText) : undefined;
-
-    // "Record"
-    if (trimmed[11] === 'R') {
-        const name = trimmed.substring(13, 23).trim();
-        lastrecord = name;
-        const { attributes, nextIndex } = extractAttributes('R', lines, lineIndex, false);
-        records.push(name);
-        fieldsPerRecords.push({ record: name, fields: [], constants: [] });
-
-        return {
-            element: {
-                kind: 'record',
-                lineIndex,
-                name,
-                attributes
-            },
-            nextIndex,
-            lastrecord
-        };
-    };
-
-    // "Field"
-    if (fieldName) {
-        const type = trimmed[29];
-        const length = Number(trimmed.substring(27, 29).trim());
-        const decimals = trimmed.substring(30, 32) !== ' ' ? Number(trimmed.substring(30, 32).trim()) : 0;
-        const usage = trimmed[32] !== ' ' ? trimmed[32] : ' ';
-        const isHidden = trimmed[32] === 'H';
-        const isReferenced = trimmed[23] === 'R';
-        const { attributes, nextIndex } = extractAttributes('F', lines, lineIndex, true, indicators);
-        return {
-            element: {
-                kind: 'field',
-                name: fieldName,
-                type: type,
-                length: length,
-                decimals: decimals,
-                usage: usage,
-                row: isHidden ? undefined : row,
-                column: isHidden ? undefined : col,
-                hidden: isHidden,
-                referenced: isReferenced,
-                lineIndex: lineIndex,
-                recordname: lastrecord,
-                attributes: attributes ? attributes : [],
-                indicators: indicators || undefined,
-            },
-            nextIndex,
-            lastrecord
-        };
-    };
-
-    // "Constant"
-    if (!fieldName && row && col) {
-        let fullValue = trimmed.substring(39, 79);
-        let continuationIndex = lineIndex;
-
-        while (lines[continuationIndex].charAt(79) === '-') {
-            continuationIndex++;
-            const nextLine = lines[continuationIndex];
-            if (!nextLine) break;
-
-            const nextTrimmed = nextLine.substring(5);
-            const continuedValue = nextTrimmed.substring(39, 79);
-            fullValue = fullValue.slice(0, -1) + continuedValue;
-        };
-
-        const value = fullValue.trim();
-
-        const { attributes, nextIndex } = extractAttributes('C', lines, continuationIndex, true, indicators);
-        return {
-            element: {
-                kind: 'constant',
-                name: value,
-                row: row,
-                column: col,
-                lineIndex: lineIndex,
-                recordname: lastrecord,
-                attributes: attributes ? attributes : [],
-                indicators: indicators
-            },
-            nextIndex: continuationIndex,
-            lastrecord
-        };
-    };
-
-    // "Attributes"
-    const { attributes, nextIndex } = extractAttributes('A', lines, lineIndex, true, indicators);
-    if (attributes.length > 0) {
-        return {
-            element: {
-                kind: 'attribute',
-                lineIndex: lineIndex,
-                value: '',
-                indicators: indicators,
-                attributes: attributes ? attributes : []
-            },
-            nextIndex,
-            lastrecord
-        };
-    };
-
-    return { element: undefined, nextIndex: lineIndex, lastrecord };
-};
-
-// Parse indicators inside a string and return DdsIndicator[]
-export function parseDdsIndicators(input: string): DdsIndicator[] {
-    const indicators: DdsIndicator[] = [];
-
-    for (let i = 0; i < 3; i++) {
-        const segment = input.slice(i * 3, i * 3 + 3);
-        const activeChar = segment[0] || ' ';
-        const numberStr = segment.slice(1).trim();
-        if (numberStr === '') continue;
-        indicators.push(
-            {
-                active: activeChar !== 'N',
-                number: parseInt(numberStr, 10)
-            }
-        );
-    };
-    indicators.sort((a, b) => a.number - b.number);
-
-    return indicators;
-};
-
-// Extracts attributes
-function extractAttributes(lineType: string, lines: string[], startIndex: number, getInd: boolean, indicators?: DdsIndicator[]): { attributes: DdsAttribute[]; nextIndex: number } {
-    let raw = '';
-    let currentIndex = startIndex;
-
-    while (currentIndex < lines.length) {
-        const line = lines[currentIndex];
-        const trimmed = line.substring(5);
-        const part = trimmed.substring(39, 75);
-        raw += part.replace(/-$/, '');
-        if (!part.trim().endsWith('-')) break;
-        currentIndex++;
-    };
-
-    raw = raw.trim();
-    if (!raw) return { attributes: [], nextIndex: currentIndex };
-
-    if (lineType === 'C' && currentIndex === startIndex) {
-        return { attributes: [], nextIndex: currentIndex };
-    } else {
-        const attribute: DdsAttribute = {
-            kind: 'attribute',
-            lineIndex: currentIndex,
-            value: lineType === 'C' ? '' : raw,
-            indicators: getInd && indicators ? indicators : []
-        };
-        return { attributes: [attribute], nextIndex: currentIndex };
     };
 };
 
+/**
+ * Adds a constant element to its parent record entry
+ * @param constant - Constant element to add
+ * @param recordEntry - Record entry to add constant to
+ */
+function addConstantToRecord(constant: any, recordEntry: any): void {
+    // Remove quotes from constant name for storage
+    const constantName = constant.name.slice(1, -1);
+    
+    // Avoid duplicate constants
+    if (!recordEntry.constants.some((c: any) => c.name === constantName)) {
+        recordEntry.constants.push({
+            name: constantName,
+            row: constant.row || 0,
+            col: constant.column || 0,
+            length: constantName.length,
+            attributes: constant.attributes?.map((attr: any) => attr.value).filter(Boolean) || []
+        });
+    };
+};
+
+/**
+ * Processes file-level attributes, particularly DSPSIZ for screen dimensions
+ * @param file - Root file element
+ * @param ddsElements - Array of all parsed elements
+ */
+function processFileAttributes(file: DdsFile, ddsElements: DdsElement[]): void {
+    if (!file.attributes || file.attributes.length === 0) return;
+    
+    // Add attributes group element for display
+    ddsElements.push({
+        kind: 'group',
+        lineIndex: file.lineIndex,
+        attribute: 'Attributes',
+        attributes: file.attributes,
+        children: []
+    });
+    
+    // Process DSPSIZ attribute for screen size information
+    processDspsizAttribute(file.attributes);
+};
+
+/**
+ * Extracts screen size information from DSPSIZ file attribute
+ * @param attributes - File attributes to search
+ */
+function processDspsizAttribute(attributes: DdsAttribute[]): void {
+    const dspsizAttribute = attributes.find(attr => 
+        attr.value.includes("DSPSIZ(")
+    );
+    
+    if (!dspsizAttribute) return;
+    
+    const dspsizMatch = dspsizAttribute.value.match(/DSPSIZ\s*\(([^)]+)\)/i);
+    if (!dspsizMatch) return;
+    
+    const dspsizContent = dspsizMatch[1].trim();
+    const screenSizes = parseDspsizSizes(dspsizContent);
+    
+    // Update global file size attributes
+    updateFileSizeAttributes(screenSizes);
+};
+
+/**
+ * Parses DSPSIZ content to extract screen size definitions
+ * @param dspsizContent - Content within DSPSIZ parentheses
+ * @returns Array of parsed screen size objects
+ */
+function parseDspsizSizes(dspsizContent: string): Array<{row: number; col: number; name: string}> {
+    const sizeRegex = /(\d+)\s+(\d+)(?:\s+([^\s)]+))?/g;
+    const sizes: Array<{row: number; col: number; name: string}> = [];
+    
+    let match;
+    while ((match = sizeRegex.exec(dspsizContent)) !== null) {
+        sizes.push({
+            row: parseInt(match[1], 10),
+            col: parseInt(match[2], 10),
+            name: match[3] || ''
+        });
+    };
+    
+    return sizes;
+};
+
+/**
+ * Updates global file size attributes based on parsed screen sizes
+ * @param sizes - Array of parsed screen size objects
+ */
+function updateFileSizeAttributes(sizes: Array<{row: number; col: number; name: string}>): void {
+    fileSizeAttributes.numDsply = sizes.length;
+    
+    if (sizes[0]) {
+        fileSizeAttributes.maxRow1 = sizes[0].row;
+        fileSizeAttributes.maxCol1 = sizes[0].col;
+        fileSizeAttributes.nameDsply1 = sizes[0].name;
+    };
+    
+    if (sizes[1]) {
+        fileSizeAttributes.maxRow2 = sizes[1].row;
+        fileSizeAttributes.maxCol2 = sizes[1].col;
+        fileSizeAttributes.nameDsply2 = sizes[1].name;
+    };
+};
+
+/**
+ * NEW: Processes record sizes after all elements have been parsed
+ * Assigns default size or WINDOW-specific size to each record
+ * @param ddsElements - Array of all parsed DDS elements
+ */
+function processRecordSizes(ddsElements: DdsElement[]): void {
+    const recordElements = ddsElements.filter(el => el.kind === 'record') as DdsRecord[];
+    
+    for (const record of recordElements) {
+        // Check if record has WINDOW attribute
+        const windowSize = extractWindowSize(record.attributes);
+        
+        if (windowSize) {
+            // Use WINDOW-specific size
+            record.size = windowSize;
+        } else {
+            // Use default size from file attributes
+            record.size = getDefaultSize();
+        };
+        
+        // Also update the fieldsPerRecords structure for easy access
+        const recordEntry = fieldsPerRecords.find(r => r.record === record.name);
+        if (recordEntry) {
+            recordEntry.size = record.size;
+        };
+    };
+};
+
+/**
+ * Extracts WINDOW size information from record attributes
+ * @param attributes - Record attributes to search
+ * @returns DdsSize object if WINDOW attribute found, undefined otherwise
+ */
+function extractWindowSize(attributes?: DdsAttribute[]): DdsSize | undefined {
+    if (!attributes) return undefined;
+    
+    // Look for WINDOW attribute in record attributes
+    const windowAttribute = attributes.find(attr => 
+        attr.value.toUpperCase().includes('WINDOW(')
+    );
+    
+    if (!windowAttribute) return undefined;
+    
+    // Parse WINDOW attribute: WINDOW(startRow startCol endRow endCol)
+    const windowMatch = windowAttribute.value.match(/WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\)/i);
+    if (!windowMatch) return undefined;
+    
+    const startRow = parseInt(windowMatch[1], 10);
+    const startCol = parseInt(windowMatch[2], 10);
+    const endRow = parseInt(windowMatch[3], 10);
+    const endCol = parseInt(windowMatch[4], 10);
+    
+    // Calculate window dimensions
+    const rows = endRow - startRow + 1;
+    const cols = endCol - startCol + 1;
+    
+    return {
+        rows,
+        cols,
+        name: `WINDOW_${startRow}_${startCol}_${endRow}_${endCol}`,
+        source: 'window',
+        originRow : startRow,
+        originCol : startCol
+    };
+};
+
+/**
+ * Legacy function maintained for backward compatibility
+ * @param text - DDS document text to parse
+ * @returns Array of all parsed DDS elements
+ */
 export function getAllDdsElements(text: string): DdsElement[] {
     return parseDocument(text);
 };
+
+/**
+ * Assigns endIndex to each record based on the next record's start or EOF.
+ * Also updates the FieldsPerRecord mirror.
+ * @param ddsElements - All parsed elements
+ * @param totalLines - Total number of lines in the source text
+ */
+function assignRecordEndIndices(ddsElements: DdsElement[], totalLines: number): void {
+    const recs = (ddsElements.filter(el => el.kind === 'record') as DdsRecord[])
+      .sort((a, b) => a.lineIndex - b.lineIndex);
+  
+    for (let i = 0; i < recs.length; i++) {
+      const rec = recs[i];
+      const next = recs[i + 1];
+      const endIdx = next ? next.lineIndex - 1 : totalLines - 1; // inclusive range
+  
+      rec.endIndex = endIdx;
+  
+      const entry = fieldsPerRecords.find(r => r.record === rec.name);
+      if (entry) entry.endIndex = endIdx;
+    };
+};
+  
