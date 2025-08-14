@@ -62,9 +62,15 @@ function addButtons(context) {
                     if (!value)
                         return '';
                     const upper = value.toUpperCase();
-                    if (/^F([1-9]|1\d|2[0-4])$/.test(upper))
-                        return '';
-                    return 'Invalid function key. Use format F1..F24';
+                    if (!/^F([1-9]|1\d|2[0-4])$/.test(upper)) {
+                        return 'Invalid function key. Use format F1..F24';
+                    }
+                    ;
+                    if (buttons.some(b => b.key === upper)) {
+                        return `Function key ${upper} already used.`;
+                    }
+                    ;
+                    return '';
                 }
             });
             if (!key)
@@ -72,14 +78,24 @@ function addButtons(context) {
             const label = await vscode.window.showInputBox({
                 prompt: `Text for ${key.toUpperCase()}`,
                 placeHolder: 'Help',
-                validateInput: (value) => value.trim() ? '' : 'Button text cannot be empty'
+                validateInput: (value) => {
+                    if (!value.trim())
+                        return 'Button text cannot be empty';
+                    if (value.startsWith(' '))
+                        return 'Button text cannot start with a space';
+                    if (value.length > 34)
+                        return 'Button text cannot exceed 34 characters';
+                    return '';
+                }
             });
             if (!label) {
                 vscode.window.showWarningMessage(`Skipping ${key.toUpperCase()} — no label entered.`);
                 continue;
             }
-            ;
-            buttons.push({ key: key.toUpperCase(), label: label.trim() });
+            buttons.push({
+                key: key.toUpperCase(),
+                label: label.trimEnd()
+            });
         }
         ;
         if (buttons.length === 0) {
@@ -107,7 +123,7 @@ function addButtons(context) {
         let numButton = 0;
         for (const btn of buttons) {
             numButton += 1;
-            const text = `${btn.key}=${btn.label}`;
+            const text = `${btn.key.toUpperCase()}=${btn.label}`;
             if (currentCol + text.length > maxCols - 1) {
                 currentRow--;
                 currentCol = startCol;
