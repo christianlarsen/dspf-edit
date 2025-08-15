@@ -85,6 +85,10 @@
       {
         "command": "dspf-edit.add-color",
         "title": "Colors"
+      },
+      {
+        "command": "dspf-edit.add-attribute",
+        "title": "Attributes"
       }
     ],
     "menus": {
@@ -113,6 +117,11 @@
           "command": "dspf-edit.add-color",
           "when": "view == ddsStructureView && (viewItem == constant || viewItem == field)",
           "group": "fields_constants_navigation3@1"
+        },
+        {
+          "command": "dspf-edit.add-attribute",
+          "when": "view == ddsStructureView && (viewItem == constant || viewItem == field)",
+          "group": "fields_constants_navigation3@2"
         },
         {
           "command": "dspf-edit.copy-record",

@@ -19,6 +19,7 @@ import { goToLineHandler } from './dspf-edit.goto-line';
 import { updateTreeProvider } from './dspf-edit.helper';
 import { addButtons } from './dspf-edit.add-buttons';
 import { addColor } from './dspf-edit.add-color';
+import { addAttribute } from './dspf-edit.add-attribute';
 
 let updateTimeout: NodeJS.Timeout | undefined;
 
@@ -66,7 +67,8 @@ export function activate(context: vscode.ExtensionContext) {
 		{ name: 'newRecord', handler: newRecord as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'goToLine', handler: goToLineHandler as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'addButtons', handler: addButtons as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
-		{ name: 'addColor', handler: addColor as (context: vscode.ExtensionContext) => void, needsTreeProvider: false }
+		{ name: 'addColor', handler: addColor as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
+		{ name: 'addAttribute', handler: addAttribute as (context: vscode.ExtensionContext) => void, needsTreeProvider: false }
 	];
 
 	// Register all commands

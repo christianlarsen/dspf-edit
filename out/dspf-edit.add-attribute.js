@@ -2,7 +2,7 @@
 /*
     Christian Larsen, 2025
     "RPG structure"
-    dspf-edit.add-color.ts
+    dspf-edit.add-attribute.ts
 */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -38,30 +38,30 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.addColor = addColor;
+exports.addAttribute = addAttribute;
 exports.getElementRecordName = getElementRecordName;
-exports.findElementsWithColors = findElementsWithColors;
+exports.findElementsWithAttributes = findElementsWithAttributes;
 const vscode = __importStar(require("vscode"));
 const dspf_edit_model_1 = require("./dspf-edit.model");
 // COMMAND REGISTRATION
 /**
- * Registers the add color command for DDS fields and constants.
- * Allows users to interactively manage color attributes for elements.
+ * Registers the add attribute command for DDS fields and constants.
+ * Allows users to interactively manage attributes for elements.
  * @param context - The VS Code extension context
  */
-function addColor(context) {
-    context.subscriptions.push(vscode.commands.registerCommand("dspf-edit.add-color", async (node) => {
-        await handleAddColorCommand(node);
+function addAttribute(context) {
+    context.subscriptions.push(vscode.commands.registerCommand("dspf-edit.add-attribute", async (node) => {
+        await handleAddAttributeCommand(node);
     }));
 }
 ;
 // COMMAND HANDLER
 /**
- * Handles the add color command for a DDS field or constant.
- * Manages existing colors and allows adding/removing color attributes.
+ * Handles the add attribute command for a DDS field or constant.
+ * Manages existing attributes and allows adding/removing attributes.
  * @param node - The DDS node containing the field or constant
  */
-async function handleAddColorCommand(node) {
+async function handleAddAttributeCommand(node) {
     try {
         const editor = vscode.window.activeTextEditor;
         if (!editor) {
@@ -71,61 +71,61 @@ async function handleAddColorCommand(node) {
         ;
         // Validate element type
         if (node.ddsElement.kind !== 'constant' && node.ddsElement.kind !== 'field') {
-            vscode.window.showWarningMessage('Colors can only be added to constants and fields.');
+            vscode.window.showWarningMessage('Attributes can only be added to constants and fields.');
             return;
         }
         ;
-        // Get current colors from the element
-        const currentColors = getCurrentColorsForElement(node.ddsElement);
-        // Get available colors (excluding current ones)
-        const availableColors = getAvailableColors(currentColors);
-        // Show current colors if any exist
-        if (currentColors.length > 0) {
-            const currentColorsList = currentColors.join(', ');
-            const action = await vscode.window.showQuickPick(['Add more colors', 'Replace all colors', 'Remove all colors'], {
-                title: `Current colors: ${currentColorsList}`,
-                placeHolder: 'Choose how to manage colors'
+        // Get current attributes from the element
+        const currentAttributes = getCurrentAttributesForElement(node.ddsElement);
+        // Get available attributes (excluding current ones)
+        const availableAttributes = getAvailableAttributes(currentAttributes);
+        // Show current attributes if any exist
+        if (currentAttributes.length > 0) {
+            const currentAttributesList = currentAttributes.join(', ');
+            const action = await vscode.window.showQuickPick(['Add more attributes', 'Replace all attributes', 'Remove all attributes'], {
+                title: `Current attributes: ${currentAttributesList}`,
+                placeHolder: 'Choose how to manage attributes'
             });
             if (!action)
                 return;
-            if (action === 'Remove all colors') {
-                await removeColorsFromElement(editor, node.ddsElement);
+            if (action === 'Remove all attributes') {
+                await removeAttributesFromElement(editor, node.ddsElement);
                 return;
             }
             ;
-            if (action === 'Replace all colors') {
-                await removeColorsFromElement(editor, node.ddsElement);
-                // Continue to add new colors
+            if (action === 'Replace all attributes') {
+                await removeAttributesFromElement(editor, node.ddsElement);
+                // Continue to add new attributes
             }
             ;
-            // If "Add more colors", continue with current logic
+            // If "Add more attributes", continue with current logic
         }
         ;
-        // Collect new colors to add
-        const selectedColors = await collectColorsFromUser(availableColors);
-        if (selectedColors.length === 0) {
-            vscode.window.showInformationMessage('No colors selected.');
+        // Collect new attributes to add
+        const selectedAttributes = await collectAttributesFromUser(availableAttributes);
+        if (selectedAttributes.length === 0) {
+            vscode.window.showInformationMessage('No attributes selected.');
             return;
         }
         ;
-        // Apply the selected colors to the element
-        await addColorsToElement(editor, node.ddsElement, selectedColors);
-        vscode.window.showInformationMessage(`Added colors ${selectedColors.join(', ')} to ${node.ddsElement.name}.`);
+        // Apply the selected attributes to the element
+        await addAttributesToElement(editor, node.ddsElement, selectedAttributes);
+        vscode.window.showInformationMessage(`Added attributes ${selectedAttributes.join(', ')} to ${node.ddsElement.name}.`);
     }
     catch (error) {
-        console.error('Error managing colors:', error);
-        vscode.window.showErrorMessage('An error occurred while managing colors.');
+        console.error('Error managing attributes:', error);
+        vscode.window.showErrorMessage('An error occurred while managing attributes.');
     }
     ;
 }
 ;
-// COLOR EXTRACTION FUNCTIONS
+// ATTRIBUTES EXTRACTION FUNCTIONS
 /**
- * Extracts current color attributes from a DDS element.
+ * Extracts current attributes from a DDS element.
  * @param element - The DDS element (field or constant)
- * @returns Array of current color codes
+ * @returns Array of current attributes codes
  */
-function getCurrentColorsForElement(element) {
+function getCurrentAttributesForElement(element) {
     // Find the element in the fieldsPerRecords data
     const recordInfo = dspf_edit_model_1.fieldsPerRecords.find(r => r.record === element.recordname);
     if (!recordInfo)
@@ -138,80 +138,80 @@ function getCurrentColorsForElement(element) {
     ].find(item => item.name === elementNameWithoutQuotes);
     if (!elementInfo || !elementInfo.attributes)
         return [];
-    // Extract COLOR attributes
-    const colors = [];
+    // Extract DSPATR attributes
+    const attributes = [];
     if (elementInfo) {
         elementInfo.attributes.forEach(attr => {
-            const colorMatch = attr.match(/^COLOR\(([A-Z]{3})\)$/);
-            if (colorMatch) {
-                colors.push(colorMatch[1]);
+            const attributeMatch = attr.match(/^DSPATR\(([A-Z]{2})\)$/);
+            if (attributeMatch) {
+                attributes.push(attributeMatch[1]);
             }
         });
     }
     ;
-    return colors;
+    return attributes;
 }
 ;
 /**
- * Gets available colors excluding those already selected.
- * @param currentColors - Array of currently selected colors
- * @returns Array of available colors
+ * Gets available attributes excluding those already selected.
+ * @param currentAttributes - Array of currently selected attributes
+ * @returns Array of available attributes
  */
-function getAvailableColors(currentColors) {
-    const allColors = ['BLU', 'GRN', 'PNK', 'RED', 'TRQ', 'WHT', 'YLW'];
-    return allColors.filter(color => !currentColors.includes(color));
+function getAvailableAttributes(currentAttributes) {
+    const allAttributes = ['HI', 'RI', 'CS', 'BL', 'ND', 'UL', 'PC'];
+    return allAttributes.filter(attribute => !currentAttributes.includes(attribute));
 }
 ;
 // USER INTERACTION FUNCTIONS
 /**
- * Collects colors from user through interactive selection.
- * @param availableColors - Array of colors available for selection
- * @returns Array of selected colors in order
+ * Collects attributes from user through interactive selection.
+ * @param availableAttributes - Array of attributes available for selection
+ * @returns Array of selected attributes
  */
-async function collectColorsFromUser(availableColors) {
-    const selectedColors = [];
-    let remainingColors = [...availableColors];
-    while (remainingColors.length > 0) {
-        const selectedColor = await vscode.window.showQuickPick(remainingColors, {
-            title: `Add Color (${selectedColors.length} selected) - Press ESC to finish`,
-            placeHolder: 'Select color from list'
+async function collectAttributesFromUser(availableAttributes) {
+    const selectedAttributes = [];
+    let remainingAttributes = [...availableAttributes];
+    while (remainingAttributes.length > 0) {
+        const selectedAttribute = await vscode.window.showQuickPick(remainingAttributes, {
+            title: `Add Attribute (${selectedAttributes.length} selected) - Press ESC to finish`,
+            placeHolder: 'Select attribute from list'
         });
-        if (!selectedColor)
+        if (!selectedAttribute)
             break;
-        selectedColors.push(selectedColor);
-        remainingColors = remainingColors.filter(c => c !== selectedColor);
+        selectedAttributes.push(selectedAttribute);
+        remainingAttributes = remainingAttributes.filter(c => c !== selectedAttribute);
     }
     ;
-    return selectedColors;
+    return selectedAttributes;
 }
 ;
 // DDS MODIFICATION FUNCTIONS
 /**
- * Adds color attributes to a DDS element by inserting COLOR lines after the element.
+ * Adds attributes to a DDS element by inserting DSPATR lines after the element.
  * @param editor - The active text editor
- * @param element - The DDS element to add colors to
- * @param colors - Array of color codes to add
+ * @param element - The DDS element to add attributes to
+ * @param attributes - Array of attribute codes to add
  */
-async function addColorsToElement(editor, element, colors) {
+async function addAttributesToElement(editor, element, attributes) {
     const insertionPoint = findElementInsertionPoint(editor, element);
     if (insertionPoint === -1) {
         throw new Error('Could not find insertion point for color attributes');
     }
     ;
-    const colorLines = createColorAttributeLines(colors);
+    const attributeLines = createAttributeLines(attributes);
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
-    // Insert each color line
+    // Insert each attribute line
     let crInserted = false;
-    for (let i = 0; i < colorLines.length; i++) {
+    for (let i = 0; i < attributeLines.length; i++) {
         const insertPos = new vscode.Position(insertionPoint + i, 0);
         if (!crInserted && insertPos.line >= editor.document.lineCount) {
             workspaceEdit.insert(uri, insertPos, '\n');
             crInserted = true;
         }
         ;
-        workspaceEdit.insert(uri, insertPos, colorLines[i]);
-        if (i < colorLines.length - 1 || insertPos.line < editor.document.lineCount) {
+        workspaceEdit.insert(uri, insertPos, attributeLines[i]);
+        if (i < attributeLines.length - 1 || insertPos.line < editor.document.lineCount) {
             workspaceEdit.insert(uri, insertPos, '\n');
         }
         ;
@@ -221,19 +221,19 @@ async function addColorsToElement(editor, element, colors) {
 }
 ;
 /**
- * Removes existing color attributes from a DDS element.
+ * Removes existing attributes from a DDS element.
  * @param editor - The active text editor
- * @param element - The DDS element to remove colors from
+ * @param element - The DDS element to remove attributes from
  */
-async function removeColorsFromElement(editor, element) {
-    const colorLines = findExistingColorLines(editor, element);
-    if (colorLines.length === 0)
+async function removeAttributesFromElement(editor, element) {
+    const attributeLines = findExistingAttributeLines(editor, element);
+    if (attributeLines.length === 0)
         return;
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
-    // Remove color lines in reverse order to maintain line indices
-    for (let i = colorLines.length - 1; i >= 0; i--) {
-        const lineIndex = colorLines[i];
+    // Remove attribute lines in reverse order to maintain line indices
+    for (let i = attributeLines.length - 1; i >= 0; i--) {
+        const lineIndex = attributeLines[i];
         const line = editor.document.lineAt(lineIndex);
         workspaceEdit.delete(uri, line.rangeIncludingLineBreak);
     }
@@ -243,14 +243,13 @@ async function removeColorsFromElement(editor, element) {
 ;
 // LINE CREATION AND DETECTION FUNCTIONS
 /**
- * Creates DDS attribute lines for color specifications.
- * @param colors - Array of color codes
+ * Creates DDS attribute lines for attribute specifications.
+ * @param attributes - Array of attribute codes
  * @returns Array of formatted DDS lines
  */
-function createColorAttributeLines(colors) {
-    return colors.map(color => {
-        // Format: "     A            COLOR(XXX)"
-        return `     A` + ' '.repeat(38) + `COLOR(${color})`;
+function createAttributeLines(attributes) {
+    return attributes.map(attribute => {
+        return `     A` + ' '.repeat(38) + `DSPATR(${attribute})`;
     });
 }
 ;
@@ -281,15 +280,15 @@ function findElementInsertionPoint(editor, element) {
 }
 ;
 /**
- * Finds existing color attribute lines for an element.
+ * Finds existing attribute lines for an element.
  * @param editor - The active text editor
  * @param element - The DDS element
- * @returns Array of line indices containing color attributes
+ * @returns Array of line indices containing attributes
  */
-function findExistingColorLines(editor, element) {
-    const colorLines = [];
+function findExistingAttributeLines(editor, element) {
+    const attributeLines = [];
     const startLine = element.lineIndex + 1;
-    // Look for COLOR attribute lines after the element
+    // Look for DSPATR attribute lines after the element
     for (let i = startLine; i < editor.document.lineCount; i++) {
         const line = editor.document.lineAt(i).text;
         // Stop if we hit a non-attribute line
@@ -297,14 +296,14 @@ function findExistingColorLines(editor, element) {
             break;
         }
         ;
-        // Check if this is a COLOR attribute
-        if (line.includes('COLOR(')) {
-            colorLines.push(i);
+        // Check if this is a DSPATR attribute
+        if (line.includes('DSPATR(')) {
+            attributeLines.push(i);
         }
         ;
     }
     ;
-    return colorLines;
+    return attributeLines;
 }
 ;
 // UTILITY FUNCTIONS
@@ -336,24 +335,24 @@ function getElementRecordName(element) {
 }
 ;
 /**
- * Finds all elements in a record that have color attributes.
+ * Finds all elements in a record that have attributes.
  * This could be useful for reporting or bulk operations.
  * @param recordName - The name of the record
- * @returns Array of element names that have color attributes
+ * @returns Array of element names that have attributes
  */
-function findElementsWithColors(recordName) {
+function findElementsWithAttributes(recordName) {
     const recordInfo = dspf_edit_model_1.fieldsPerRecords.find(r => r.record === recordName);
     if (!recordInfo)
         return [];
-    const elementsWithColors = [];
+    const elementsWithAttributes = [];
     [...recordInfo.fields, ...recordInfo.constants].forEach(element => {
-        const hasColorAttribute = element.attributes?.some(attr => attr.match(/^COLOR\([A-Z]{3}\)$/));
-        if (hasColorAttribute) {
-            elementsWithColors.push(element.name);
+        const hasAttribute = element.attributes?.some(attr => attr.match(/^DSPATR\([A-Z]{2}\)$/));
+        if (hasAttribute) {
+            elementsWithAttributes.push(element.name);
         }
         ;
     });
-    return elementsWithColors;
+    return elementsWithAttributes;
 }
 ;
-//# sourceMappingURL=dspf-edit.add-color.js.map
+//# sourceMappingURL=dspf-edit.add-attribute.js.map
