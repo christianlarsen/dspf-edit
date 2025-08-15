@@ -3,18 +3,27 @@
     "RPG structure"
     dspf-edit.helper.ts
 */
+
+
 import * as vscode from 'vscode';
 import { DdsElement, DdsIndicator, DdsAttribute, records, FieldsPerRecord, ConstantInfo, FieldInfo } from './dspf-edit.model';
 import { DdsTreeProvider } from './dspf-edit.providers';
 import { parseDocument } from './dspf-edit.parser';
 
-// Describes a "field" (returns row and column)
+// FIELD DESCRIPTION FUNCTIONS
+
+/**
+ * Describes a DDS field element, returning its size, type, and position information.
+ * @param field - The DDS element to describe
+ * @returns A formatted string describing the field's properties
+ */
 export function describeDdsField(field: DdsElement): string {
     if (field.kind !== 'field') return 'Not a field.';
 
     const length = field.length;
     const decimals = field.decimals;
 
+    // Format size string with decimals if present
     const sizeText = decimals && decimals > 0 ? `(${length}:${decimals})` : `(${length})`;
     const type = field.type;
 
@@ -31,7 +40,11 @@ export function describeDdsField(field: DdsElement): string {
     };
 };
 
-// Describes a "constant" (returns row and column)
+/**
+ * Describes a DDS constant element, returning its position information.
+ * @param field - The DDS element to describe (should be a constant)
+ * @returns A formatted string with the constant's row and column position
+ */
 export function describeDdsConstant(field: DdsElement): string {
     if (field.kind !== 'constant') return 'Not a constant.';
 
@@ -40,24 +53,35 @@ export function describeDdsConstant(field: DdsElement): string {
     return `[${row},${col}]`;
 };
 
-// Describes a "record" (returns line with "attributes" of the)
+/**
+ * Describes a DDS record element.
+ * @param field - The DDS element to describe (should be a record)
+ * @returns Currently returns an empty string (placeholder for future implementation)
+ */
 export function describeDdsRecord(field: DdsElement): string {
     if (field.kind !== 'record') return 'Not a record.';
-
     return '';
 };
 
-// Describes a "file" (returns a blank string)
+/**
+ * Describes a DDS file element.
+ * @param field - The DDS element to describe (should be a file)
+ * @returns Currently returns an empty string (placeholder for future implementation)
+ */
 export function describeDdsFile(field: DdsElement): string {
     if (field.kind !== 'file') return 'Not a file.';
-
     return '';
 };
 
-// Returns the indicators formatted in a string
+// FORMATTING FUNCTIONS
+
+/**
+ * Formats DDS indicators into a readable string representation.
+ * @param indicators - Array of DDS indicators to format
+ * @returns A formatted string showing indicators with their active/inactive status
+ */
 export function formatDdsIndicators(indicators?: DdsIndicator[]): string {
-    if (!indicators) return '';
-    if (indicators.length === 0) return '';
+    if (!indicators || indicators.length === 0) return '';
 
     const indicatorStr = `[${indicators.map(ind => {
         const status = ind.active ? ' ' : 'N';
@@ -68,7 +92,11 @@ export function formatDdsIndicators(indicators?: DdsIndicator[]): string {
     return indicatorStr;
 };
 
-// Returns attributes formatted in a string
+/**
+ * Formats DDS attributes into a readable string representation.
+ * @param attributes - Array of DDS attributes to format
+ * @returns A comma-separated string of formatted attributes with their indicators
+ */
 export function formatDdsAttributes(attributes?: DdsAttribute[]): string {
     if (!attributes || attributes.length === 0) return '';
 
@@ -78,12 +106,22 @@ export function formatDdsAttributes(attributes?: DdsAttribute[]): string {
     }).join(', ');
 };
 
+// DOCUMENT ANALYSIS FUNCTIONS
+
+/**
+ * Finds the end line index for a multi-line DDS constant that spans multiple lines.
+ * @param document - The VS Code text document
+ * @param startLineIndex - The starting line index to search from
+ * @returns The index of the last line that belongs to the continued constant
+ */
 export function findEndLineIndex(document: vscode.TextDocument, startLineIndex: number): number {
     let endLineIndex = startLineIndex;
 
     for (let i = startLineIndex; i < document.lineCount; i++) {
         const line = document.lineAt(i).text;
 
+        // Check if this is a continued constant line
+        // DDS constants that continue have "     A" at the start and "-" at position 79
         const isContinuedConstant =
             line.startsWith("     A") &&
             line.charAt(79) === "-";
@@ -98,11 +136,23 @@ export function findEndLineIndex(document: vscode.TextDocument, startLineIndex: 
     return endLineIndex;
 };
 
+/**
+ * Determines if a document is a DDS file based on its extension.
+ * @param document - The VS Code text document to check
+ * @returns True if the document has a DDS file extension
+ */
 export function isDdsFile(document: vscode.TextDocument): boolean {
     const ddsExtensions = ['.dspf'];
     return ddsExtensions.some(ext => document.fileName.toLowerCase().endsWith(ext));
 };
 
+// UTILITY FUNCTIONS
+
+/**
+ * Parses a size string into length and decimal components.
+ * @param newSize - Size string in format "length" or "length,decimals"
+ * @returns Object containing parsed length and decimals values
+ */
 export function parseSize(newSize: string): { length: number, decimals: number } {
     const [intPart, decPart] = newSize.split(',');
 
@@ -112,43 +162,62 @@ export function parseSize(newSize: string): { length: number, decimals: number }
     return { length, decimals };
 };
 
+/**
+ * Checks if a record with the given name exists in the records array.
+ * @param recordName - The name of the record to check
+ * @returns True if the record exists (case-insensitive comparison)
+ */
 export function recordExists(recordName: string): boolean {
-
-    let exists: boolean = false;
-
-    if (records.includes(recordName.toUpperCase())) {
-        exists = true;
-    };
-    return exists;
-
+    return records.includes(recordName.toUpperCase());
 };
 
+// OVERLAP DETECTION FUNCTIONS
+
+/**
+ * Finds overlapping fields and constants within a record.
+ * Two elements overlap if they are on the same row and their column ranges intersect.
+ * @param record - The record to analyze for overlaps
+ * @returns Array of overlap pairs containing the overlapping elements
+ */
 export function findOverlapsInRecord(record: FieldsPerRecord) {
     const overlaps: { a: FieldInfo | ConstantInfo, b: FieldInfo | ConstantInfo }[] = [];
 
+    // Combine fields and constants into a single array for comparison
     const elements = [
-        ...record.fields.map(f => ({ ...f, kind: "field" })),
-        ...record.constants.map(c => ({ ...c, kind: "constant" }))
+        ...record.fields.map(f => ({ ...f, kind: "field" as const })),
+        ...record.constants.map(c => ({ ...c, kind: "constant" as const }))
     ];
 
+    // Compare each pair of elements
     for (let i = 0; i < elements.length; i++) {
         for (let j = i + 1; j < elements.length; j++) {
             const e1 = elements[i];
             const e2 = elements[j];
 
+            // Only check elements on the same row
             if (e1.row === e2.row) {
                 const e1End = e1.col + e1.length - 1;
                 const e2End = e2.col + e2.length - 1;
 
+                // Check if column ranges overlap
                 if (e1.col <= e2End && e2.col <= e1End) {
                     overlaps.push({ a: e1, b: e2 });
-                }
-            }
-        }
-    }
+                };
+            };
+        };
+    };
+
     return overlaps;
 };
 
+// VS CODE INTEGRATION FUNCTIONS
+
+/**
+ * Updates the DDS tree provider with parsed elements from the current document.
+ * Handles errors gracefully by showing error messages and clearing the tree.
+ * @param treeProvider - The DDS tree provider to update
+ * @param document - Optional VS Code document to parse (uses active editor if not provided)
+ */
 export function updateTreeProvider(treeProvider: DdsTreeProvider, document?: vscode.TextDocument) {
     try {
         if (document && isDdsFile(document)) {
@@ -167,6 +236,11 @@ export function updateTreeProvider(treeProvider: DdsTreeProvider, document?: vsc
     };
 };
 
+/**
+ * Navigates to a specific line number in the active text editor.
+ * Centers the view on the target line and positions the cursor at the beginning.
+ * @param lineNumber - The line number to navigate to (1-based)
+ */
 export function goToLine(lineNumber: number): void {
     const editor = vscode.window.activeTextEditor;
 
@@ -175,7 +249,9 @@ export function goToLine(lineNumber: number): void {
         return;
     };
 
+    // Convert to 0-based line number for VS Code API
     const position = new vscode.Position(lineNumber - 1, 0);
     editor.selection = new vscode.Selection(position, position);
     editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
 };
+

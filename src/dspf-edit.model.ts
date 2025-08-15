@@ -25,8 +25,10 @@ export interface DdsAttribute {
   kind: 'attribute';
   lineIndex: number;
   value: string;
+  attribute?: string;
   indicators?: DdsIndicator[];
   attributes?: DdsAttribute[];
+  children?: DdsElement[];
 };
 
 /**
@@ -56,6 +58,9 @@ export interface DdsFile {
   kind: 'file';
   lineIndex: number;
   attributes?: DdsAttribute[];
+  indicators?: DdsIndicator[];
+  attribute?: string;
+  children?: DdsElement[];
 };
 
 /** DDS Record element */
@@ -64,7 +69,10 @@ export interface DdsRecord {
   name: string;
   lineIndex: number;
   endIndex?: number;
+  attribute?: string;
+  children?: DdsElement[];
   attributes?: DdsAttribute[];
+  indicators?: DdsIndicator[];
   size?: DdsSize;
 };
 
@@ -82,6 +90,8 @@ export interface DdsField {
   referenced?: boolean;
   lineIndex: number;
   recordname: string;
+  attribute?: string;
+  children?: DdsElement[];
   attributes?: DdsAttribute[];
   indicators?: DdsIndicator[];
 };
@@ -91,8 +101,10 @@ export interface DdsFieldAttribute {
   kind: 'fieldAttribute';
   lineIndex: number;
   value: string;
+  attribute?: string;
   indicators?: DdsIndicator[];
   attributes?: DdsAttribute[];
+  children?: DdsElement[];
 };
 
 /** DDS Constant element */
@@ -103,8 +115,10 @@ export interface DdsConstant {
   column: number;
   lineIndex: number;
   recordname: string;
+  attribute?: string;
   attributes?: DdsAttribute[];
   indicators?: DdsIndicator[];
+  children?: DdsElement[];
 };
 
 /** Constant attribute (similar to field attributes but for constants) */
@@ -112,8 +126,10 @@ export interface DdsConstantAttribute {
   kind: 'constantAttribute';
   lineIndex: number;
   value: string;
+  attribute?: string;
   indicators?: DdsIndicator[];
   attributes?: DdsAttribute[];
+  children?: DdsElement[];
 };
 
 /** Attribute group (e.g., "Attributes" node in a tree) */
@@ -129,8 +145,10 @@ export interface DdsIndicators {
   kind: 'indicatornode';
   indicator: DdsIndicator;
   lineIndex: number;
+  attribute?: string;
   attributes?: DdsAttribute[];
   indicators?: DdsIndicator[];
+  children?: DdsElement[];
 };
 
 /** DDS Group element (can contain multiple child elements) */

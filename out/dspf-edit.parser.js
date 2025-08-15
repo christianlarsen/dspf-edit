@@ -582,11 +582,10 @@ function processRecordSizes(ddsElements) {
 function extractWindowSize(attributes) {
     if (!attributes)
         return undefined;
-    // Look for WINDOW attribute in record attributes
     const windowAttribute = attributes.find(attr => attr.value.toUpperCase().includes('WINDOW('));
     if (!windowAttribute)
         return undefined;
-    // Parse WINDOW attribute: WINDOW(startRow startCol endRow endCol)
+    // WINDOW(startRow startCol endRow endCol)
     const windowMatch = windowAttribute.value.match(/WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\)/i);
     if (!windowMatch)
         return undefined;
