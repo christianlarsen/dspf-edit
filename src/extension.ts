@@ -8,7 +8,7 @@ import * as vscode from 'vscode';
 import { DdsTreeProvider} from './dspf-edit.providers';
 import { changePosition } from './dspf-edit.change-position';
 import { centerPosition } from './dspf-edit.center';
-import { editConstant } from './dspf-edit.edit-constant';
+import { editConstant, addConstant } from './dspf-edit.edit-constant';
 import { editField } from './dspf-edit.edit-field';
 import { viewStructure } from './dspf-edit.view-structure';
 import { generateStructure } from './dspf-edit.generate-structure';
@@ -55,6 +55,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	const commands: CommandConfig[] = [
 		{ name: 'viewStructure', handler: viewStructure as (context: vscode.ExtensionContext, treeProvider: DdsTreeProvider) => void, needsTreeProvider: true },
+		{ name: 'addConstant', handler: addConstant as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'editConstant', handler: editConstant as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'editField', handler: editField as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'changePosition', handler: changePosition as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
