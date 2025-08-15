@@ -585,21 +585,18 @@ function extractWindowSize(attributes) {
     const windowAttribute = attributes.find(attr => attr.value.toUpperCase().includes('WINDOW('));
     if (!windowAttribute)
         return undefined;
-    // WINDOW(startRow startCol endRow endCol)
+    // WINDOW(startRow startCol numRows numCols)
     const windowMatch = windowAttribute.value.match(/WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\)/i);
     if (!windowMatch)
         return undefined;
     const startRow = parseInt(windowMatch[1], 10);
     const startCol = parseInt(windowMatch[2], 10);
-    const endRow = parseInt(windowMatch[3], 10);
-    const endCol = parseInt(windowMatch[4], 10);
-    // Calculate window dimensions
-    const rows = endRow - startRow + 1;
-    const cols = endCol - startCol + 1;
+    const rows = parseInt(windowMatch[3], 10);
+    const cols = parseInt(windowMatch[4], 10);
     return {
         rows,
         cols,
-        name: `WINDOW_${startRow}_${startCol}_${endRow}_${endCol}`,
+        name: `WINDOW_${startRow}_${startCol}_${rows}_${cols}`,
         source: 'window',
         originRow: startRow,
         originCol: startCol
