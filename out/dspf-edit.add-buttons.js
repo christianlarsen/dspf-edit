@@ -176,4 +176,5 @@ function addButtons(context) {
         await vscode.workspace.applyEdit(edit);
     }));
 }
+;
 //# sourceMappingURL=dspf-edit.add-buttons.js.map

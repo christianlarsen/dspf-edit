@@ -54,6 +54,7 @@ const dspf_edit_new_record_1 = require("./dspf-edit.new-record");
 const dspf_edit_goto_line_1 = require("./dspf-edit.goto-line");
 const dspf_edit_helper_1 = require("./dspf-edit.helper");
 const dspf_edit_add_buttons_1 = require("./dspf-edit.add-buttons");
+const dspf_edit_add_color_1 = require("./dspf-edit.add-color");
 let updateTimeout;
 // Activate extension
 function activate(context) {
@@ -84,7 +85,8 @@ function activate(context) {
         { name: 'deleteRecord', handler: dspf_edit_delete_record_1.deleteRecord, needsTreeProvider: false },
         { name: 'newRecord', handler: dspf_edit_new_record_1.newRecord, needsTreeProvider: false },
         { name: 'goToLine', handler: dspf_edit_goto_line_1.goToLineHandler, needsTreeProvider: false },
-        { name: 'addButtons', handler: dspf_edit_add_buttons_1.addButtons, needsTreeProvider: false }
+        { name: 'addButtons', handler: dspf_edit_add_buttons_1.addButtons, needsTreeProvider: false },
+        { name: 'addColor', handler: dspf_edit_add_color_1.addColor, needsTreeProvider: false }
     ];
     // Register all commands
     commands.forEach(cmd => {
