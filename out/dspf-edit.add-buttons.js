@@ -39,142 +39,313 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.addButtons = addButtons;
+exports.findRecordInsertionPoint = findRecordInsertionPoint;
 const vscode = __importStar(require("vscode"));
 const dspf_edit_model_1 = require("./dspf-edit.model");
+// COMMAND REGISTRATION
+/**
+ * Registers the add buttons command for DDS records.
+ * Allows users to interactively add function key buttons to a record.
+ * @param context - The VS Code extension context
+ */
 function addButtons(context) {
     context.subscriptions.push(vscode.commands.registerCommand("dspf-edit.add-buttons", async (node) => {
+        await handleAddButtonsCommand(node);
+    }));
+}
+;
+// COMMAND HANDLER
+/**
+ * Handles the add buttons command for a DDS record.
+ * Collects button definitions from user and adds them to the record.
+ * @param node - The DDS node containing the record
+ */
+async function handleAddButtonsCommand(node) {
+    try {
         const editor = vscode.window.activeTextEditor;
         if (!editor) {
             vscode.window.showErrorMessage('No active editor found.');
             return;
         }
+        ;
+        // Validate that the node is a record
         if (node.ddsElement.kind !== 'record') {
+            vscode.window.showWarningMessage('Buttons can only be added to records.');
             return;
         }
-        const buttons = [];
-        // Collect button definitions interactively
-        while (true) {
-            const key = await vscode.window.showInputBox({
-                prompt: 'Function key (F1..F24) — leave empty to finish',
-                placeHolder: 'F1',
-                validateInput: (value) => {
-                    if (!value)
-                        return '';
-                    const upper = value.toUpperCase();
-                    // Validate F-key format
-                    if (!/^F([1-9]|1\d|2[0-4])$/.test(upper)) {
-                        return 'Invalid function key. Use format F1..F24';
-                    }
-                    // Prevent duplicates
-                    if (buttons.some(b => b.key === upper)) {
-                        return `Function key ${upper} already used.`;
-                    }
-                    return '';
-                }
-            });
-            if (!key)
-                break;
-            const label = await vscode.window.showInputBox({
-                prompt: `Text for ${key.toUpperCase()}`,
-                placeHolder: 'Help',
-                validateInput: (value) => {
-                    if (!value.trim())
-                        return 'Button text cannot be empty';
-                    if (value.startsWith(' '))
-                        return 'Button text cannot start with a space';
-                    if (value.length > 34)
-                        return 'Button text cannot exceed 34 characters';
-                    return '';
-                }
-            });
-            if (!label) {
-                vscode.window.showWarningMessage(`Skipping ${key.toUpperCase()} — no label entered.`);
-                continue;
-            }
-            buttons.push({
-                key: key.toUpperCase(),
-                label: label.trimEnd()
-            });
-        }
         ;
+        // Collect button definitions from user
+        const buttons = await collectButtonDefinitions();
         if (buttons.length === 0) {
             vscode.window.showInformationMessage('No buttons entered.');
             return;
         }
         ;
-        // --- Sort buttons by numeric F-key order ---
-        buttons.sort((a, b) => {
-            const numA = parseInt(a.key.substring(1), 10);
-            const numB = parseInt(b.key.substring(1), 10);
-            return numA - numB;
-        });
-        // --- Get record and size info ---
-        const recordName = node.ddsElement.name;
-        const recordSize = (0, dspf_edit_model_1.getRecordSize)(recordName);
-        const recordInfo = dspf_edit_model_1.fieldsPerRecords.find(r => r.record === recordName);
-        if (!recordSize || !recordInfo) {
+        // Get record information
+        const recordInfo = getRecordInformation(node.ddsElement.name);
+        if (!recordInfo) {
             vscode.window.showErrorMessage('Record size or info not found.');
             return;
         }
         ;
-        const recordLineEnd = recordInfo.endIndex + 1;
-        const visibleStart = recordInfo.size?.originRow ?? 0;
-        const maxCols = recordInfo.size?.cols ?? 0;
-        // --- Calculate how many rows are needed ---
-        const startCol = 1;
-        let col = startCol;
-        let rowsNeeded = 1;
-        for (const btn of buttons) {
-            const text = `${btn.key}=${btn.label}`;
-            if (col + text.length > maxCols - 1) {
-                rowsNeeded++;
-                col = startCol;
-            }
-            ;
-            col += text.length + 2; // add spacing between buttons
-        }
-        ;
-        // --- Start row so that the last line is at the original position ---
-        let currentRow = (visibleStart + (recordSize.rows - 2)) - (rowsNeeded - 1);
-        let currentCol = startCol;
-        // --- Prepare workspace edit ---
-        const edit = new vscode.WorkspaceEdit();
-        const doc = editor.document;
-        let crInserted = false;
-        let numButton = 0;
-        for (const btn of buttons) {
-            numButton++;
-            const text = `${btn.key}=${btn.label}`;
-            // Wrap to the previous row if text exceeds max columns
-            if (currentCol + text.length > maxCols - 1) {
-                currentRow++;
-                currentCol = startCol;
-            }
-            const rowStr = String(currentRow).padStart(2, ' ');
-            const colStr = String(currentCol + 1).padStart(2, ' ');
-            // Build DDS line
-            let ddsLine = ''.padEnd(45, ' ');
-            ddsLine = ddsLine.substring(0, 5) + 'A' + ddsLine.substring(6);
-            ddsLine = ddsLine.substring(0, 39) + rowStr + ddsLine.substring(41);
-            ddsLine = ddsLine.substring(0, 42) + colStr + `'${text}'`;
-            const insertPos = new vscode.Position(recordLineEnd, 0);
-            // If inserting after last doc line, ensure a line break
-            if (!crInserted && insertPos.line >= doc.lineCount) {
-                edit.insert(doc.uri, insertPos, '\n');
-                crInserted = true;
-            }
-            ;
-            edit.insert(doc.uri, insertPos, ddsLine);
-            // Add newline if more buttons remain
-            if (numButton < buttons.length || insertPos.line < doc.lineCount) {
-                edit.insert(doc.uri, insertPos, '\n');
-            }
-            ;
-            currentCol += text.length + 2;
-        }
-        ;
-        await vscode.workspace.applyEdit(edit);
-    }));
+        // Calculate button layout
+        const layout = calculateButtonLayout(buttons, recordInfo);
+        // Generate and apply DDS lines
+        await applyButtonsToRecord(editor, buttons, recordInfo, layout);
+    }
+    catch (error) {
+        console.error('Error adding buttons:', error);
+        vscode.window.showErrorMessage('An error occurred while adding buttons.');
+    }
+    ;
 }
+;
+// BUTTON COLLECTION FUNCTIONS
+/**
+ * Collects button definitions interactively from the user.
+ * @returns Array of button definitions sorted by F-key number
+ */
+async function collectButtonDefinitions() {
+    const buttons = [];
+    while (true) {
+        const key = await getFunctionKeyFromUser(buttons);
+        if (!key)
+            break;
+        const label = await getButtonLabelFromUser(key);
+        if (!label) {
+            vscode.window.showWarningMessage(`Skipping ${key} — no label entered.`);
+            continue;
+        }
+        ;
+        buttons.push({
+            key: key,
+            label: label.trimEnd()
+        });
+    }
+    ;
+    // Sort buttons by numeric F-key order
+    return sortButtonsByFKeyOrder(buttons);
+}
+;
+/**
+ * Gets a function key from the user with validation.
+ * @param existingButtons - Already defined buttons to check for duplicates
+ * @returns The function key or null if user wants to finish
+ */
+async function getFunctionKeyFromUser(existingButtons) {
+    const key = await vscode.window.showInputBox({
+        prompt: 'Function key (F1..F24) — leave empty to finish',
+        placeHolder: 'F1',
+        validateInput: (value) => validateFunctionKey(value, existingButtons)
+    });
+    return key ? key.toUpperCase() : null;
+}
+;
+/**
+ * Gets a button label from the user with validation.
+ * @param key - The function key this label is for
+ * @returns The button label or null if cancelled
+ */
+async function getButtonLabelFromUser(key) {
+    const label = await vscode.window.showInputBox({
+        prompt: `Text for ${key}`,
+        placeHolder: 'Help',
+        validateInput: (value) => validateButtonLabel(value)
+    });
+    return label || null;
+}
+;
+// VALIDATION FUNCTIONS
+/**
+ * Validates function key input.
+ * @param value - The function key value to validate
+ * @param existingButtons - Existing buttons to check for duplicates
+ * @returns Error message or empty string if valid
+ */
+function validateFunctionKey(value, existingButtons) {
+    if (!value)
+        return '';
+    const upper = value.toUpperCase();
+    // Validate F-key format (F1 through F24)
+    if (!/^F([1-9]|1\d|2[0-4])$/.test(upper)) {
+        return 'Invalid function key. Use format F1..F24';
+    }
+    ;
+    // Prevent duplicates
+    if (existingButtons.some(b => b.key === upper)) {
+        return `Function key ${upper} already used.`;
+    }
+    ;
+    return '';
+}
+;
+/**
+ * Validates button label input.
+ * @param value - The button label to validate
+ * @returns Error message or empty string if valid
+ */
+function validateButtonLabel(value) {
+    if (!value.trim()) {
+        return 'Button text cannot be empty';
+    }
+    ;
+    if (value.startsWith(' ')) {
+        return 'Button text cannot start with a space';
+    }
+    ;
+    if (value.length > 34) {
+        return 'Button text cannot exceed 34 characters';
+    }
+    ;
+    return '';
+}
+;
+// RECORD INFORMATION FUNCTIONS
+/**
+ * Gets comprehensive record information needed for button placement.
+ * @param recordName - The name of the record
+ * @returns Complete record information or null if not found
+ */
+function getRecordInformation(recordName) {
+    const recordSize = (0, dspf_edit_model_1.getRecordSize)(recordName);
+    const recordInfo = dspf_edit_model_1.fieldsPerRecords.find(r => r.record === recordName);
+    if (!recordSize || !recordInfo) {
+        return null;
+    }
+    ;
+    return {
+        name: recordName,
+        size: recordSize,
+        info: recordInfo,
+        endLineIndex: recordInfo.endIndex + 1,
+        visibleStart: recordInfo.size?.originRow ?? 0,
+        maxColumns: recordInfo.size?.cols ?? 0
+    };
+}
+;
+// LAYOUT CALCULATION FUNCTIONS
+/**
+ * Calculates the optimal layout for buttons within the record.
+ * @param buttons - Array of button definitions
+ * @param recordInfo - Record information
+ * @returns Layout information for button placement
+ */
+function calculateButtonLayout(buttons, recordInfo) {
+    const startCol = 1;
+    const spacing = 2; // Space between buttons
+    let col = startCol;
+    let rowsNeeded = 1;
+    // Calculate how many rows are needed
+    for (const btn of buttons) {
+        const text = `${btn.key}=${btn.label}`;
+        if (col + text.length > recordInfo.maxColumns - 1) {
+            rowsNeeded++;
+            col = startCol;
+        }
+        ;
+        col += text.length + spacing;
+    }
+    ;
+    // Calculate starting row so that the last line is at the original position
+    const startRow = (recordInfo.visibleStart + (recordInfo.size.rows - 2)) - (rowsNeeded - 1);
+    return {
+        startRow: startRow,
+        startCol: startCol,
+        rowsNeeded: rowsNeeded,
+        spacing: spacing
+    };
+}
+;
+// DDS LINE GENERATION FUNCTIONS
+/**
+ * Applies the button definitions to the record by generating and inserting DDS lines.
+ * @param editor - The active text editor
+ * @param buttons - Array of button definitions
+ * @param recordInfo - Record information
+ * @param layout - Layout information
+ */
+async function applyButtonsToRecord(editor, buttons, recordInfo, layout) {
+    const edit = new vscode.WorkspaceEdit();
+    const doc = editor.document;
+    let currentRow = layout.startRow;
+    let currentCol = layout.startCol;
+    let crInserted = false;
+    for (let i = 0; i < buttons.length; i++) {
+        const btn = buttons[i];
+        const text = `${btn.key}=${btn.label}`;
+        // Wrap to next row if text exceeds max columns
+        if (currentCol + text.length > recordInfo.maxColumns - 1) {
+            currentRow++;
+            currentCol = layout.startCol;
+        }
+        ;
+        // Create DDS line for this button
+        const ddsLine = createButtonDdsLine(text, currentRow, currentCol + 1);
+        const insertPos = new vscode.Position(recordInfo.endLineIndex, 0);
+        // Ensure proper line breaks
+        if (!crInserted && insertPos.line >= doc.lineCount) {
+            edit.insert(doc.uri, insertPos, '\n');
+            crInserted = true;
+        }
+        ;
+        edit.insert(doc.uri, insertPos, ddsLine);
+        // Add newline if more buttons remain or if not at end of document
+        if (i < buttons.length - 1 || insertPos.line < doc.lineCount) {
+            edit.insert(doc.uri, insertPos, '\n');
+        }
+        ;
+        currentCol += text.length + layout.spacing;
+    }
+    ;
+    await vscode.workspace.applyEdit(edit);
+    vscode.window.showInformationMessage(`Added ${buttons.length} buttons to record ${recordInfo.name}.`);
+}
+;
+/**
+ * Creates a DDS line for a button constant.
+ * @param text - The button text (e.g., "F1=Help")
+ * @param row - The row position
+ * @param col - The column position
+ * @returns The formatted DDS line
+ */
+function createButtonDdsLine(text, row, col) {
+    const rowStr = String(row).padStart(2, ' ');
+    const colStr = String(col).padStart(2, ' ');
+    // Build DDS line with proper formatting
+    // Format: "     A          [row][col]'[text]'"
+    let ddsLine = ''.padEnd(45, ' ');
+    ddsLine = ddsLine.substring(0, 5) + 'A' + ddsLine.substring(6);
+    ddsLine = ddsLine.substring(0, 39) + rowStr + ddsLine.substring(41);
+    ddsLine = ddsLine.substring(0, 42) + colStr + `'${text}'`;
+    return ddsLine;
+}
+;
+// UTILITY FUNCTIONS
+/**
+ * Sorts buttons by their F-key numeric order.
+ * @param buttons - Array of button definitions to sort
+ * @returns Sorted array of button definitions
+ */
+function sortButtonsByFKeyOrder(buttons) {
+    return buttons.sort((a, b) => {
+        const numA = parseInt(a.key.substring(1), 10);
+        const numB = parseInt(b.key.substring(1), 10);
+        return numA - numB;
+    });
+}
+;
+/**
+ * Finds the insertion point for adding new elements to a record.
+ * This is a utility function that could be reused by other modules.
+ * @param recordName - The name of the record
+ * @returns The line index where new elements should be inserted
+ */
+function findRecordInsertionPoint(recordName) {
+    const recordInfo = dspf_edit_model_1.fieldsPerRecords.find(r => r.record === recordName);
+    return recordInfo ? recordInfo.endIndex + 1 : null;
+}
+;
+;
+;
 ;
 //# sourceMappingURL=dspf-edit.add-buttons.js.map

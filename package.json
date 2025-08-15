@@ -84,7 +84,7 @@
       },
       {
         "command": "dspf-edit.add-color",
-        "title": "Add Color"
+        "title": "Colors"
       }
     ],
     "menus": {
