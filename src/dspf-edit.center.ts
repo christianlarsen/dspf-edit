@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
-import { fileSizeAttributes, DdsRecord } from './dspf-edit.model';
+import { fileSizeAttributes, DdsRecord, getRecordSize } from './dspf-edit.model';
 import { currentDdsElements } from './dspf-edit.parser';
 
 export function centerPosition(context: vscode.ExtensionContext) {
@@ -31,7 +31,11 @@ export function centerPosition(context: vscode.ExtensionContext) {
 
             // Finds the size of the record where the field or constant is
             // Looks for a "WINDOW" attribute in the record "element.recordname"
-            const windowSize = getRecordWindowSize(element.recordname);
+            const windowSize = getRecordSize(element.recordname);
+            if (!windowSize) {
+                vscode.window.showWarningMessage("Unable to retrieve window size.");
+                return;
+            };
             const maxCols = windowSize.cols;
             
             // Calculates the center position of the field/constant
@@ -76,6 +80,7 @@ export function centerPosition(context: vscode.ExtensionContext) {
     );
 };
 
+/*
 function getRecordWindowSize(recordName: string): { cols: number; rows: number } {
 
     const recordElement = currentDdsElements.find(el => 
@@ -102,3 +107,4 @@ function getRecordWindowSize(recordName: string): { cols: number; rows: number }
         cols: fileSizeAttributes.maxCol1
     };
 };
+*/
