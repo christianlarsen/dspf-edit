@@ -51,6 +51,11 @@ exports.recordExists = recordExists;
 exports.findOverlapsInRecord = findOverlapsInRecord;
 exports.updateTreeProvider = updateTreeProvider;
 exports.goToLine = goToLine;
+exports.isAttributeLine = isAttributeLine;
+exports.createAttributeLines = createAttributeLines;
+exports.findElementInsertionPoint = findElementInsertionPoint;
+exports.getElementRecordName = getElementRecordName;
+exports.findElementsWithAttribute = findElementsWithAttribute;
 const vscode = __importStar(require("vscode"));
 const dspf_edit_model_1 = require("./dspf-edit.model");
 const dspf_edit_parser_1 = require("./dspf-edit.parser");
@@ -291,6 +296,113 @@ function goToLine(lineNumber) {
     const position = new vscode.Position(lineNumber - 1, 0);
     editor.selection = new vscode.Selection(position, position);
     editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+}
+;
+/**
+ * Determines if a line is a DDS attribute line.
+ * @param line - The line text to check
+ * @returns True if the line contains attribute definitions
+ */
+function isAttributeLine(line) {
+    // If line is a "record", returns false
+    if (line.length > 15 && line[15] === 'R') {
+        return false;
+    }
+    ;
+    // If there is a field, returns false    
+    const fieldName = line.substring(18, 27).trim();
+    if (fieldName != '') {
+        return false;
+    }
+    ;
+    // Rest of cases
+    // Checks for COLOR, DSPATR, EDTCDE... ???
+    const trimmed = line.trim();
+    return trimmed.startsWith('A ') && (trimmed.includes('COLOR(') ||
+        trimmed.includes('DSPATR(') ||
+        trimmed.includes('EDTCDE(') ||
+        trimmed.includes('EDTWD(') ||
+        trimmed.includes('REFFLD(') ||
+        trimmed.includes('ERRMSG(') ||
+        trimmed.includes('CF') ||
+        trimmed.includes('CA') ||
+        trimmed.includes('VALUES') ||
+        trimmed.includes('SFLRCDNBR') ||
+        // Add other attribute patterns as needed
+        /[A-Z]+\(/.test(trimmed));
+}
+;
+/**
+ * Creates DDS attribute lines for attribute specifications.
+ * @param attributeCode - Attribute code
+ * @param attributes - Array of attribute codes
+ * @returns Array of formatted DDS lines
+ */
+function createAttributeLines(attributeCode, attributes) {
+    return attributes.map(attribute => {
+        return `     A` + ' '.repeat(38) + `${attributeCode}(${attribute})`;
+    });
+}
+;
+/**
+ * Finds the insertion point after a DDS element for adding attributes.
+ * @param editor - The active text editor
+ * @param element - The DDS element
+ * @returns Line index for insertion or -1 if not found
+ */
+function findElementInsertionPoint(editor, element) {
+    const elementLineIndex = element.lineIndex;
+    // Look for the line after the element definition
+    // Skip any existing attribute lines
+    let insertionPoint = elementLineIndex + 1;
+    // Skip existing attribute lines (lines that start with "     A" and have attributes)
+    while (insertionPoint < editor.document.lineCount) {
+        const line = editor.document.lineAt(insertionPoint).text;
+        if (line.trim().startsWith('A ') && isAttributeLine(line)) {
+            insertionPoint++;
+        }
+        else {
+            break;
+        }
+        ;
+    }
+    ;
+    return insertionPoint;
+}
+;
+/**
+ * Gets the record name for a given element.
+ * This is a utility function that could be moved to a shared utilities module.
+ * @param element - The DDS element
+ * @returns The record name or empty string if not found
+ */
+function getElementRecordName(element) {
+    return element.recordname || '';
+}
+;
+/**
+ * Finds all elements in a record that have an attribute code.
+ * This could be useful for reporting or bulk operations.
+ * @param recordName - The name of the record
+ * @param attributeCode - Attribute code
+ * @returns Array of element names that have attributes
+ */
+function findElementsWithAttribute(recordName, attributeCode) {
+    const recordInfo = dspf_edit_model_1.fieldsPerRecords.find(r => r.record === recordName);
+    if (!recordInfo)
+        return [];
+    const elementsWithAttributes = [];
+    [...recordInfo.fields, ...recordInfo.constants].forEach(element => {
+        const hasAttribute = element.attributes?.some(attr => {
+            const matchStr = `/^${attributeCode}\([A-Z]{3}\)$/`;
+            attr.match(matchStr);
+        });
+        if (hasAttribute) {
+            elementsWithAttributes.push(element.name);
+        }
+        ;
+    });
+    return elementsWithAttributes;
 }
 ;
 //# sourceMappingURL=dspf-edit.helper.js.map

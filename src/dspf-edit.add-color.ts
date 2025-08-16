@@ -7,6 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
 import { fieldsPerRecords } from './dspf-edit.model';
+import { isAttributeLine, createAttributeLines, findElementInsertionPoint } from './dspf-edit.helper';
 
 // COMMAND REGISTRATION
 
@@ -107,8 +108,14 @@ function getCurrentColorsForElement(element: any): string[] {
     // Find the element in the fieldsPerRecords data
     const recordInfo = fieldsPerRecords.find(r => r.record === element.recordname);
     if (!recordInfo) return [];
-    
-    const elementNameWithoutQuotes = element.name.slice(1, -1);
+
+    let elementNameWithoutQuotes : string = '';
+    if (element.kind === 'constant') {
+        elementNameWithoutQuotes = element.name.slice(1, -1);
+    } else {
+        elementNameWithoutQuotes = element.name;
+    };
+
     // Look in both fields and constants
     const elementInfo = [
         ...recordInfo.fields,
@@ -188,7 +195,7 @@ async function addColorsToElement(
         throw new Error('Could not find insertion point for color attributes');
     };
 
-    const colorLines = createColorAttributeLines(colors);
+    const colorLines = createAttributeLines('COLOR', colors);
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
 
@@ -225,51 +232,25 @@ async function removeColorsFromElement(editor: vscode.TextEditor, element: any):
     for (let i = colorLines.length - 1; i >= 0; i--) {
         const lineIndex = colorLines[i];
         const line = editor.document.lineAt(lineIndex);
-        workspaceEdit.delete(uri, line.rangeIncludingLineBreak);
+        if (element.lineIndex === lineIndex) {
+            const newLine = line.text.slice(0, 44);
+            workspaceEdit.replace(
+                uri,
+                new vscode.Range(
+                    line.range.start.translate(0, 44), 
+                    line.range.end 
+                ),
+                ""
+            );
+        } else {
+            workspaceEdit.delete(uri, line.rangeIncludingLineBreak);
+        };
     };
 
     await vscode.workspace.applyEdit(workspaceEdit);
 };
 
 // LINE CREATION AND DETECTION FUNCTIONS
-
-/**
- * Creates DDS attribute lines for color specifications.
- * @param colors - Array of color codes
- * @returns Array of formatted DDS lines
- */
-function createColorAttributeLines(colors: string[]): string[] {
-    return colors.map(color => {
-        // Format: "     A            COLOR(XXX)"
-        return `     A` + ' '.repeat(38) + `COLOR(${color})`;
-    });
-};
-
-/**
- * Finds the insertion point after a DDS element for adding attributes.
- * @param editor - The active text editor
- * @param element - The DDS element
- * @returns Line index for insertion or -1 if not found
- */
-function findElementInsertionPoint(editor: vscode.TextEditor, element: any): number {
-    const elementLineIndex = element.lineIndex;
-    
-    // Look for the line after the element definition
-    // Skip any existing attribute lines
-    let insertionPoint = elementLineIndex + 1;
-    
-    // Skip existing attribute lines (lines that start with "     A" and have attributes)
-    while (insertionPoint < editor.document.lineCount) {
-        const line = editor.document.lineAt(insertionPoint).text;
-        if (line.trim().startsWith('A ') && isAttributeLine(line)) {
-            insertionPoint++;
-        } else {
-            break;
-        };
-    };
-    
-    return insertionPoint;
-};
 
 /**
  * Finds existing color attribute lines for an element.
@@ -279,78 +260,30 @@ function findElementInsertionPoint(editor: vscode.TextEditor, element: any): num
  */
 function findExistingColorLines(editor: vscode.TextEditor, element: any): number[] {
     const colorLines: number[] = [];
-    const startLine = element.lineIndex + 1;
-    
-    // Look for COLOR attribute lines after the element
+    const isConstant = element.kind === 'constant';
+    const startLine = isConstant ? element.lineIndex + 1 : element.lineIndex;
+
+     // Look for COLOR attribute lines after the element
     for (let i = startLine; i < editor.document.lineCount; i++) {
-        const line = editor.document.lineAt(i).text;
-        
-        // Stop if we hit a non-attribute line
-        if (!line.trim().startsWith('A ') || !isAttributeLine(line)) {
+        const lineText = editor.document.lineAt(i).text;
+
+        // Special case: first line of a field can have attributes
+        if (i === element.lineIndex && !isConstant) {
+            if (lineText.includes('COLOR(')) {
+                colorLines.push(i);
+            };
+            continue;
+        };
+
+        if (!lineText.trim().startsWith('A ') || !isAttributeLine(lineText)) {
             break;
         };
-        
+
         // Check if this is a COLOR attribute
-        if (line.includes('COLOR(')) {
+        if (lineText.includes('COLOR(')) {
             colorLines.push(i);
         };
     };
-    
+
     return colorLines;
-};
-
-// UTILITY FUNCTIONS
-
-/**
- * Determines if a line is a DDS attribute line.
- * @param line - The line text to check
- * @returns True if the line contains attribute definitions
- */
-function isAttributeLine(line: string): boolean {
-    // Attribute lines typically have specific patterns
-    // This is a simplified check - you might need to adjust based on your DDS format
-    const trimmed = line.trim();
-    return trimmed.startsWith('A ') && (
-        trimmed.includes('COLOR(') ||
-        trimmed.includes('DSPATR(') ||
-        trimmed.includes('EDTCDE(') ||
-        trimmed.includes('EDTWD(') ||
-        // Add other attribute patterns as needed
-        /[A-Z]+\(/.test(trimmed)
-    );
-};
-
-/**
- * Gets the record name for a given element.
- * This is a utility function that could be moved to a shared utilities module.
- * @param element - The DDS element
- * @returns The record name or empty string if not found
- */
-export function getElementRecordName(element: any): string {
-    return element.recordname || '';
-};
-
-/**
- * Finds all elements in a record that have color attributes.
- * This could be useful for reporting or bulk operations.
- * @param recordName - The name of the record
- * @returns Array of element names that have color attributes
- */
-export function findElementsWithColors(recordName: string): string[] {
-    const recordInfo = fieldsPerRecords.find(r => r.record === recordName);
-    if (!recordInfo) return [];
-
-    const elementsWithColors: string[] = [];
-    
-    [...recordInfo.fields, ...recordInfo.constants].forEach(element => {
-        const hasColorAttribute = element.attributes?.some(attr => 
-            attr.match(/^COLOR\([A-Z]{3}\)$/)
-        );
-        
-        if (hasColorAttribute) {
-            elementsWithColors.push(element.name);
-        };
-    });
-
-    return elementsWithColors;
-};
+}
