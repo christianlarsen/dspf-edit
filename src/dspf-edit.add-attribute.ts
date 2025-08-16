@@ -9,12 +9,14 @@ import { DdsNode } from './dspf-edit.providers';
 import { fieldsPerRecords } from './dspf-edit.model';
 import { isAttributeLine, createAttributeLines, findElementInsertionPoint } from './dspf-edit.helper';
 
-// COMMAND REGISTRATION
+// INTERFACES AND TYPES
 
 interface AttributeWithIndicators {
     attribute: string;
     indicators: string[];
 };
+
+// COMMAND REGISTRATION
 
 /**
  * Registers the add attribute command for DDS fields and constants.
@@ -263,20 +265,20 @@ async function addAttributesToElement(
 
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
-    const insertPos = new vscode.Position(insertionPoint, 0);
 
-    // Insert each attribute line in REVERSE order at the SAME insertion point
-    // This way each new attribute pushes the previous ones down naturally
-    for (let i = attributes.length - 1; i >= 0; i--) {
+    // Insert each attribute line
+    let crInserted : boolean = false;    
+    for (let i = 0; i < attributes.length; i++) {
         const attributeLine = createAttributeLineWithIndicators(attributes[i]);
-        
-        // Check if we need to add a newline at the end of the document
-        if (insertPos.line >= editor.document.lineCount) {
+        const insertPos = new vscode.Position(insertionPoint , 0); // +i ???
+        if (!crInserted && insertPos.line >= editor.document.lineCount) {
+            workspaceEdit.insert(uri, insertPos, '\n');
+            crInserted = true;
+        };
+        workspaceEdit.insert(uri, insertPos, attributeLine);
+        if (i < attributes.length - 1 || insertPos.line < editor.document.lineCount) {
             workspaceEdit.insert(uri, insertPos, '\n');
         };
-        
-        // Insert the attribute line with a newline
-        workspaceEdit.insert(uri, insertPos, attributeLine + '\n');
     };
 
     await vscode.workspace.applyEdit(workspaceEdit);
