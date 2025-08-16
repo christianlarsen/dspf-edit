@@ -37,6 +37,8 @@ function parseDocument(text) {
     processRecordSizes(ddsElements);
     // Compute end line for each record
     assignRecordEndIndices(ddsElements, lines.length);
+    // Sync record attributes into fieldsPerRecords
+    syncRecordAttributes(ddsElements);
     // Store globally and return filtered elements
     exports.currentDdsElements = ddsElements;
     return ddsElements.filter(el => el.kind !== 'attribute');
@@ -175,6 +177,7 @@ function parseRecordElement(lines, lineIndex, trimmedLine, lastRecord) {
     dspf_edit_model_1.records.push(name);
     dspf_edit_model_1.fieldsPerRecords.push({
         record: name,
+        attributes: attributes,
         fields: [],
         constants: [],
         startIndex: lineIndex,
@@ -629,6 +632,22 @@ function assignRecordEndIndices(ddsElements, totalLines) {
         const entry = dspf_edit_model_1.fieldsPerRecords.find(r => r.record === rec.name);
         if (entry)
             entry.endIndex = endIdx;
+    }
+    ;
+}
+;
+/**
+ * Sync record attributes into fieldsPerRecords
+ * @param ddsElements - All elements
+ */
+function syncRecordAttributes(ddsElements) {
+    const recs = ddsElements.filter(el => el.kind === 'record');
+    for (const rec of recs) {
+        const entry = dspf_edit_model_1.fieldsPerRecords.find(r => r.record === rec.name);
+        if (entry) {
+            entry.attributes = rec.attributes;
+        }
+        ;
     }
     ;
 }

@@ -54,6 +54,9 @@ export function parseDocument(text: string): DdsElement[] {
     // Compute end line for each record
     assignRecordEndIndices(ddsElements, lines.length);
 
+    // Sync record attributes into fieldsPerRecords
+    syncRecordAttributes(ddsElements);
+
     // Store globally and return filtered elements
     currentDdsElements = ddsElements;
     return ddsElements.filter(el => el.kind !== 'attribute');
@@ -208,6 +211,7 @@ function parseRecordElement(
     records.push(name);
     fieldsPerRecords.push({
         record: name,
+        attributes: attributes,
         fields: [],
         constants: [],
         startIndex: lineIndex,
@@ -720,3 +724,17 @@ function assignRecordEndIndices(ddsElements: DdsElement[], totalLines: number): 
     };
 };
 
+/**
+ * Sync record attributes into fieldsPerRecords
+ * @param ddsElements - All elements
+ */
+function syncRecordAttributes(ddsElements: DdsElement[]): void {
+    const recs = ddsElements.filter(el => el.kind === 'record') as DdsRecord[];
+
+    for (const rec of recs) {
+        const entry = fieldsPerRecords.find(r => r.record === rec.name);
+        if (entry) {
+            entry.attributes = rec.attributes;
+        };
+    };
+};

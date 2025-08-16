@@ -210,6 +210,7 @@ export interface ConstantInfo {
 /** Record container for fields & constants */
 export interface FieldsPerRecord {
   record: string;
+  attributes?: DdsAttribute[];
   fields: FieldInfo[];
   constants: ConstantInfo[];
   size?: DdsSize;
