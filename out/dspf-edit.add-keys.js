@@ -321,7 +321,7 @@ async function collectIndicatorsForKeyCommand(commandType, keyNumber) {
  * @param keyCommands - Array of key commands with indicators to add
  */
 async function addKeyCommandsToRecord(editor, element, keyCommands) {
-    const insertionPoint = (0, dspf_edit_helper_1.findElementInsertionPoint)(editor, element);
+    const insertionPoint = (0, dspf_edit_helper_1.findElementInsertionPointRecordFirstLine)(editor, element);
     if (insertionPoint === -1) {
         throw new Error('Could not find insertion point for key commands');
     }

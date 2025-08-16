@@ -54,6 +54,7 @@ exports.goToLine = goToLine;
 exports.isAttributeLine = isAttributeLine;
 exports.createAttributeLines = createAttributeLines;
 exports.findElementInsertionPoint = findElementInsertionPoint;
+exports.findElementInsertionPointRecordFirstLine = findElementInsertionPointRecordFirstLine;
 exports.getElementRecordName = getElementRecordName;
 exports.findElementsWithAttribute = findElementsWithAttribute;
 const vscode = __importStar(require("vscode"));
@@ -362,6 +363,35 @@ function findElementInsertionPoint(editor, element) {
             insertionPoint++;
         }
         else {
+            break;
+        }
+        ;
+    }
+    ;
+    return insertionPoint;
+}
+;
+/**
+ * Finds the insertion point after a DDS record for adding attributes (must be the first line after the
+ * record declaration)
+ * @param editor - The active text editor
+ * @param element - The DDS element
+ * @returns Line index for insertion or -1 if not found
+ */
+function findElementInsertionPointRecordFirstLine(editor, element) {
+    const elementLineIndex = element.lineIndex;
+    // Look for the line after the element definition
+    // Skip any existing attribute lines
+    let insertionPoint = elementLineIndex + 1;
+    // Skip existing attribute lines (lines that start with "     A" and have attributes)
+    while (insertionPoint < editor.document.lineCount) {
+        const line = editor.document.lineAt(insertionPoint).text;
+        if (line.trim().startsWith('A*')) {
+            insertionPoint++;
+            continue;
+        }
+        ;
+        if (line.trim().startsWith('A ')) {
             break;
         }
         ;

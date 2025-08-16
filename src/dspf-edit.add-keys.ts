@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
 import { fieldsPerRecords } from './dspf-edit.model';
-import { isAttributeLine, createAttributeLines, findElementInsertionPoint } from './dspf-edit.helper';
+import { isAttributeLine, findElementInsertionPointRecordFirstLine } from './dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
@@ -338,7 +338,7 @@ async function addKeyCommandsToRecord(
     element: any,
     keyCommands: KeyCommandWithIndicators[]
 ): Promise<void> {
-    const insertionPoint = findElementInsertionPoint(editor, element);
+    const insertionPoint = findElementInsertionPointRecordFirstLine(editor, element);
     if (insertionPoint === -1) {
         throw new Error('Could not find insertion point for key commands');
     };
