@@ -42,7 +42,7 @@ exports.addAttribute = addAttribute;
 const vscode = __importStar(require("vscode"));
 const dspf_edit_model_1 = require("./dspf-edit.model");
 const dspf_edit_helper_1 = require("./dspf-edit.helper");
-// COMMAND REGISTRATION
+;
 /**
  * Registers the add attribute command for DDS fields and constants.
  * Allows users to interactively manage attributes for elements.
@@ -57,7 +57,7 @@ function addAttribute(context) {
 // COMMAND HANDLER
 /**
  * Handles the add attribute command for a DDS field or constant.
- * Manages existing attributes and allows adding/removing attributes.
+ * Manages existing attributes with indicators and allows adding/removing attributes.
  * @param node - The DDS node containing the field or constant
  */
 async function handleAddAttributeCommand(node) {
@@ -77,10 +77,10 @@ async function handleAddAttributeCommand(node) {
         // Get current attributes from the element
         const currentAttributes = getCurrentAttributesForElement(node.ddsElement);
         // Get available attributes (excluding current ones)
-        const availableAttributes = getAvailableAttributes(currentAttributes);
+        const availableAttributes = getAvailableAttributes(currentAttributes.map(a => a.attribute));
         // Show current attributes if any exist
         if (currentAttributes.length > 0) {
-            const currentAttributesList = currentAttributes.join(', ');
+            const currentAttributesList = currentAttributes.map(a => `${a.attribute}${a.indicators.length > 0 ? `(${a.indicators.join(',')})` : ''}`).join(', ');
             const action = await vscode.window.showQuickPick(['Add more attributes', 'Replace all attributes', 'Remove all attributes'], {
                 title: `Current attributes: ${currentAttributesList}`,
                 placeHolder: 'Choose how to manage attributes'
@@ -101,7 +101,7 @@ async function handleAddAttributeCommand(node) {
         }
         ;
         // Collect new attributes to add
-        const selectedAttributes = await collectAttributesFromUser(availableAttributes);
+        const selectedAttributes = await collectAttributesWithIndicatorsFromUser(availableAttributes);
         if (selectedAttributes.length === 0) {
             vscode.window.showInformationMessage('No attributes selected.');
             return;
@@ -109,7 +109,8 @@ async function handleAddAttributeCommand(node) {
         ;
         // Apply the selected attributes to the element
         await addAttributesToElement(editor, node.ddsElement, selectedAttributes);
-        vscode.window.showInformationMessage(`Added attributes ${selectedAttributes.join(', ')} to ${node.ddsElement.name}.`);
+        const attributesSummary = selectedAttributes.map(a => `${a.attribute}${a.indicators.length > 0 ? `(${a.indicators.join(',')})` : ''}`).join(', ');
+        vscode.window.showInformationMessage(`Added attributes ${attributesSummary} to ${node.ddsElement.name}.`);
     }
     catch (error) {
         console.error('Error managing attributes:', error);
@@ -144,13 +145,16 @@ function getCurrentAttributesForElement(element) {
     ].find(item => item.name === elementNameWithoutQuotes);
     if (!elementInfo || !elementInfo.attributes)
         return [];
-    // Extract DSPATR attributes
+    // Extract DSPATR attributes with indicators
     const attributes = [];
     if (elementInfo) {
         elementInfo.attributes.forEach(attr => {
             const attributeMatch = attr.match(/^DSPATR\(([A-Z]{2})\)$/);
             if (attributeMatch) {
-                attributes.push(attributeMatch[1]);
+                attributes.push({
+                    attribute: attributeMatch[1],
+                    indicators: []
+                });
             }
         });
     }
@@ -170,11 +174,11 @@ function getAvailableAttributes(currentAttributes) {
 ;
 // USER INTERACTION FUNCTIONS
 /**
- * Collects attributes from user through interactive selection.
+ * Collects attributes with indicators from user through interactive selection.
  * @param availableAttributes - Array of attributes available for selection
- * @returns Array of selected attributes
+ * @returns Array of selected attributes with indicators
  */
-async function collectAttributesFromUser(availableAttributes) {
+async function collectAttributesWithIndicatorsFromUser(availableAttributes) {
     const selectedAttributes = [];
     let remainingAttributes = [...availableAttributes];
     while (remainingAttributes.length > 0) {
@@ -184,19 +188,66 @@ async function collectAttributesFromUser(availableAttributes) {
         });
         if (!selectedAttribute)
             break;
-        selectedAttributes.push(selectedAttribute);
+        // Collect indicators for this attribute
+        const indicators = await collectIndicatorsForAttribute(selectedAttribute);
+        selectedAttributes.push({
+            attribute: selectedAttribute,
+            indicators: indicators
+        });
         remainingAttributes = remainingAttributes.filter(c => c !== selectedAttribute);
     }
     ;
     return selectedAttributes;
 }
 ;
+/**
+ * Collects conditioning indicators for a specific attribute.
+ * @param attribute - The attribute code (e.g., 'HI', 'RI')
+ * @returns Array of indicator codes (max 3)
+ */
+async function collectIndicatorsForAttribute(attribute) {
+    const indicators = [];
+    while (indicators.length < 3) {
+        const indicatorInput = await vscode.window.showInputBox({
+            title: `Indicators for DSPATR(${attribute}) - ${indicators.length}/3 added`,
+            prompt: `Enter indicator ${indicators.length + 1} (e.g., '50', 'N50', or leave empty to finish)`,
+            placeHolder: 'Indicator (1-99, optional N prefix)',
+            validateInput: (value) => {
+                if (!value.trim())
+                    return null; // Empty is OK to finish
+                if (!/^N?[0-9]{1,2}$/.test(value.trim())) {
+                    return 'Invalid indicator format. Use format like: 50, N50, 5, N99';
+                }
+                const num = parseInt(value.replace('N', ''));
+                if (num < 1 || num > 99) {
+                    return 'Indicator number must be between 1 and 99';
+                }
+                return null;
+            }
+        });
+        if (indicatorInput === undefined) {
+            // User cancelled
+            return [];
+        }
+        ;
+        const trimmedInput = indicatorInput.trim();
+        if (!trimmedInput) {
+            // User finished entering indicators
+            break;
+        }
+        ;
+        // Validate and add indicator
+        indicators.push(trimmedInput.toUpperCase());
+    }
+    return indicators;
+}
+;
 // DDS MODIFICATION FUNCTIONS
 /**
- * Adds attributes to a DDS element by inserting DSPATR lines after the element.
+ * Adds attributes with indicators to a DDS element by inserting DSPATR lines after the element.
  * @param editor - The active text editor
  * @param element - The DDS element to add attributes to
- * @param attributes - Array of attribute codes to add
+ * @param attributes - Array of attributes with indicators to add
  */
 async function addAttributesToElement(editor, element, attributes) {
     const insertionPoint = (0, dspf_edit_helper_1.findElementInsertionPoint)(editor, element);
@@ -204,30 +255,54 @@ async function addAttributesToElement(editor, element, attributes) {
         throw new Error('Could not find insertion point for attributes');
     }
     ;
-    const attributeLines = (0, dspf_edit_helper_1.createAttributeLines)('DSPATR', attributes);
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
-    // Insert each attribute line
-    let crInserted = false;
-    for (let i = 0; i < attributeLines.length; i++) {
-        const insertPos = new vscode.Position(insertionPoint + i, 0);
-        if (!crInserted && insertPos.line >= editor.document.lineCount) {
-            workspaceEdit.insert(uri, insertPos, '\n');
-            crInserted = true;
-        }
-        ;
-        workspaceEdit.insert(uri, insertPos, attributeLines[i]);
-        if (i < attributeLines.length - 1 || insertPos.line < editor.document.lineCount) {
+    const insertPos = new vscode.Position(insertionPoint, 0);
+    // Insert each attribute line in REVERSE order at the SAME insertion point
+    // This way each new attribute pushes the previous ones down naturally
+    for (let i = attributes.length - 1; i >= 0; i--) {
+        const attributeLine = createAttributeLineWithIndicators(attributes[i]);
+        // Check if we need to add a newline at the end of the document
+        if (insertPos.line >= editor.document.lineCount) {
             workspaceEdit.insert(uri, insertPos, '\n');
         }
         ;
+        // Insert the attribute line with a newline
+        workspaceEdit.insert(uri, insertPos, attributeLine + '\n');
     }
     ;
     await vscode.workspace.applyEdit(workspaceEdit);
 }
 ;
 /**
- * Removes existing attributes from a DDS element.
+ * Creates a DDS attribute line with conditioning indicators.
+ * @param attributeWithIndicators - The attribute and its indicators
+ * @returns Formatted DDS line with indicators in correct positions
+ */
+function createAttributeLineWithIndicators(attributeWithIndicators) {
+    let line = '     A '; // Start with 'A' and spaces up to position 7
+    // Add indicators
+    for (let i = 0; i < 3; i++) {
+        const startPos = 7 + (i * 3);
+        if (i < attributeWithIndicators.indicators.length) {
+            const indicator = attributeWithIndicators.indicators[i].padStart(3, ' ');
+            line += indicator;
+        }
+        ;
+    }
+    ;
+    while (line.length < 44) {
+        line += ' ';
+    }
+    ;
+    // Add the DSPATR attribute
+    line += `DSPATR(${attributeWithIndicators.attribute})`;
+    return line;
+}
+;
+/**
+ * Removes existing attributes from a DDS element using precise character offsets.
+ * Handles edge cases properly to avoid leaving blank lines at the end of the file.
  * @param editor - The active text editor
  * @param element - The DDS element to remove attributes from
  */
@@ -235,23 +310,115 @@ async function removeAttributesFromElement(editor, element) {
     const attributeLines = findExistingAttributeLines(editor, element);
     if (attributeLines.length === 0)
         return;
+    const document = editor.document;
     const workspaceEdit = new vscode.WorkspaceEdit();
-    const uri = editor.document.uri;
-    // Remove attribute lines in reverse order to maintain line indices
-    for (let i = attributeLines.length - 1; i >= 0; i--) {
-        const lineIndex = attributeLines[i];
-        const line = editor.document.lineAt(lineIndex);
-        if (element.lineIndex === lineIndex) {
-            const newLine = line.text.slice(0, 44);
-            workspaceEdit.replace(uri, new vscode.Range(line.range.start.translate(0, 44), line.range.end), "");
-        }
-        else {
-            workspaceEdit.delete(uri, line.rangeIncludingLineBreak);
+    const uri = document.uri;
+    // Group lines by type: element line vs standalone attribute lines
+    const elementLineIndex = element.lineIndex;
+    const standaloneAttributeLines = attributeLines.filter(lineIndex => lineIndex !== elementLineIndex);
+    const hasElementLineAttribute = attributeLines.includes(elementLineIndex);
+    // Handle standalone attribute lines using precise offsets
+    if (standaloneAttributeLines.length > 0) {
+        const deletionRanges = calculateAttributeDeletionRanges(document, standaloneAttributeLines);
+        // Apply deletions in reverse order to maintain offsets
+        for (let i = deletionRanges.length - 1; i >= 0; i--) {
+            const { startOffset, endOffset } = deletionRanges[i];
+            const startPos = document.positionAt(startOffset);
+            const endPos = document.positionAt(endOffset);
+            workspaceEdit.delete(uri, new vscode.Range(startPos, endPos));
         }
         ;
     }
     ;
+    // Handle attribute on element line (just remove the attribute part)
+    if (hasElementLineAttribute) {
+        const line = document.lineAt(elementLineIndex);
+        workspaceEdit.replace(uri, new vscode.Range(line.range.start.translate(0, 44), line.range.end), "");
+    }
+    ;
     await vscode.workspace.applyEdit(workspaceEdit);
+}
+;
+/**
+ * Calculates precise deletion ranges for standalone attribute lines.
+ * Handles edge cases to prevent blank lines at the end of the file.
+ * @param document - The text document
+ * @param attributeLines - Array of line indices containing standalone attributes
+ * @returns Array of deletion ranges with start and end offsets
+ */
+function calculateAttributeDeletionRanges(document, attributeLines) {
+    const docText = document.getText();
+    const docLength = docText.length;
+    const ranges = [];
+    // Group consecutive lines for more efficient deletion
+    const lineGroups = groupConsecutiveLines(attributeLines);
+    for (const group of lineGroups) {
+        const firstLine = group[0];
+        const lastLine = group[group.length - 1];
+        let startOffset;
+        let endOffset;
+        if (lastLine === document.lineCount - 1) {
+            // Group includes the last line of the document
+            if (firstLine === 0) {
+                // Entire document is attribute lines - delete everything
+                startOffset = 0;
+                endOffset = docLength;
+            }
+            else {
+                // Delete from end of previous line to end of file
+                const prevLineEndPos = document.lineAt(firstLine - 1).range.end;
+                startOffset = document.offsetAt(prevLineEndPos);
+                endOffset = docLength;
+            }
+        }
+        else {
+            // Group is in the middle or at the beginning
+            startOffset = document.offsetAt(new vscode.Position(firstLine, 0));
+            // Include the line break after the last line of the group
+            const afterGroupPos = document.lineAt(lastLine).rangeIncludingLineBreak.end;
+            endOffset = document.offsetAt(afterGroupPos);
+        }
+        ;
+        // Validate the range
+        if (startOffset < endOffset && startOffset >= 0 && endOffset <= docLength) {
+            ranges.push({ startOffset, endOffset });
+        }
+        ;
+    }
+    ;
+    return ranges;
+}
+;
+/**
+ * Groups consecutive line numbers together for more efficient batch deletion.
+ * @param lines - Array of line indices (should be sorted)
+ * @returns Array of arrays, where each sub-array contains consecutive line numbers
+ */
+function groupConsecutiveLines(lines) {
+    if (lines.length === 0)
+        return [];
+    // Ensure lines are sorted
+    const sortedLines = [...lines].sort((a, b) => a - b);
+    const groups = [];
+    let currentGroup = [sortedLines[0]];
+    for (let i = 1; i < sortedLines.length; i++) {
+        const currentLine = sortedLines[i];
+        const previousLine = sortedLines[i - 1];
+        if (currentLine === previousLine + 1) {
+            // Consecutive line - add to current group
+            currentGroup.push(currentLine);
+        }
+        else {
+            // Non-consecutive line - start new group
+            groups.push(currentGroup);
+            currentGroup = [currentLine];
+        }
+        ;
+    }
+    ;
+    // Don't forget the last group
+    groups.push(currentGroup);
+    return groups;
 }
 ;
 // LINE CREATION AND DETECTION FUNCTIONS
@@ -289,6 +456,29 @@ function findExistingAttributeLines(editor, element) {
     }
     ;
     return attributeLines;
+}
+;
+/**
+ * Parses indicators from a DDS line at positions 7-9, 10-12, 13-15.
+ * @param lineText - The DDS line text
+ * @returns Array of indicator codes found
+ */
+function parseIndicatorsFromLine(lineText) {
+    const indicators = [];
+    // Check positions 7-9, 10-12, 13-15 (0-based: 6-8, 9-11, 12-14)
+    const positions = [6, 9, 12];
+    for (const pos of positions) {
+        if (lineText.length > pos + 2) {
+            const indicator = lineText.substring(pos, pos + 3).trim();
+            if (indicator && /^N?[0-9]{1,2}$/.test(indicator)) {
+                indicators.push(indicator);
+            }
+            ;
+        }
+        ;
+    }
+    ;
+    return indicators;
 }
 ;
 //# sourceMappingURL=dspf-edit.add-attribute.js.map
