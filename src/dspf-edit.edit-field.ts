@@ -9,106 +9,330 @@ import { DdsNode } from './dspf-edit.providers';
 import { fileSizeAttributes } from './dspf-edit.model';
 import { parseSize } from './dspf-edit.helper';
 
-export function editField(context: vscode.ExtensionContext) {
+/**
+ * Interface defining the structure of a field's size properties
+ */
+interface FieldSize {
+    length: number;
+    decimals: number;
+};
 
-    context.subscriptions.push(
-        vscode.commands.registerCommand("dspf-edit.edit-field", async (node: DdsNode) => {
-            const element = node.ddsElement;
+/**
+ * Interface for field validation results
+ */
+interface ValidationResult {
+    isValid: boolean;
+    errorMessage?: string;
+};
 
-            if (element.kind !== "field") {
-                vscode.window.showWarningMessage("Only fields can be edit.");
-                return;
-            };
+/**
+ * Constants for field editing operations
+ */
+const FIELD_CONSTANTS = {
+    MAX_NAME_LENGTH: 10,
+    NAME_COLUMN_START: 18,
+    NAME_COLUMN_END: 28,
+    SIZE_COLUMN_START: 32,
+    SIZE_COLUMN_END: 34,
+    TYPE_COLUMN: 34,
+    DECIMAL_COLUMN_START: 35,
+    DECIMAL_COLUMN_END: 37,
+    NUMERIC_TYPES: ['Y', 'P', 'S', 'Z'] as const
+} as const;
 
-            const editor = vscode.window.activeTextEditor;
-            if (!editor) {
-                vscode.window.showWarningMessage("No active editor found.");
-                return;
-            };
-
-            // New "name" for the field
-            let newName = await vscode.window.showInputBox({
-                title: `Set new name for ${element.name}`,
-                value: element.name,
-                validateInput: value => {
-                    if (value.trim() === '') {
-                        return "The field name cannot be empty.";
-                    };
-                    if (value.length > 10) {
-                        return "The name must be 10 characters or fewer.";
-                    };
-                    if (/\s/.test(value)) {
-                        return "The name cannot contain spaces.";
-                    };
-                    if (/^\d/.test(value)) {
-                        return "The name cannot start with a number.";
-                    };
-
-                    const col = element.column ?? 1;
-                    const totalLength = value.length + 2;
-                    if (col + totalLength - 1 > fileSizeAttributes.maxCol1) {
-                        return "Text too long for screen size.";
-                    };
-
-                    return null;
-                }
-            });
-            newName = newName?.toUpperCase();
-            if (!newName) return;
-
-            const newSize = await vscode.window.showInputBox({
-                title: `Set size for ${newName}`,
-                value: element.decimals && element.decimals > 0
-                    ? `${element.length},${element.decimals}`
-                    : `${element.length}`,
-                validateInput: value => {
-                    if (value.trim() === '') {
-                        return "Size is required.";
-                    };
-
-                    const match = value.match(/^(\d+)(?:,(\d+))?$/);
-                    if (!match) {
-                        return "Size must be a number or in the form N or N,D.";
-                    };
-
-                    const total = parseInt(match[1], 10);
-                    const decimals = match[2] ? parseInt(match[2], 10) : 0;
-
-                    if (total <= 0) {
-                        return "Size must be greater than 0.";
-                    };
-
-                    if (decimals < 0 || decimals >= total) {
-                        return "Decimals must be smaller than total size.";
-                    };
-
-                    return null;
-                }
-            });
-
-            if (!newSize) return;
-            const { length, decimals } = parseSize(newSize);
-
-            const lineIndex = element.lineIndex;
-            const line = editor.document.lineAt(lineIndex).text;
-            const paddedName = newName.padEnd(10, ' ').substring(0, 10); // Siempre 10 caracteres
-            const updatedNameLine = line.substring(0, 18) + paddedName + line.substring(28);
-            let updatedLine = updatedNameLine;
-              
-            const typeChar = updatedLine.substring(34, 35); 
-            const isNumericType = ['Y', 'P', 'S', 'Z'].includes(typeChar);
-            const sizeStr = String(length).padStart(2, ' ').substring(0, 2);
-            updatedLine = updatedLine.substring(0, 32) + sizeStr + updatedLine.substring(34);
-            if (isNumericType) {
-                const decStr = String(decimals).padStart(2, ' ').substring(0, 2);
-                updatedLine = updatedLine.substring(0, 35) + decStr + updatedLine.substring(37);
-            };
-            
-            const workspaceEdit = new vscode.WorkspaceEdit();
-            const uri = editor.document.uri;
-            workspaceEdit.replace(uri, new vscode.Range(lineIndex, 0, lineIndex, line.length), updatedLine);
-            await vscode.workspace.applyEdit(workspaceEdit);
-        
-        })
+/**
+ * Registers the field editing command for the VS Code extension
+ * 
+ * This function sets up the command handler that allows users to edit DDS field properties
+ * including field name and size/decimal specifications through interactive input boxes.
+ * 
+ * @param context - The VS Code extension context for registering commands and subscriptions
+ */
+export function editField(context: vscode.ExtensionContext): void {
+    // Register the command with VS Code's command system
+    const disposable = vscode.commands.registerCommand(
+        "dspf-edit.edit-field", 
+        handleEditFieldCommand
     );
+    
+    // Add the command to the extension's disposables for proper cleanup
+    context.subscriptions.push(disposable);
+};
+
+/**
+ * Main command handler for editing DDS fields
+ * 
+ * @param node - The selected DDS node from the tree view
+ */
+async function handleEditFieldCommand(node: DdsNode): Promise<void> {
+    try {
+        // Validate the selected node
+        const validationResult = validateNode(node);
+        if (!validationResult.isValid) {
+            vscode.window.showWarningMessage(validationResult.errorMessage!);
+            return;
+        };
+
+        // Get the active text editor
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            vscode.window.showWarningMessage("No active editor found. Please open a file to edit.");
+            return;
+        };
+
+        const element = node.ddsElement;
+
+        // Get new field name from user
+        const newName = await promptForFieldName(element);
+        if (!newName) {
+            return; // User cancelled
+        };
+
+        // Get new field size from user
+        const newSize = await promptForFieldSize(element, newName);
+        if (!newSize) {
+            return; // User cancelled
+        };
+
+        // Apply the changes to the document
+        await applyFieldChanges(editor, element, newName, newSize);
+        
+        if ('name' in element) {
+            vscode.window.showInformationMessage(
+                `Field '${element.name}' successfully updated to '${newName}' with size ${newSize.length}${newSize.decimals > 0 ? `,${newSize.decimals}` : ''}`
+            );
+        };
+
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+        vscode.window.showErrorMessage(`Failed to edit field: ${errorMessage}`);
+        console.error('Error in editField command:', error);
+    };
+};
+
+/**
+ * Validates that the selected node is a valid field for editing
+ * 
+ * @param node - The DDS node to validate
+ * @returns Validation result indicating if the node is valid
+ */
+function validateNode(node: DdsNode): ValidationResult {
+    if (!node?.ddsElement) {
+        return {
+            isValid: false,
+            errorMessage: "Invalid node selected. Please select a valid DDS element."
+        };
+    };
+
+    if (node.ddsElement.kind !== "field") {
+        return {
+            isValid: false,
+            errorMessage: "Only fields can be edited. Please select a field element."
+        };
+    };
+
+    return { isValid: true };
+};
+
+/**
+ * Prompts the user for a new field name with comprehensive validation
+ * 
+ * @param element - The current DDS element being edited
+ * @returns The new field name in uppercase, or undefined if cancelled
+ */
+async function promptForFieldName(element: any): Promise<string | undefined> {
+    const newName = await vscode.window.showInputBox({
+        title: `Set new name for field '${element.name}'`,
+        value: element.name,
+        prompt: "Enter the new field name (max 10 characters, no spaces, cannot start with number)",
+        validateInput: (value: string) => validateFieldName(value, element)
+    });
+
+    return newName?.trim().toUpperCase();
+};
+
+/**
+ * Validates a field name according to DDS naming rules
+ * 
+ * @param value - The field name to validate
+ * @param element - The current DDS element (for position validation)
+ * @returns Error message if invalid, null if valid
+ */
+function validateFieldName(value: string, element: any): string | null {
+    const trimmedValue = value.trim();
+    
+    // Check for empty name
+    if (trimmedValue === '') {
+        return "The field name cannot be empty.";
+    };
+    
+    // Check length constraint
+    if (trimmedValue.length > FIELD_CONSTANTS.MAX_NAME_LENGTH) {
+        return `The name must be ${FIELD_CONSTANTS.MAX_NAME_LENGTH} characters or fewer.`;
+    };
+    
+    // Check for spaces
+    if (/\s/.test(trimmedValue)) {
+        return "The name cannot contain spaces.";
+    };
+    
+    // Check if starts with number
+    if (/^\d/.test(trimmedValue)) {
+        return "The name cannot start with a number.";
+    };
+    
+    // Check for valid characters (letters, numbers, underscore, hyphen)
+    if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(trimmedValue)) {
+        return "The name can only contain letters, numbers, underscores, and hyphens, and must start with a letter.";
+    };
+    
+    // Check screen size constraints
+    const column = element.column ?? 1;
+    const totalLength = trimmedValue.length + 2; // Account for padding
+    if (column + totalLength - 1 > fileSizeAttributes.maxCol1) {
+        return "Text too long for screen size. Please choose a shorter name.";
+    };
+    
+    return null;
+};
+
+/**
+ * Prompts the user for field size specification
+ * 
+ * @param element - The current DDS element
+ * @param fieldName - The new field name (for display purposes)
+ * @returns The parsed field size, or undefined if cancelled
+ */
+async function promptForFieldSize(element: any, fieldName: string): Promise<FieldSize | undefined> {
+    const currentSizeDisplay = element.decimals && element.decimals > 0
+        ? `${element.length},${element.decimals}`
+        : `${element.length}`;
+
+    const newSizeInput = await vscode.window.showInputBox({
+        title: `Set size for field '${fieldName}'`,
+        value: currentSizeDisplay,
+        prompt: "Enter size as: N (for integer) or N,D (for decimal where N=total digits, D=decimal places)",
+        validateInput: validateFieldSize
+    });
+
+    if (!newSizeInput) {
+        return undefined;
+    };
+
+    return parseSize(newSizeInput);
+};
+
+/**
+ * Validates field size input format and constraints
+ * 
+ * @param value - The size input to validate
+ * @returns Error message if invalid, null if valid
+ */
+function validateFieldSize(value: string): string | null {
+    const trimmedValue = value.trim();
+    
+    if (trimmedValue === '') {
+        return "Size is required.";
+    };
+
+    // Match pattern: digits optionally followed by comma and more digits
+    const match = trimmedValue.match(/^(\d+)(?:,(\d+))?$/);
+    if (!match) {
+        return "Size must be a number or in the format N,D (e.g., '10' or '10,2').";
+    };
+
+    const totalLength = parseInt(match[1], 10);
+    const decimals = match[2] ? parseInt(match[2], 10) : 0;
+
+    // Validate total length
+    if (totalLength <= 0) {
+        return "Total size must be greater than 0.";
+    };
+
+    if (totalLength > 999) {
+        return "Total size cannot exceed 999.";
+    };
+
+    // Validate decimals
+    if (decimals < 0) {
+        return "Decimal places cannot be negative.";
+    };
+
+    if (decimals >= totalLength) {
+        return "Decimal places must be less than total size.";
+    };
+
+    return null;
+};
+
+/**
+ * Applies the field changes to the active document
+ * 
+ * @param editor - The active VS Code text editor
+ * @param element - The DDS element being modified
+ * @param newName - The new field name
+ * @param newSize - The new field size specification
+ */
+async function applyFieldChanges(
+    editor: vscode.TextEditor, 
+    element: any, 
+    newName: string, 
+    newSize: FieldSize
+): Promise<void> {
+    const lineIndex = element.lineIndex;
+    const originalLine = editor.document.lineAt(lineIndex).text;
+    
+    // Build the updated line with new field properties
+    const updatedLine = buildUpdatedLine(originalLine, newName, newSize);
+    
+    // Create and apply the workspace edit
+    const workspaceEdit = new vscode.WorkspaceEdit();
+    const documentUri = editor.document.uri;
+    const lineRange = new vscode.Range(lineIndex, 0, lineIndex, originalLine.length);
+    
+    workspaceEdit.replace(documentUri, lineRange, updatedLine);
+    
+    const success = await vscode.workspace.applyEdit(workspaceEdit);
+    if (!success) {
+        throw new Error("Failed to apply changes to the document.");
+    };
+};
+
+/**
+ * Constructs the updated line with new field name and size
+ * 
+ * @param originalLine - The original line text
+ * @param newName - The new field name
+ * @param newSize - The new field size
+ * @returns The updated line text
+ */
+function buildUpdatedLine(originalLine: string, newName: string, newSize: FieldSize): string {
+    // Ensure the line is long enough for all operations
+    let line = originalLine.padEnd(50, ' ');
+    
+    // Update the field name (columns 19-28, padded to 10 characters)
+    const paddedName = newName.padEnd(FIELD_CONSTANTS.MAX_NAME_LENGTH, ' ')
+                             .substring(0, FIELD_CONSTANTS.MAX_NAME_LENGTH);
+    line = line.substring(0, FIELD_CONSTANTS.NAME_COLUMN_START) + 
+           paddedName + 
+           line.substring(FIELD_CONSTANTS.NAME_COLUMN_END);
+    
+    // Update the size (columns 33-34, right-aligned, 2 digits)
+    const sizeString = newSize.length.toString().padStart(2, ' ').substring(0, 2);
+    line = line.substring(0, FIELD_CONSTANTS.SIZE_COLUMN_START) + 
+           sizeString + 
+           line.substring(FIELD_CONSTANTS.SIZE_COLUMN_END);
+    
+    // Update decimals if this is a numeric field type
+    const typeCharacter = line.substring(FIELD_CONSTANTS.TYPE_COLUMN, FIELD_CONSTANTS.TYPE_COLUMN + 1);
+    const isNumericField = FIELD_CONSTANTS.NUMERIC_TYPES.includes(typeCharacter as any);
+    
+    if (isNumericField) {
+        const decimalString = newSize.decimals.toString().padStart(2, ' ').substring(0, 2);
+        line = line.substring(0, FIELD_CONSTANTS.DECIMAL_COLUMN_START) + 
+               decimalString + 
+               line.substring(FIELD_CONSTANTS.DECIMAL_COLUMN_END);
+    };
+    
+    return line;
 };
