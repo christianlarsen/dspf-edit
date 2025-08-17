@@ -221,9 +221,11 @@ function calculateButtonLayout(buttons: ButtonDefinition[], recordInfo: RecordIn
         };
         col += text.length + spacing;
     };
-
-    // Calculate starting row so that the last line is at the original position
-    const startRow = (recordInfo.visibleStart + (recordInfo.size.rows - 2)) - (rowsNeeded - 1);
+    
+    // Calculate starting row RELATIVE to the record/window
+    // The last button line should be at the second-to-last row of the record
+    const targetRow = recordInfo.size.rows - 1; // Penultimate row (relative to record)
+    const startRow = targetRow - (rowsNeeded - 1);
 
     return {
         startRow: startRow,

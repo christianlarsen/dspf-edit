@@ -41,6 +41,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.newRecord = newRecord;
 const vscode = __importStar(require("vscode"));
 const dspf_edit_helper_1 = require("./dspf-edit.helper");
+const dspf_edit_model_1 = require("./dspf-edit.model");
+;
 ;
 ;
 ;
@@ -230,14 +232,25 @@ async function collectRecordType() {
 }
 ;
 /**
- * Collects complete window configuration including dimensions and title.
+ * Collects complete window configuration including size and position.
  * @returns Window configuration or null if cancelled
  */
 async function collectWindowConfiguration() {
-    // Collect window dimensions
-    const dimensions = await collectWindowDimensions();
-    if (!dimensions)
+    // First, collect window size
+    const windowSize = await collectWindowSize();
+    if (!windowSize)
         return null;
+    // Then, collect positioning preference
+    const position = await collectWindowPosition();
+    if (!position)
+        return null;
+    // Calculate actual dimensions based on size and position
+    const dimensions = calculateWindowDimensions(windowSize, position);
+    if (!dimensions) {
+        vscode.window.showErrorMessage("Cannot position window with these dimensions on the current screen size.");
+        return null;
+    }
+    ;
     // Collect window title
     const title = await collectWindowTitle(dimensions.numCols);
     if (title === null)
@@ -249,47 +262,107 @@ async function collectWindowConfiguration() {
 }
 ;
 /**
- * Collects window dimensions for WINDOW and SFLWDW record types.
- * @returns Window dimensions or null if cancelled
+ * Collects window size (rows and columns).
+ * @returns Window size or null if cancelled
  */
-async function collectWindowDimensions() {
-    const startRow = await vscode.window.showInputBox({
-        title: 'Window Configuration - Position',
-        prompt: "Enter starting row (1-24)",
-        placeHolder: "15",
-        validateInput: (value) => validateNumericRange(value, 1, 24, "Row")
-    });
-    if (!startRow)
-        return null;
-    const startCol = await vscode.window.showInputBox({
-        title: 'Window Configuration - Position',
-        prompt: "Enter starting column (1-80)",
-        placeHolder: "20",
-        validateInput: (value) => validateNumericRange(value, 1, 80, "Column")
-    });
-    if (!startCol)
-        return null;
+async function collectWindowSize() {
+    const maxRows = dspf_edit_model_1.fileSizeAttributes.maxRow1 || 24;
+    const maxCols = dspf_edit_model_1.fileSizeAttributes.maxCol1 || 80;
     const numRows = await vscode.window.showInputBox({
         title: 'Window Configuration - Size',
-        prompt: "Enter number of rows (1-24)",
+        prompt: `Enter number of rows (1-${maxRows})`,
         placeHolder: "7",
-        validateInput: (value) => validateNumericRange(value, 1, 24, "Number of rows")
+        validateInput: (value) => validateNumericRange(value, 1, maxRows, "Number of rows")
     });
     if (!numRows)
         return null;
     const numCols = await vscode.window.showInputBox({
         title: 'Window Configuration - Size',
-        prompt: "Enter number of columns (1-80)",
+        prompt: `Enter number of columns (1-${maxCols})`,
         placeHolder: "40",
-        validateInput: (value) => validateNumericRange(value, 1, 80, "Number of columns")
+        validateInput: (value) => validateNumericRange(value, 1, maxCols, "Number of columns")
     });
     if (!numCols)
         return null;
     return {
-        startRow: Number(startRow),
-        startCol: Number(startCol),
         numRows: Number(numRows),
         numCols: Number(numCols)
+    };
+}
+/**
+ * Collects window positioning preference.
+ * @returns Window position or null if cancelled
+ */
+async function collectWindowPosition() {
+    const positionOptions = [
+        {
+            label: "CENTERED",
+            description: "Center the window on screen",
+            detail: "Window will be positioned in the center of the display"
+        },
+        {
+            label: "BOTTOM_CENTERED",
+            description: "Center horizontally, position at bottom",
+            detail: "Window will be centered horizontally and positioned at the bottom"
+        },
+        {
+            label: "TOP_LEFT",
+            description: "Position at top-left corner",
+            detail: "Window will be positioned at row 1, column 1"
+        }
+    ];
+    const selection = await vscode.window.showQuickPick(positionOptions, {
+        title: 'Window Configuration - Position',
+        placeHolder: "Select window position",
+        canPickMany: false,
+        ignoreFocusOut: true
+    });
+    return selection?.label || null;
+}
+/**
+ * Calculates actual window dimensions based on size and position preferences.
+ * @param size Window size requirements
+ * @param position Positioning preference
+ * @returns Calculated dimensions or null if invalid
+ */
+function calculateWindowDimensions(size, position) {
+    const maxRows = dspf_edit_model_1.fileSizeAttributes.maxRow1 || 24;
+    const maxCols = dspf_edit_model_1.fileSizeAttributes.maxCol1 || 80;
+    // Validate that window fits on screen
+    if (size.numRows > maxRows || size.numCols > maxCols) {
+        return null;
+    }
+    let startRow;
+    let startCol;
+    switch (position) {
+        case 'TOP_LEFT':
+            startRow = 1;
+            startCol = 1;
+            break;
+        case 'CENTERED':
+            startRow = Math.floor((maxRows - size.numRows) / 2) + 1;
+            startCol = Math.floor((maxCols - size.numCols) / 2) + 1;
+            break;
+        case 'BOTTOM_CENTERED':
+            startRow = maxRows - size.numRows;
+            startCol = Math.floor((maxCols - size.numCols) / 2) + 1;
+            break;
+        default:
+            return null;
+    }
+    ;
+    // Final validation - ensure window doesn't go off screen
+    if (startRow < 1 || startCol < 1 ||
+        startRow + size.numRows - 1 > maxRows ||
+        startCol + size.numCols - 1 > maxCols) {
+        return null;
+    }
+    ;
+    return {
+        startRow,
+        startCol,
+        numRows: size.numRows,
+        numCols: size.numCols
     };
 }
 ;
