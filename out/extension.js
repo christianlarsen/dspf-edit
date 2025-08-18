@@ -80,7 +80,7 @@ function activate(context) {
         { name: 'viewStructure', handler: dspf_edit_view_structure_1.viewStructure, needsTreeProvider: true },
         { name: 'addConstant', handler: dspf_edit_edit_constant_1.addConstant, needsTreeProvider: false },
         { name: 'editConstant', handler: dspf_edit_edit_constant_1.editConstant, needsTreeProvider: false },
-        { name: 'editField', handler: dspf_edit_edit_field_1.editField, needsTreeProvider: false },
+        { name: 'registerFieldCommands', handler: dspf_edit_edit_field_1.registerFieldCommands, needsTreeProvider: false },
         { name: 'changePosition', handler: dspf_edit_change_position_1.changePosition, needsTreeProvider: false },
         { name: 'centerPosition', handler: dspf_edit_center_1.centerPosition, needsTreeProvider: false },
         { name: 'copyRecord', handler: dspf_edit_copy_record_1.copyRecord, needsTreeProvider: false },

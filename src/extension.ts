@@ -9,7 +9,7 @@ import { DdsTreeProvider} from './dspf-edit.providers';
 import { changePosition } from './dspf-edit.change-position';
 import { centerPosition } from './dspf-edit.center';
 import { editConstant, addConstant } from './dspf-edit.edit-constant';
-import { editField } from './dspf-edit.edit-field';
+import { registerFieldCommands } from './dspf-edit.edit-field';
 import { viewStructure } from './dspf-edit.view-structure';
 import { generateStructure } from './dspf-edit.generate-structure';
 import { copyRecord } from './dspf-edit.copy-record';
@@ -60,7 +60,7 @@ export function activate(context: vscode.ExtensionContext) {
 		{ name: 'viewStructure', handler: viewStructure as (context: vscode.ExtensionContext, treeProvider: DdsTreeProvider) => void, needsTreeProvider: true },
 		{ name: 'addConstant', handler: addConstant as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'editConstant', handler: editConstant as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
-		{ name: 'editField', handler: editField as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
+		{ name: 'registerFieldCommands', handler: registerFieldCommands as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'changePosition', handler: changePosition as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'centerPosition', handler: centerPosition as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'copyRecord', handler: copyRecord as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
