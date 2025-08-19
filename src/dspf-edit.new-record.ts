@@ -17,6 +17,24 @@ import { fileSizeAttributes } from './dspf-edit.model';
 type RecordType = 'RECORD' | 'WINDOW' | 'SFL' | 'SFLWDW';
 
 /**
+ * Available display sizes for DSPSIZ specification.
+ */
+interface DisplaySize {
+    rows: number;
+    cols: number;
+    name: string;
+    description: string;
+};
+
+/**
+ * DSPSIZ configuration for file-level specification.
+ */
+interface DspsizConfig {
+    sizes: DisplaySize[];
+    needsDspsiz: boolean;
+};
+
+/**
  * Window size configuration (before positioning).
  */
 interface WindowSize {
@@ -64,7 +82,18 @@ interface NewRecordConfig {
     type: RecordType;
     windowConfig?: WindowConfig;
     subfileConfig?: SubfileConfig;
+    dspsizConfig?: DspsizConfig;
 };
+
+// CONSTANTS
+
+/**
+ * Standard display size configurations according to IBM DDS manual.
+ */
+const STANDARD_DISPLAY_SIZES: DisplaySize[] = [
+    { rows: 24, cols: 80, name: '*DS3', description: 'Standard 24x80 display' },
+    { rows: 27, cols: 132, name: '*DS4', description: 'Wide 27x132 display' }
+];
 
 // COMMAND REGISTRATION
 
@@ -104,8 +133,11 @@ async function handleNewRecordCommand(node: DdsNode): Promise<void> {
             return;
         };
 
+        // Check if DSPSIZ needs to be defined
+        const needsDspsiz = await checkIfDspsizNeeded(editor);
+
         // Collect record configuration from user
-        const recordConfig = await collectRecordConfiguration();
+        const recordConfig = await collectRecordConfiguration(needsDspsiz);
         if (!recordConfig) {
             // User cancelled the operation
             return;
@@ -119,8 +151,9 @@ async function handleNewRecordCommand(node: DdsNode): Promise<void> {
 
         // Show success message
         const recordTypeLabel = getRecordTypeLabel(recordConfig.type);
+        const dspsizMessage = recordConfig.dspsizConfig?.needsDspsiz ? ' with DSPSIZ specification' : '';
         vscode.window.showInformationMessage(
-            `Successfully created ${recordTypeLabel} record '${recordConfig.name}'.`
+            `Successfully created ${recordTypeLabel} record '${recordConfig.name}'${dspsizMessage}.`
         );
 
     } catch (error) {
@@ -129,13 +162,90 @@ async function handleNewRecordCommand(node: DdsNode): Promise<void> {
     };
 };
 
+// DSPSIZ DETECTION AND CONFIGURATION
+
+/**
+ * Checks if DSPSIZ specification is needed in the current document.
+ * DSPSIZ is required when there are no existing records or DSPSIZ specifications.
+ * @param editor - The active text editor
+ * @returns True if DSPSIZ needs to be specified
+ */
+async function checkIfDspsizNeeded(editor: vscode.TextEditor): Promise<boolean> {
+    const documentText = editor.document.getText();
+    
+    // Check if DSPSIZ already exists
+    const dspsizRegex = /^\s*A\s+.*DSPSIZ\s*\(/im;
+    if (dspsizRegex.test(documentText)) {
+        return false;
+    };
+
+    // Check if there are existing records (R specification)
+    const recordRegex = /^\s*A\s+.*R\s+\w+/im;
+    return !recordRegex.test(documentText);
+};
+
+/**
+ * Collects DSPSIZ configuration from user.
+ * @returns DSPSIZ configuration or null if cancelled
+ */
+async function collectDspsizConfiguration(): Promise<DspsizConfig | null> {
+    // Ask user which display sizes to support
+    const sizeOptions = STANDARD_DISPLAY_SIZES.map(size => ({
+        label: `${size.rows}x${size.cols} (${size.name})`,
+        description: size.description,
+        picked: size.rows === 24 && size.cols === 80 // Default to standard size
+    }));
+
+    const selectedSizes = await vscode.window.showQuickPick(sizeOptions, {
+        title: 'DSPSIZ Configuration - Display Sizes',
+        placeHolder: 'Select display size(s) to support',
+        canPickMany: true,
+        ignoreFocusOut: true
+    });
+
+    if (!selectedSizes || selectedSizes.length === 0) {
+        return null;
+    };
+
+    // Map selected options back to DisplaySize objects
+    const selectedDisplaySizes: DisplaySize[] = [];
+    for (const option of selectedSizes) {
+        const size = STANDARD_DISPLAY_SIZES.find(s => 
+            option.label.includes(`${s.rows}x${s.cols}`)
+        );
+        if (size) {
+            selectedDisplaySizes.push(size);
+        };
+    };
+
+    // Sort by standard order (24x80 first, then 27x132)
+    selectedDisplaySizes.sort((a, b) => {
+        if (a.rows === 24 && a.cols === 80) return -1;
+        if (b.rows === 24 && b.cols === 80) return 1;
+        return a.rows - b.rows;
+    });
+
+    return {
+        sizes: selectedDisplaySizes,
+        needsDspsiz: true
+    };
+};
+
 // USER INPUT COLLECTION FUNCTIONS
 
 /**
  * Collects complete record configuration from user through interactive dialogs.
+ * @param needsDspsiz - Whether DSPSIZ configuration is needed
  * @returns Complete record configuration or null if user cancelled
  */
-async function collectRecordConfiguration(): Promise<NewRecordConfig | null> {
+async function collectRecordConfiguration(needsDspsiz: boolean): Promise<NewRecordConfig | null> {
+    // Step 0: Collect DSPSIZ configuration if needed
+    let dspsizConfig: DspsizConfig | undefined | null;
+    if (needsDspsiz) {
+        dspsizConfig = await collectDspsizConfiguration();
+        if (!dspsizConfig) return null;
+    };
+
     // Step 1: Get record name
     const recordName = await collectRecordName();
     if (!recordName) return null;
@@ -158,18 +268,16 @@ async function collectRecordConfiguration(): Promise<NewRecordConfig | null> {
         if (!subfileConfig) return null;
     };
 
-    if (windowConfig === null) {
-        windowConfig = undefined;
-    };
-    if (subfileConfig === null) {
-        subfileConfig = undefined;
-    };
+    if (windowConfig === null) windowConfig = undefined;
+    if (subfileConfig === null) subfileConfig = undefined;
+    if (dspsizConfig === null) dspsizConfig = undefined;
 
     return {
         name: recordName,
         type: recordType,
         windowConfig,
-        subfileConfig
+        subfileConfig,
+        dspsizConfig
     };
 };
 
@@ -178,8 +286,9 @@ async function collectRecordConfiguration(): Promise<NewRecordConfig | null> {
  * @returns Valid record name or null if cancelled
  */
 async function collectRecordName(): Promise<string | null> {
+    const stepNumber = '1/4'; // Will be adjusted based on whether DSPSIZ is needed
     const recordName = await vscode.window.showInputBox({
-        title: 'Create New Record - Step 1/4',
+        title: `Create New Record - Step ${stepNumber}`,
         prompt: 'Enter the new record name',
         placeHolder: 'RECORD',
         validateInput: validateRecordName
@@ -319,7 +428,7 @@ async function collectWindowSize(): Promise<WindowSize | null> {
         numRows: Number(numRows),
         numCols: Number(numCols)
     };
-}
+};
 
 /**
  * Collects window positioning preference.
@@ -352,7 +461,7 @@ async function collectWindowPosition(): Promise<WindowPosition | null> {
     });
 
     return (selection?.label as WindowPosition) || null;
-}
+};
 
 /**
  * Calculates actual window dimensions based on size and position preferences.
@@ -367,7 +476,7 @@ function calculateWindowDimensions(size: WindowSize, position: WindowPosition): 
     // Validate that window fits on screen
     if (size.numRows > maxRows || size.numCols > maxCols) {
         return null;
-    }
+    };
 
     let startRow: number;
     let startCol: number;
@@ -516,6 +625,11 @@ function validateNumericRange(value: string, min: number, max: number, fieldName
 function generateRecordLines(config: NewRecordConfig): string[] {
     const lines: string[] = [];
     
+    // Generate DSPSIZ specification if needed (must come first)
+    if (config.dspsizConfig?.needsDspsiz) {
+        lines.push(...generateDspsizLines(config.dspsizConfig));
+    };
+
     // Generate main record line
     lines.push(generateMainRecordLine(config));
 
@@ -549,7 +663,57 @@ function generateRecordLines(config: NewRecordConfig): string[] {
                 lines.push(generateSubfilePageLine(config.subfileConfig.page));
             }
             break;
-    }
+    };
+
+    return lines;
+};
+
+/**
+ * Generates DSPSIZ specification lines according to IBM DDS manual.
+ * @param dspsizConfig - DSPSIZ configuration
+ * @returns Array of formatted DSPSIZ lines
+ */
+function generateDspsizLines(dspsizConfig: DspsizConfig): string[] {
+    if (!dspsizConfig.needsDspsiz || dspsizConfig.sizes.length === 0) {
+        return [];
+    };
+
+    const basePrefix = '     A                                      ';
+    const sizes = dspsizConfig.sizes;
+
+    if (sizes.length === 1) {
+        // Single size specification
+        const size = sizes[0];
+        return [`${basePrefix}DSPSIZ(${size.rows} ${size.cols} ${size.name})`];
+    };
+
+    // Multiple sizes specification
+    const lines: string[] = [];
+    const maxLineLength = 80;
+    
+    // Start building the DSPSIZ specification
+    let currentLine = `${basePrefix}DSPSIZ(`;
+    let needsContinuation = false;
+
+    for (let i = 0; i < sizes.length; i++) {
+        const size = sizes[i];
+        const sizeSpec = `${size.rows} ${size.cols} ${size.name}`;
+        const separator = i < sizes.length - 1 ? ' ' : ')';
+        const fullSpec = sizeSpec + separator;
+
+        // Check if adding this size would exceed line length
+        if (currentLine.length + fullSpec.length > maxLineLength - 1) { // -1 for continuation character
+            // Need to continue on next line
+            lines.push(currentLine + '-');
+            currentLine = `${basePrefix}       ${fullSpec}`;
+            needsContinuation = false;
+        } else {
+            currentLine += fullSpec;
+        };
+    };
+
+    // Add the final line
+    lines.push(currentLine);
 
     return lines;
 };
@@ -679,9 +843,12 @@ async function insertNewRecord(editor: vscode.TextEditor, lines: string[]): Prom
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
     const insertPosition = new vscode.Position(editor.document.lineCount, 0);
-    
+
+    if (editor.document.lineCount > 1) {
+        workspaceEdit.insert(uri, insertPosition, '\n');
+    };
     // Create the complete record text with proper line breaks
-    const recordText = '\n' + lines.join('\n');
+    const recordText = lines.join('\n');
     
     workspaceEdit.insert(uri, insertPosition, recordText);
     await vscode.workspace.applyEdit(workspaceEdit);
