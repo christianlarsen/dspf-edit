@@ -222,6 +222,7 @@ export interface FieldsPerRecord {
 
 export let records: string[] = [];
 export let fieldsPerRecords: FieldsPerRecord[] = [];
+export let attributesFileLevel: DdsAttribute[] = []; 
 
 // UTILITY FUNCTIONS
 

@@ -6,8 +6,8 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
-import { fieldsPerRecords } from './dspf-edit.model';
-import { isAttributeLine, findElementInsertionPointRecordFirstLine } from './dspf-edit.helper';
+import { attributesFileLevel, fieldsPerRecords } from './dspf-edit.model';
+import { isAttributeLine, findElementInsertionPointRecordFirstLine, findElementInsertionPointFileFirstLine } from './dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
@@ -49,13 +49,24 @@ async function handleAddKeyCommandCommand(node: DdsNode): Promise<void> {
         };
 
         // Validate element type - key commands can only be added to records
-        if (node.ddsElement.kind !== 'record') {
-            vscode.window.showWarningMessage('Key commands can only be added to records.');
+        if (node.ddsElement.kind !== 'record' && node.ddsElement.kind !== 'file') {
+            vscode.window.showWarningMessage('Key commands can only be added to records or at file level.');
             return;
         };
 
-        // Get current key commands from the record
-        const currentKeyCommands = getCurrentKeyCommandsForRecord(node.ddsElement);
+        let currentKeyCommands : KeyCommandWithIndicators[] = [];
+
+        switch(node.ddsElement.kind) {
+            case 'record':
+                // Get current key commands from the record
+                currentKeyCommands = getCurrentKeyCommandsForRecord(node.ddsElement);
+                break;
+            case 'file':
+                // Get current key commands from the file
+                currentKeyCommands = getCurrentKeyCommandsForFile(node.ddsElement);
+                break;
+        };
+
 
         // Get available key numbers (excluding current ones)
         const availableKeys = getAvailableKeyNumbers(currentKeyCommands.map(k => k.keyNumber));
@@ -77,12 +88,26 @@ async function handleAddKeyCommandCommand(node: DdsNode): Promise<void> {
             if (!action) return;
 
             if (action === 'Remove all key commands') {
-                await removeKeyCommandsFromRecord(editor, node.ddsElement);
+                switch(node.ddsElement.kind) {
+                    case 'record':
+                        await removeKeyCommandsFromRecord(editor, node.ddsElement);
+                        break;
+                    case 'file':
+                        await removeKeyCommandsFromFile(editor);
+                        break;
+                    };
                 return;
-            }
+            };
 
             if (action === 'Replace all key commands') {
-                await removeKeyCommandsFromRecord(editor, node.ddsElement);
+                switch(node.ddsElement.kind) {
+                    case 'record':
+                        await removeKeyCommandsFromRecord(editor, node.ddsElement);
+                        break;
+                    case 'file':
+                        await removeKeyCommandsFromFile(editor);
+                        break;
+                    };
                 // Continue to add new key commands
             }
             // If "Add more key commands", continue with current logic
@@ -96,16 +121,33 @@ async function handleAddKeyCommandCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        // Apply the selected key commands to the record
-        await addKeyCommandsToRecord(editor, node.ddsElement, selectedKeyCommands);
+        switch(node.ddsElement.kind) {
+            case 'record':
+                // Apply the selected key commands to the record
+                await addKeyCommandsToRecord(editor, node.ddsElement, selectedKeyCommands);
+                break;
+            case 'file':
+                // Apply the selected key commands to the file
+                await addKeyCommandsToFile(editor, selectedKeyCommands);
+                break;    
+        };
 
         const commandsSummary = selectedKeyCommands.map(k =>
             `${k.type}${k.keyNumber}${k.indicators.length > 0 ? `(${k.indicators.join(',')})` : ''}`
         ).join(', ');
 
-        vscode.window.showInformationMessage(
-            `Added key commands ${commandsSummary} to record ${node.ddsElement.name}.`
-        );
+        switch(node.ddsElement.kind) {
+            case 'record' :
+                vscode.window.showInformationMessage(
+                    `Added key commands ${commandsSummary} to record ${node.ddsElement.name}.` 
+                );
+                break;
+            case 'file' :
+                vscode.window.showInformationMessage(
+                    `Added key commands ${commandsSummary} to file.`            
+                );
+                break;    
+        };
 
     } catch (error) {
         console.error('Error managing key commands:', error);
@@ -128,6 +170,36 @@ function getCurrentKeyCommandsForRecord(element: any): KeyCommandWithIndicators[
     const keyCommands: KeyCommandWithIndicators[] = [];
 
     recordInfo.attributes.forEach(attr => {
+        const attribute = attr.value;
+        
+        // Match CA or CF commands: CA03(03 'End of program') or CF12(12 'Cancel')
+        const commandMatch = attribute ? attribute.match(/^(CA|CF)(\d{2})\(\d{2}\s+'([^']{1,25})'\)$/) : false;
+        if (commandMatch) {
+            keyCommands.push({
+                type: commandMatch[1] as 'CA' | 'CF',
+                keyNumber: commandMatch[2],
+                description: commandMatch[3],
+                indicators: [] 
+            });
+        };
+    });
+
+    return keyCommands;
+};
+
+/**
+ * Extracts current key commands from a DDS file (file level).
+ * @param element - The DDS file element
+ * @returns Array of current key commands
+ */
+function getCurrentKeyCommandsForFile(element: any): KeyCommandWithIndicators[] {
+    // Find the record in the fieldsPerRecords data
+    const fileInfo = attributesFileLevel;
+    if (!fileInfo) return [];
+
+    const keyCommands: KeyCommandWithIndicators[] = [];
+
+    fileInfo.forEach(attr => {
         const attribute = attr.value;
         
         // Match CA or CF commands: CA03(03 'End of program') or CF12(12 'Cancel')
@@ -367,6 +439,43 @@ async function addKeyCommandsToRecord(
 };
 
 /**
+ * Adds key commands with indicators to a DDS file by inserting command lines in the first lines.
+ * @param editor - The active text editor
+ * @param keyCommands - Array of key commands with indicators to add
+ */
+async function addKeyCommandsToFile(
+    editor: vscode.TextEditor,
+    keyCommands: KeyCommandWithIndicators[]
+): Promise<void> {
+    const insertionPoint = findElementInsertionPointFileFirstLine(editor);
+    if (insertionPoint === -1) {
+        throw new Error('Could not find insertion point for key commands');
+    };
+
+    const workspaceEdit = new vscode.WorkspaceEdit();
+    const uri = editor.document.uri;
+
+    // Insert each key command line
+    let crInserted: boolean = false;
+    for (let i = 0; i < keyCommands.length; i++) {
+        const commandLine = createKeyCommandLineWithIndicators(keyCommands[i]);
+        const insertPos = new vscode.Position(insertionPoint, 0);
+        
+        if (!crInserted && insertPos.line >= editor.document.lineCount) {
+            workspaceEdit.insert(uri, insertPos, '\n');
+            crInserted = true;
+        };
+        
+        workspaceEdit.insert(uri, insertPos, commandLine);
+        if (i < keyCommands.length - 1 || insertPos.line < editor.document.lineCount) {
+            workspaceEdit.insert(uri, insertPos, '\n');
+        };
+    };
+
+    await vscode.workspace.applyEdit(workspaceEdit);
+};
+
+/**
  * Creates a DDS key command line with conditioning indicators.
  * @param keyCommandWithIndicators - The key command and its indicators
  * @returns Formatted DDS line with indicators in correct positions
@@ -402,6 +511,33 @@ function createKeyCommandLineWithIndicators(keyCommandWithIndicators: KeyCommand
  */
 async function removeKeyCommandsFromRecord(editor: vscode.TextEditor, element: any): Promise<void> {
     const keyCommandLines = findExistingKeyCommandLines(editor, element);
+    if (keyCommandLines.length === 0) return;
+
+    const document = editor.document;
+    const workspaceEdit = new vscode.WorkspaceEdit();
+    const uri = document.uri;
+
+    // All key command lines are standalone (not on the record definition line)
+    const deletionRanges = calculateKeyCommandDeletionRanges(document, keyCommandLines);
+    
+    // Apply deletions in reverse order to maintain offsets
+    for (let i = deletionRanges.length - 1; i >= 0; i--) {
+        const { startOffset, endOffset } = deletionRanges[i];
+        const startPos = document.positionAt(startOffset);
+        const endPos = document.positionAt(endOffset);
+        workspaceEdit.delete(uri, new vscode.Range(startPos, endPos));
+    };
+
+    await vscode.workspace.applyEdit(workspaceEdit);
+};
+
+/**
+ * Removes existing key commands from a DDS file using precise character offsets.
+ * Handles edge cases properly to avoid leaving blank lines at the end of the file.
+ * @param editor - The active text editor
+ */
+async function removeKeyCommandsFromFile(editor: vscode.TextEditor): Promise<void> {
+    const keyCommandLines = findExistingKeyCommandLinesInFile(editor);
     if (keyCommandLines.length === 0) return;
 
     const document = editor.document;
@@ -543,6 +679,54 @@ function findExistingKeyCommandLines(editor: vscode.TextEditor, element: any): n
 
         if (lineText.match(/\b(CA|CF)\d{2}\(/)) {
             keyCommandLines.push(i);
+        };
+    };
+
+    return keyCommandLines;
+};
+
+/**
+ * Finds existing key command lines in file level.
+ * @param editor - The active text editor
+ * @returns Array of line indices containing key commands
+ */
+function findExistingKeyCommandLinesInFile(editor: vscode.TextEditor): number[] {
+    const keyCommandLines: number[] = [];
+
+    for (let i = 0; i < editor.document.lineCount; i++) {
+        const lineText = editor.document.lineAt(i).text;
+
+        // Skip empty lines
+        if (!lineText.trim()) {
+            continue;
+        };
+
+        // Skip comment lines (A*)
+        if (lineText.trimStart().startsWith('A*')) {
+            continue;
+        };
+
+        // Stop if we hit a record definition (R in col 17)
+        if (lineText.length > 16 && lineText[16] === 'R') {
+            break;
+        };
+
+        // If this line has CAxx( or CFxx(
+        if (lineText.match(/\b(CA|CF)\d{2}\(/)) {
+            keyCommandLines.push(i);
+            continue;
+        };
+
+        // If the previous line ended with a "-", check continuation
+        if (i > 0) {
+            const prevLine = editor.document.lineAt(i - 1).text;
+            if (prevLine.length >= 80 && prevLine[79] === '-') {
+                // Join previous + current to check CA/CF
+                const combined = prevLine + lineText;
+                if (combined.match(/\b(CA|CF)\d{2}\(/)) {
+                    keyCommandLines.push(i - 1); // use the line where it starts
+                };
+            };
         };
     };
 

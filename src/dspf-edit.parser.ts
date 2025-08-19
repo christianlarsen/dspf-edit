@@ -14,7 +14,8 @@ import {
     fileSizeAttributes,
     records,
     fieldsPerRecords,
-    getDefaultSize
+    getDefaultSize,
+    attributesFileLevel
 } from './dspf-edit.model';
 
 
@@ -68,6 +69,7 @@ export function parseDocument(text: string): DdsElement[] {
 function clearGlobalState(): void {
     records.length = 0;
     fieldsPerRecords.length = 0;
+    attributesFileLevel.length = 0;
 };
 
 /**
@@ -564,6 +566,8 @@ function processFileAttributes(file: DdsFile, ddsElements: DdsElement[]): void {
         attributes: file.attributes,
         children: []
     });
+    // Add file-level attributes to structure
+    attributesFileLevel.push(...file.attributes);
 
     // Process DSPSIZ attribute for screen size information
     processDspsizAttribute(file.attributes);

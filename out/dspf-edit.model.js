@@ -5,7 +5,7 @@
   dspf-edit.model.ts
 */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.fieldsPerRecords = exports.records = exports.fileSizeAttributes = void 0;
+exports.attributesFileLevel = exports.fieldsPerRecords = exports.records = exports.fileSizeAttributes = void 0;
 exports.getDefaultSize = getDefaultSize;
 exports.getRecordSize = getRecordSize;
 exports.getAllRecordSizes = getAllRecordSizes;
@@ -38,6 +38,7 @@ exports.fileSizeAttributes = {
 // GLOBAL DATA ARRAYS
 exports.records = [];
 exports.fieldsPerRecords = [];
+exports.attributesFileLevel = [];
 // UTILITY FUNCTIONS
 /**
  * Get the default display size from the global file size attributes.

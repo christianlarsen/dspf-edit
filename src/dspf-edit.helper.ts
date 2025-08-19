@@ -285,6 +285,8 @@ export function isAttributeLine(line: string): boolean {
         trimmed.includes('CA') ||
         trimmed.includes('VALUES') ||
         trimmed.includes('SFLRCDNBR') ||
+        trimmed.includes('DSPSIZ') ||
+        trimmed.includes('INDARA') ||
         // Add other attribute patterns as needed
         /[A-Z]+\(/.test(trimmed)
     );
@@ -341,6 +343,31 @@ export function findElementInsertionPointRecordFirstLine(editor: vscode.TextEdit
     // Look for the line after the element definition
     // Skip any existing attribute lines
     let insertionPoint = elementLineIndex + 1;
+    
+    // Skip existing attribute lines (lines that start with "     A" and have attributes)
+    while (insertionPoint < editor.document.lineCount) {
+        const line = editor.document.lineAt(insertionPoint).text;
+        if (line.trim().startsWith('A*')) {
+            insertionPoint ++;
+            continue;
+        };
+        if (line.trim().startsWith('A ')) {
+            break;
+        };
+    };
+    
+    return insertionPoint;
+};
+
+/**
+ * Finds the insertion point in DDS file for adding attributes at file level
+ * @param editor - The active text editor
+ * @returns Line index for insertion or -1 if not found
+ */
+export function findElementInsertionPointFileFirstLine(editor: vscode.TextEditor): number {
+    const elementLineIndex = 0;
+    
+    let insertionPoint = elementLineIndex;
     
     // Skip existing attribute lines (lines that start with "     A" and have attributes)
     while (insertionPoint < editor.document.lineCount) {

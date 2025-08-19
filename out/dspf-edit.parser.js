@@ -50,6 +50,7 @@ function parseDocument(text) {
 function clearGlobalState() {
     dspf_edit_model_1.records.length = 0;
     dspf_edit_model_1.fieldsPerRecords.length = 0;
+    dspf_edit_model_1.attributesFileLevel.length = 0;
 }
 ;
 /**
@@ -487,6 +488,8 @@ function processFileAttributes(file, ddsElements) {
         attributes: file.attributes,
         children: []
     });
+    // Add file-level attributes to structure
+    dspf_edit_model_1.attributesFileLevel.push(...file.attributes);
     // Process DSPSIZ attribute for screen size information
     processDspsizAttribute(file.attributes);
 }
