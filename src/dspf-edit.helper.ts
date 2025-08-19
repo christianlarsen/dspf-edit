@@ -422,3 +422,239 @@ export function findElementsWithAttribute(recordName: string, attributeCode: str
 
     return elementsWithAttributes;
 };
+
+// DSPSIZ HELPER FUNCTIONS
+
+/**
+ * Available display sizes for DSPSIZ specification.
+ */
+export interface DisplaySize {
+    rows: number;
+    cols: number;
+    name: string;
+    description: string;
+};
+
+/**
+ * DSPSIZ configuration for file-level specification.
+ */
+export interface DspsizConfig {
+    sizes: DisplaySize[];
+    needsDspsiz: boolean;
+};
+
+/**
+ * Standard display size configurations according to IBM DDS manual.
+ */
+export const STANDARD_DISPLAY_SIZES: DisplaySize[] = [
+    { rows: 24, cols: 80, name: '*DS3', description: 'Standard 24x80 display' },
+    { rows: 27, cols: 132, name: '*DS4', description: 'Wide 27x132 display' }
+];
+
+/**
+ * Checks if DSPSIZ specification is needed in the current document.
+ * DSPSIZ is required when there are no existing records or DSPSIZ specifications.
+ * @param editor - The active text editor
+ * @returns True if DSPSIZ needs to be specified
+ */
+export async function checkIfDspsizNeeded(editor: vscode.TextEditor): Promise<boolean> {
+    const documentText = editor.document.getText();
+    
+    // Check if DSPSIZ already exists
+    const dspsizRegex = /^\s*A\s+.*DSPSIZ\s*\(/im;
+    if (dspsizRegex.test(documentText)) {
+        return false;
+    };
+
+    // Check if there are existing records (R specification)
+    const recordRegex = /^\s*A\s+.*R\s+\w+/im;
+    return !recordRegex.test(documentText);
+};
+
+/**
+ * Collects DSPSIZ configuration from user.
+ * @returns DSPSIZ configuration or null if cancelled
+ */
+export async function collectDspsizConfiguration(): Promise<DspsizConfig | null> {
+    // Ask user which display sizes to support
+    const sizeOptions = STANDARD_DISPLAY_SIZES.map(size => ({
+        label: `${size.rows}x${size.cols} (${size.name})`,
+        description: size.description,
+        picked: size.rows === 24 && size.cols === 80 // Default to standard size
+    }));
+
+    const selectedSizes = await vscode.window.showQuickPick(sizeOptions, {
+        title: 'DSPSIZ Configuration - Display Sizes',
+        placeHolder: 'Select display size(s) to support',
+        canPickMany: true,
+        ignoreFocusOut: true
+    });
+
+    if (!selectedSizes || selectedSizes.length === 0) {
+        return null;
+    };
+
+    // Map selected options back to DisplaySize objects
+    const selectedDisplaySizes: DisplaySize[] = [];
+    for (const option of selectedSizes) {
+        const size = STANDARD_DISPLAY_SIZES.find(s => 
+            option.label.includes(`${s.rows}x${s.cols}`)
+        );
+        if (size) {
+            selectedDisplaySizes.push(size);
+        };
+    };
+
+    // Sort by standard order (24x80 first, then 27x132)
+    selectedDisplaySizes.sort((a, b) => {
+        if (a.rows === 24 && a.cols === 80) return -1;
+        if (b.rows === 24 && b.cols === 80) return 1;
+        return a.rows - b.rows;
+    });
+
+    return {
+        sizes: selectedDisplaySizes,
+        needsDspsiz: true
+    };
+};
+
+/**
+ * Generates DSPSIZ specification lines according to IBM DDS manual.
+ * @param dspsizConfig - DSPSIZ configuration
+ * @returns Array of formatted DSPSIZ lines
+ */
+export function generateDspsizLines(dspsizConfig: DspsizConfig): string[] {
+    if (!dspsizConfig.needsDspsiz || dspsizConfig.sizes.length === 0) {
+        return [];
+    };
+
+    const basePrefix = '     A                                      ';
+    const sizes = dspsizConfig.sizes;
+
+    if (sizes.length === 1) {
+        // Single size specification
+        const size = sizes[0];
+        return [`${basePrefix}DSPSIZ(${size.rows} ${size.cols} ${size.name})`];
+    };
+
+    // Multiple sizes specification
+    const lines: string[] = [];
+    const maxLineLength = 80;
+    
+    // Start building the DSPSIZ specification
+    let currentLine = `${basePrefix}DSPSIZ(`;
+    
+    for (let i = 0; i < sizes.length; i++) {
+        const size = sizes[i];
+        const sizeSpec = `${size.rows} ${size.cols} ${size.name}`;
+        const separator = i < sizes.length - 1 ? ' ' : ')';
+        const fullSpec = sizeSpec + separator;
+
+        // Check if adding this size would exceed line length
+        if (currentLine.length + fullSpec.length > maxLineLength - 1) { // -1 for continuation character
+            // Need to continue on next line
+            lines.push(currentLine + '-');
+            currentLine = `${basePrefix}       ${fullSpec}`;
+        } else {
+            currentLine += fullSpec;
+        };
+    };
+
+    // Add the final line
+    lines.push(currentLine);
+
+    return lines;
+};
+
+/**
+ * Inserts DSPSIZ lines at the beginning of the file (before any records).
+ * @param editor - The active text editor
+ * @param dspsizLines - Array of DSPSIZ lines to insert
+ */
+export async function insertDspsizLines(editor: vscode.TextEditor, dspsizLines: string[]): Promise<void> {
+    if (dspsizLines.length === 0) return;
+
+    const workspaceEdit = new vscode.WorkspaceEdit();
+    const uri = editor.document.uri;
+    
+    // Find the correct insertion point (before first record, after any existing file-level attributes)
+    const insertionPoint = findDspsizInsertionPoint(editor);
+    
+    // Create the complete DSPSIZ text with proper line breaks
+    const dspsizText = dspsizLines.join('\n') + '\n';
+    
+    workspaceEdit.insert(uri, new vscode.Position(insertionPoint, 0), dspsizText);
+    await vscode.workspace.applyEdit(workspaceEdit);
+};
+
+/**
+ * Finds the correct insertion point for DSPSIZ specification.
+ * Should be after existing file-level attributes but before the first record.
+ * @param editor - The active text editor
+ * @returns Line number where DSPSIZ should be inserted
+ */
+function findDspsizInsertionPoint(editor: vscode.TextEditor): number {
+    let insertionPoint = 0;
+    let foundFileAttributes = false;
+
+    for (let i = 0; i < editor.document.lineCount; i++) {
+        const lineText = editor.document.lineAt(i).text;
+        const trimmedLine = lineText.trim();
+
+        // Skip empty lines and comments
+        if (!trimmedLine || trimmedLine.startsWith('A*')) {
+            continue;
+        };
+
+        // If this is a record definition (R in position 17), stop here
+        if (lineText.length > 16 && lineText[16] === 'R') {
+            return insertionPoint;
+        };
+
+        // If this is a file-level attribute line (starts with A and has content after position 44)
+        if (trimmedLine.startsWith('A ') && lineText.length > 44) {
+            foundFileAttributes = true;
+            insertionPoint = i + 1;
+        } else if (!foundFileAttributes && trimmedLine.startsWith('A ')) {
+            // First A line found, but not clearly a file attribute
+            insertionPoint = i;
+        };
+    };
+
+    return insertionPoint;
+};
+
+/**
+ * Handles the complete DSPSIZ workflow: check if needed, collect configuration, and insert.
+ * This is a convenience function that combines all DSPSIZ operations.
+ * @param editor - The active text editor
+ * @param operationName - Name of the operation for user messages (e.g., "record creation", "key command addition")
+ * @returns DSPSIZ configuration that was applied, or null if not needed/cancelled
+ */
+export async function handleDspsizWorkflow(editor: vscode.TextEditor, operationName: string): Promise<DspsizConfig | null> {
+    // Check if DSPSIZ needs to be defined
+    const needsDspsiz = await checkIfDspsizNeeded(editor);
+    
+    if (!needsDspsiz) {
+        return null; // DSPSIZ not needed
+    };
+
+    // Collect DSPSIZ configuration from user
+    const dspsizConfig = await collectDspsizConfiguration();
+    if (!dspsizConfig) {
+        return null; // User cancelled
+    };
+
+    // Generate and insert DSPSIZ lines
+    const dspsizLines = generateDspsizLines(dspsizConfig);
+    await insertDspsizLines(editor, dspsizLines);
+
+    // Show informational message
+    const sizesText = dspsizConfig.sizes.map(s => `${s.rows}x${s.cols}`).join(', ');
+    vscode.window.showInformationMessage(
+        `DSPSIZ specification added (${sizesText}) for ${operationName}.`
+    );
+
+    return dspsizConfig;
+};
+
