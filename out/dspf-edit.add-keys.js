@@ -75,6 +75,17 @@ async function handleAddKeyCommandCommand(node) {
             return;
         }
         ;
+        // Handle DSPSIZ specification if needed (only for file-level operations)
+        let dspsizConfig = null;
+        if (node.ddsElement.kind === 'file') {
+            dspsizConfig = await (0, dspf_edit_helper_1.handleDspsizWorkflow)(editor, 'key command addition');
+            if (dspsizConfig === undefined) {
+                // User cancelled DSPSIZ configuration
+                return;
+            }
+            ;
+        }
+        ;
         let currentKeyCommands = [];
         switch (node.ddsElement.kind) {
             case 'record':
@@ -146,13 +157,18 @@ async function handleAddKeyCommandCommand(node) {
         }
         ;
         const commandsSummary = selectedKeyCommands.map(k => `${k.type}${k.keyNumber}${k.indicators.length > 0 ? `(${k.indicators.join(',')})` : ''}`).join(', ');
+        // Create success message
+        let successMessage;
         switch (node.ddsElement.kind) {
             case 'record':
-                vscode.window.showInformationMessage(`Added key commands ${commandsSummary} to record ${node.ddsElement.name}.`);
+                successMessage = `Added key commands ${commandsSummary} to record ${node.ddsElement.name}.`;
                 break;
             case 'file':
-                vscode.window.showInformationMessage(`Added key commands ${commandsSummary} to file.`);
+                const dspsizMessage = dspsizConfig ? ' (with DSPSIZ specification)' : '';
+                successMessage = `Added key commands ${commandsSummary} to file${dspsizMessage}.`;
                 break;
+            default:
+                successMessage = `Added key commands ${commandsSummary}.`;
         }
         ;
     }

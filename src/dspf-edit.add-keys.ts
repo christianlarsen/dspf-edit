@@ -7,7 +7,10 @@
 import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
 import { attributesFileLevel, fieldsPerRecords } from './dspf-edit.model';
-import { isAttributeLine, findElementInsertionPointRecordFirstLine, findElementInsertionPointFileFirstLine } from './dspf-edit.helper';
+import {
+    isAttributeLine, findElementInsertionPointRecordFirstLine, findElementInsertionPointFileFirstLine,
+    handleDspsizWorkflow, DspsizConfig
+} from './dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
@@ -54,9 +57,19 @@ async function handleAddKeyCommandCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        let currentKeyCommands : KeyCommandWithIndicators[] = [];
+        // Handle DSPSIZ specification if needed (only for file-level operations)
+        let dspsizConfig: DspsizConfig | null = null;
+        if (node.ddsElement.kind === 'file') {
+            dspsizConfig = await handleDspsizWorkflow(editor, 'key command addition');
+            if (dspsizConfig === undefined) {
+                // User cancelled DSPSIZ configuration
+                return;
+            };
+        };
 
-        switch(node.ddsElement.kind) {
+        let currentKeyCommands: KeyCommandWithIndicators[] = [];
+
+        switch (node.ddsElement.kind) {
             case 'record':
                 // Get current key commands from the record
                 currentKeyCommands = getCurrentKeyCommandsForRecord(node.ddsElement);
@@ -88,26 +101,26 @@ async function handleAddKeyCommandCommand(node: DdsNode): Promise<void> {
             if (!action) return;
 
             if (action === 'Remove all key commands') {
-                switch(node.ddsElement.kind) {
+                switch (node.ddsElement.kind) {
                     case 'record':
                         await removeKeyCommandsFromRecord(editor, node.ddsElement);
                         break;
                     case 'file':
                         await removeKeyCommandsFromFile(editor);
                         break;
-                    };
+                };
                 return;
             };
 
             if (action === 'Replace all key commands') {
-                switch(node.ddsElement.kind) {
+                switch (node.ddsElement.kind) {
                     case 'record':
                         await removeKeyCommandsFromRecord(editor, node.ddsElement);
                         break;
                     case 'file':
                         await removeKeyCommandsFromFile(editor);
                         break;
-                    };
+                };
                 // Continue to add new key commands
                 availableKeys = getAvailableKeyNumbers([]);
 
@@ -123,7 +136,7 @@ async function handleAddKeyCommandCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        switch(node.ddsElement.kind) {
+        switch (node.ddsElement.kind) {
             case 'record':
                 // Apply the selected key commands to the record
                 await addKeyCommandsToRecord(editor, node.ddsElement, selectedKeyCommands);
@@ -131,26 +144,26 @@ async function handleAddKeyCommandCommand(node: DdsNode): Promise<void> {
             case 'file':
                 // Apply the selected key commands to the file
                 await addKeyCommandsToFile(editor, selectedKeyCommands);
-                break;    
+                break;
         };
 
         const commandsSummary = selectedKeyCommands.map(k =>
             `${k.type}${k.keyNumber}${k.indicators.length > 0 ? `(${k.indicators.join(',')})` : ''}`
         ).join(', ');
 
-        switch(node.ddsElement.kind) {
-            case 'record' :
-                vscode.window.showInformationMessage(
-                    `Added key commands ${commandsSummary} to record ${node.ddsElement.name}.` 
-                );
+        // Create success message
+        let successMessage: string;
+        switch (node.ddsElement.kind) {
+            case 'record':
+                successMessage = `Added key commands ${commandsSummary} to record ${node.ddsElement.name}.`;
                 break;
-            case 'file' :
-                vscode.window.showInformationMessage(
-                    `Added key commands ${commandsSummary} to file.`            
-                );
-                break;    
+            case 'file':
+                const dspsizMessage = dspsizConfig ? ' (with DSPSIZ specification)' : '';
+                successMessage = `Added key commands ${commandsSummary} to file${dspsizMessage}.`;
+                break;
+            default:
+                successMessage = `Added key commands ${commandsSummary}.`;
         };
-
     } catch (error) {
         console.error('Error managing key commands:', error);
         vscode.window.showErrorMessage('An error occurred while managing key commands.');
@@ -173,7 +186,7 @@ function getCurrentKeyCommandsForRecord(element: any): KeyCommandWithIndicators[
 
     recordInfo.attributes.forEach(attr => {
         const attribute = attr.value;
-        
+
         // Match CA or CF commands: CA03(03 'End of program') or CF12(12 'Cancel')
         const commandMatch = attribute ? attribute.match(/^(CA|CF)(\d{2})\(\d{2}\s+'([^']{1,25})'\)$/) : false;
         if (commandMatch) {
@@ -181,7 +194,7 @@ function getCurrentKeyCommandsForRecord(element: any): KeyCommandWithIndicators[
                 type: commandMatch[1] as 'CA' | 'CF',
                 keyNumber: commandMatch[2],
                 description: commandMatch[3],
-                indicators: [] 
+                indicators: []
             });
         };
     });
@@ -203,7 +216,7 @@ function getCurrentKeyCommandsForFile(element: any): KeyCommandWithIndicators[] 
 
     fileInfo.forEach(attr => {
         const attribute = attr.value;
-        
+
         // Match CA or CF commands: CA03(03 'End of program') or CF12(12 'Cancel')
         const commandMatch = attribute ? attribute.match(/^(CA|CF)(\d{2})\(\d{2}\s+'([^']{1,25})'\)$/) : false;
         if (commandMatch) {
@@ -211,7 +224,7 @@ function getCurrentKeyCommandsForFile(element: any): KeyCommandWithIndicators[] 
                 type: commandMatch[1] as 'CA' | 'CF',
                 keyNumber: commandMatch[2],
                 description: commandMatch[3],
-                indicators: [] 
+                indicators: []
             });
         };
     });
@@ -226,13 +239,13 @@ function getCurrentKeyCommandsForFile(element: any): KeyCommandWithIndicators[] 
  */
 function getAvailableKeyNumbers(currentKeys: string[]): string[] {
     const allKeys: string[] = [];
-    
+
     // Generate key numbers 01-24
     for (let i = 1; i <= 24; i++) {
         const keyNum = i.toString().padStart(2, '0');
         allKeys.push(keyNum);
     };
-    
+
     return allKeys.filter(key => !currentKeys.includes(key));
 };
 
@@ -425,12 +438,12 @@ async function addKeyCommandsToRecord(
     for (let i = 0; i < keyCommands.length; i++) {
         const commandLine = createKeyCommandLineWithIndicators(keyCommands[i]);
         const insertPos = new vscode.Position(insertionPoint, 0);
-        
+
         if (!crInserted && insertPos.line >= editor.document.lineCount) {
             workspaceEdit.insert(uri, insertPos, '\n');
             crInserted = true;
         };
-        
+
         workspaceEdit.insert(uri, insertPos, commandLine);
         if (i < keyCommands.length - 1 || insertPos.line < editor.document.lineCount) {
             workspaceEdit.insert(uri, insertPos, '\n');
@@ -462,12 +475,12 @@ async function addKeyCommandsToFile(
     for (let i = 0; i < keyCommands.length; i++) {
         const commandLine = createKeyCommandLineWithIndicators(keyCommands[i]);
         const insertPos = new vscode.Position(insertionPoint, 0);
-        
+
         if (!crInserted && insertPos.line >= editor.document.lineCount) {
             workspaceEdit.insert(uri, insertPos, '\n');
             crInserted = true;
         };
-        
+
         workspaceEdit.insert(uri, insertPos, commandLine);
         if (i < keyCommands.length - 1 || insertPos.line < editor.document.lineCount) {
             workspaceEdit.insert(uri, insertPos, '\n');
@@ -493,7 +506,7 @@ function createKeyCommandLineWithIndicators(keyCommandWithIndicators: KeyCommand
             line += indicator;
         };
     };
-    
+
     while (line.length < 44) {
         line += ' ';
     };
@@ -521,7 +534,7 @@ async function removeKeyCommandsFromRecord(editor: vscode.TextEditor, element: a
 
     // All key command lines are standalone (not on the record definition line)
     const deletionRanges = calculateKeyCommandDeletionRanges(document, keyCommandLines);
-    
+
     // Apply deletions in reverse order to maintain offsets
     for (let i = deletionRanges.length - 1; i >= 0; i--) {
         const { startOffset, endOffset } = deletionRanges[i];
@@ -548,7 +561,7 @@ async function removeKeyCommandsFromFile(editor: vscode.TextEditor): Promise<voi
 
     // All key command lines are standalone (not on the record definition line)
     const deletionRanges = calculateKeyCommandDeletionRanges(document, keyCommandLines);
-    
+
     // Apply deletions in reverse order to maintain offsets
     for (let i = deletionRanges.length - 1; i >= 0; i--) {
         const { startOffset, endOffset } = deletionRanges[i];
@@ -568,23 +581,23 @@ async function removeKeyCommandsFromFile(editor: vscode.TextEditor): Promise<voi
  * @returns Array of deletion ranges with start and end offsets
  */
 function calculateKeyCommandDeletionRanges(
-    document: vscode.TextDocument, 
+    document: vscode.TextDocument,
     keyCommandLines: number[]
 ): { startOffset: number; endOffset: number }[] {
     const docText = document.getText();
     const docLength = docText.length;
     const ranges: { startOffset: number; endOffset: number }[] = [];
-    
+
     // Group consecutive lines for more efficient deletion
     const lineGroups = groupConsecutiveLines(keyCommandLines);
-    
+
     for (const group of lineGroups) {
         const firstLine = group[0];
         const lastLine = group[group.length - 1];
-        
+
         let startOffset: number;
         let endOffset: number;
-        
+
         if (lastLine === document.lineCount - 1) {
             // Group includes the last line of the document
             if (firstLine === 0) {
@@ -600,18 +613,18 @@ function calculateKeyCommandDeletionRanges(
         } else {
             // Group is in the middle or at the beginning
             startOffset = document.offsetAt(new vscode.Position(firstLine, 0));
-            
+
             // Include the line break after the last line of the group
             const afterGroupPos = document.lineAt(lastLine).rangeIncludingLineBreak.end;
             endOffset = document.offsetAt(afterGroupPos);
         };
-        
+
         // Validate the range
         if (startOffset < endOffset && startOffset >= 0 && endOffset <= docLength) {
             ranges.push({ startOffset, endOffset });
         };
     };
-    
+
     return ranges;
 };
 
@@ -622,16 +635,16 @@ function calculateKeyCommandDeletionRanges(
  */
 function groupConsecutiveLines(lines: number[]): number[][] {
     if (lines.length === 0) return [];
-    
+
     // Ensure lines are sorted
     const sortedLines = [...lines].sort((a, b) => a - b);
     const groups: number[][] = [];
     let currentGroup: number[] = [sortedLines[0]];
-    
+
     for (let i = 1; i < sortedLines.length; i++) {
         const currentLine = sortedLines[i];
         const previousLine = sortedLines[i - 1];
-        
+
         if (currentLine === previousLine + 1) {
             // Consecutive line - add to current group
             currentGroup.push(currentLine);
@@ -641,10 +654,10 @@ function groupConsecutiveLines(lines: number[]): number[][] {
             currentGroup = [currentLine];
         };
     };
-    
+
     // Don't forget the last group
     groups.push(currentGroup);
-    
+
     return groups;
 };
 
