@@ -21,6 +21,7 @@ import { addButtons } from './dspf-edit.add-buttons';
 import { addColor } from './dspf-edit.add-color';
 import { addAttribute } from './dspf-edit.add-attribute';
 import { addKeyCommand } from './dspf-edit.add-keys';
+import { addValidityCheck } from './dspf-edit.add-validity-check';
 
 let updateTimeout: NodeJS.Timeout | undefined;
 
@@ -70,7 +71,8 @@ export function activate(context: vscode.ExtensionContext) {
 		{ name: 'addButtons', handler: addButtons as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'addColor', handler: addColor as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'addAttribute', handler: addAttribute as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
-		{ name: 'addKey', handler: addKeyCommand as (context: vscode.ExtensionContext) => void, needsTreeProvider: false }
+		{ name: 'addKey', handler: addKeyCommand as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
+		{ name: 'addValidityCheck', handler: addValidityCheck as (context: vscode.ExtensionContext) => void, needsTreeProvider: false }
 	];
 
 	// Register all commands
