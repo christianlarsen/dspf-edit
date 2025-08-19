@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
 import { fieldsPerRecords } from './dspf-edit.model';
-import { isAttributeLine, createAttributeLines, findElementInsertionPoint } from './dspf-edit.helper';
+import { isAttributeLine, findElementInsertionPoint } from './dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
@@ -56,7 +56,7 @@ async function handleAddColorCommand(node: DdsNode): Promise<void> {
         const currentColors = getCurrentColorsForElement(node.ddsElement);
         
         // Get available colors (excluding current ones)
-        const availableColors = getAvailableColors(currentColors.map(c => c.color));
+        let availableColors = getAvailableColors(currentColors.map(c => c.color));
 
         // Show current colors if any exist
         if (currentColors.length > 0) {
@@ -82,6 +82,7 @@ async function handleAddColorCommand(node: DdsNode): Promise<void> {
             if (action === 'Replace all colors') {
                 await removeColorsFromElement(editor, node.ddsElement);
                 // Continue to add new colors
+                availableColors = getAvailableColors([]);
             };
             // If "Add more colors", continue with current logic
         };

@@ -47,16 +47,6 @@ const dspf_edit_model_1 = require("./dspf-edit.model");
 ;
 ;
 ;
-;
-;
-// CONSTANTS
-/**
- * Standard display size configurations according to IBM DDS manual.
- */
-const STANDARD_DISPLAY_SIZES = [
-    { rows: 24, cols: 80, name: '*DS3', description: 'Standard 24x80 display' },
-    { rows: 27, cols: 132, name: '*DS4', description: 'Wide 27x132 display' }
-];
 // COMMAND REGISTRATION
 /**
  * Registers the new record command for DDS files.
@@ -91,7 +81,7 @@ async function handleNewRecordCommand(node) {
         }
         ;
         // Check if DSPSIZ needs to be defined
-        const needsDspsiz = await checkIfDspsizNeeded(editor);
+        const needsDspsiz = await (0, dspf_edit_helper_1.checkIfDspsizNeeded)(editor);
         // Collect record configuration from user
         const recordConfig = await collectRecordConfiguration(needsDspsiz);
         if (!recordConfig) {
@@ -115,71 +105,6 @@ async function handleNewRecordCommand(node) {
     ;
 }
 ;
-// DSPSIZ DETECTION AND CONFIGURATION
-/**
- * Checks if DSPSIZ specification is needed in the current document.
- * DSPSIZ is required when there are no existing records or DSPSIZ specifications.
- * @param editor - The active text editor
- * @returns True if DSPSIZ needs to be specified
- */
-async function checkIfDspsizNeeded(editor) {
-    const documentText = editor.document.getText();
-    // Check if DSPSIZ already exists
-    const dspsizRegex = /^\s*A\s+.*DSPSIZ\s*\(/im;
-    if (dspsizRegex.test(documentText)) {
-        return false;
-    }
-    ;
-    // Check if there are existing records (R specification)
-    const recordRegex = /^\s*A\s+.*R\s+\w+/im;
-    return !recordRegex.test(documentText);
-}
-;
-/**
- * Collects DSPSIZ configuration from user.
- * @returns DSPSIZ configuration or null if cancelled
- */
-async function collectDspsizConfiguration() {
-    // Ask user which display sizes to support
-    const sizeOptions = STANDARD_DISPLAY_SIZES.map(size => ({
-        label: `${size.rows}x${size.cols} (${size.name})`,
-        description: size.description,
-        picked: size.rows === 24 && size.cols === 80 // Default to standard size
-    }));
-    const selectedSizes = await vscode.window.showQuickPick(sizeOptions, {
-        title: 'DSPSIZ Configuration - Display Sizes',
-        placeHolder: 'Select display size(s) to support',
-        canPickMany: true,
-        ignoreFocusOut: true
-    });
-    if (!selectedSizes || selectedSizes.length === 0) {
-        return null;
-    }
-    ;
-    // Map selected options back to DisplaySize objects
-    const selectedDisplaySizes = [];
-    for (const option of selectedSizes) {
-        const size = STANDARD_DISPLAY_SIZES.find(s => option.label.includes(`${s.rows}x${s.cols}`));
-        if (size) {
-            selectedDisplaySizes.push(size);
-        }
-        ;
-    }
-    ;
-    // Sort by standard order (24x80 first, then 27x132)
-    selectedDisplaySizes.sort((a, b) => {
-        if (a.rows === 24 && a.cols === 80)
-            return -1;
-        if (b.rows === 24 && b.cols === 80)
-            return 1;
-        return a.rows - b.rows;
-    });
-    return {
-        sizes: selectedDisplaySizes,
-        needsDspsiz: true
-    };
-}
-;
 // USER INPUT COLLECTION FUNCTIONS
 /**
  * Collects complete record configuration from user through interactive dialogs.
@@ -190,7 +115,7 @@ async function collectRecordConfiguration(needsDspsiz) {
     // Step 0: Collect DSPSIZ configuration if needed
     let dspsizConfig;
     if (needsDspsiz) {
-        dspsizConfig = await collectDspsizConfiguration();
+        dspsizConfig = await (0, dspf_edit_helper_1.collectDspsizConfiguration)();
         if (!dspsizConfig)
             return null;
     }
@@ -564,7 +489,7 @@ function generateRecordLines(config) {
     const lines = [];
     // Generate DSPSIZ specification if needed (must come first)
     if (config.dspsizConfig?.needsDspsiz) {
-        lines.push(...generateDspsizLines(config.dspsizConfig));
+        lines.push(...(0, dspf_edit_helper_1.generateDspsizLines)(config.dspsizConfig));
     }
     ;
     // Generate main record line
@@ -599,53 +524,6 @@ function generateRecordLines(config) {
             break;
     }
     ;
-    return lines;
-}
-;
-/**
- * Generates DSPSIZ specification lines according to IBM DDS manual.
- * @param dspsizConfig - DSPSIZ configuration
- * @returns Array of formatted DSPSIZ lines
- */
-function generateDspsizLines(dspsizConfig) {
-    if (!dspsizConfig.needsDspsiz || dspsizConfig.sizes.length === 0) {
-        return [];
-    }
-    ;
-    const basePrefix = '     A                                      ';
-    const sizes = dspsizConfig.sizes;
-    if (sizes.length === 1) {
-        // Single size specification
-        const size = sizes[0];
-        return [`${basePrefix}DSPSIZ(${size.rows} ${size.cols} ${size.name})`];
-    }
-    ;
-    // Multiple sizes specification
-    const lines = [];
-    const maxLineLength = 80;
-    // Start building the DSPSIZ specification
-    let currentLine = `${basePrefix}DSPSIZ(`;
-    let needsContinuation = false;
-    for (let i = 0; i < sizes.length; i++) {
-        const size = sizes[i];
-        const sizeSpec = `${size.rows} ${size.cols} ${size.name}`;
-        const separator = i < sizes.length - 1 ? ' ' : ')';
-        const fullSpec = sizeSpec + separator;
-        // Check if adding this size would exceed line length
-        if (currentLine.length + fullSpec.length > maxLineLength - 1) { // -1 for continuation character
-            // Need to continue on next line
-            lines.push(currentLine + '-');
-            currentLine = `${basePrefix}       ${fullSpec}`;
-            needsContinuation = false;
-        }
-        else {
-            currentLine += fullSpec;
-        }
-        ;
-    }
-    ;
-    // Add the final line
-    lines.push(currentLine);
     return lines;
 }
 ;

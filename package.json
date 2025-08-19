@@ -173,7 +173,7 @@
         {
           "command": "dspf-edit.add-key",
           "when": "view == ddsStructureView && viewItem == file",
-          "group": "file_navigation0@1"
+          "group": "file_navigation2@1"
         }
       ]
     }

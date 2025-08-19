@@ -88,7 +88,7 @@ async function handleAddKeyCommandCommand(node) {
         }
         ;
         // Get available key numbers (excluding current ones)
-        const availableKeys = getAvailableKeyNumbers(currentKeyCommands.map(k => k.keyNumber));
+        let availableKeys = getAvailableKeyNumbers(currentKeyCommands.map(k => k.keyNumber));
         // Show current key commands if any exist
         if (currentKeyCommands.length > 0) {
             const currentCommandsList = currentKeyCommands.map(k => `${k.type}${k.keyNumber}${k.indicators.length > 0 ? `(${k.indicators.join(',')})` : ''} - ${k.description}`).join('; ');
@@ -122,6 +122,7 @@ async function handleAddKeyCommandCommand(node) {
                 }
                 ;
                 // Continue to add new key commands
+                availableKeys = getAvailableKeyNumbers([]);
             }
             // If "Add more key commands", continue with current logic
         }

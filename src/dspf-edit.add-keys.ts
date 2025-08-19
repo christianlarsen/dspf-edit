@@ -69,7 +69,7 @@ async function handleAddKeyCommandCommand(node: DdsNode): Promise<void> {
 
 
         // Get available key numbers (excluding current ones)
-        const availableKeys = getAvailableKeyNumbers(currentKeyCommands.map(k => k.keyNumber));
+        let availableKeys = getAvailableKeyNumbers(currentKeyCommands.map(k => k.keyNumber));
 
         // Show current key commands if any exist
         if (currentKeyCommands.length > 0) {
@@ -109,6 +109,8 @@ async function handleAddKeyCommandCommand(node: DdsNode): Promise<void> {
                         break;
                     };
                 // Continue to add new key commands
+                availableKeys = getAvailableKeyNumbers([]);
+
             }
             // If "Add more key commands", continue with current logic
         };

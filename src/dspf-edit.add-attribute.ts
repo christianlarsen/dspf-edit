@@ -56,7 +56,7 @@ async function handleAddAttributeCommand(node: DdsNode): Promise<void> {
         const currentAttributes = getCurrentAttributesForElement(node.ddsElement);
 
         // Get available attributes (excluding current ones)
-        const availableAttributes = getAvailableAttributes(currentAttributes.map(a => a.attribute));
+        let availableAttributes = getAvailableAttributes(currentAttributes.map(a => a.attribute));
 
         // Show current attributes if any exist
         if (currentAttributes.length > 0) {
@@ -82,6 +82,7 @@ async function handleAddAttributeCommand(node: DdsNode): Promise<void> {
             if (action === 'Replace all attributes') {
                 await removeAttributesFromElement(editor, node.ddsElement);
                 // Continue to add new attributes
+                availableAttributes = getAvailableAttributes([]);
             };
             // If "Add more attributes", continue with current logic
         };

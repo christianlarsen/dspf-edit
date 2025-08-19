@@ -78,7 +78,7 @@ async function handleAddColorCommand(node) {
         // Get current colors from the element
         const currentColors = getCurrentColorsForElement(node.ddsElement);
         // Get available colors (excluding current ones)
-        const availableColors = getAvailableColors(currentColors.map(c => c.color));
+        let availableColors = getAvailableColors(currentColors.map(c => c.color));
         // Show current colors if any exist
         if (currentColors.length > 0) {
             const currentColorsList = currentColors.map(c => `${c.color}${c.indicators.length > 0 ? `(${c.indicators.join(',')})` : ''}`).join(', ');
@@ -96,6 +96,7 @@ async function handleAddColorCommand(node) {
             if (action === 'Replace all colors') {
                 await removeColorsFromElement(editor, node.ddsElement);
                 // Continue to add new colors
+                availableColors = getAvailableColors([]);
             }
             ;
             // If "Add more colors", continue with current logic
