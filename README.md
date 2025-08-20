@@ -1,61 +1,90 @@
 # DSPF-edit
 
-This is an extension that can help the users while modifying or creating DDS source files for display files on the IBM i.
+**DSPF-edit** is a Visual Studio Code extension that helps IBM i developers when creating or modifying DDS source files for **display files**.
 
-The extension shows a schema of the DDS source file. This schema is updated every time the source is modified.
+The extension provides a **navigable schema view** of the DDS source file that is automatically updated whenever the source changes.
 
-Using the mouse left button, you can navigate through the source file.
+---
 
-Using the mouse right button, you can see some interesting options depending on where you are (a constant, a field, a record ...)
+## ✨ Features
 
-## Features
+- **Schema navigation**
+  - Two levels are shown: **File** and **Records**.
+  - Click on schema elements to jump directly to their location in the source.
+  - Right-click for context-aware actions.
 
-* You can navigate through a DDS source file, using the schema, clicking on the different parts.
-- Two levels: "File", and "Records".
-- At "File" level, you can see the different attributes of the DDS source file (i.e. display size and command keys).
-    Using mouse right button, you can create new records, or assign command keys (at file level).
-- At "Records" level, you can see all the records defined in the DDS source file.  
-    -> In every record, you can see attributes (at record level), and the different fields and constants in it. 
-        Using mouse right button, you can:
-            - Add new constant.
-            - Add new field.  
-            - Copy/Delete a record.
-            - Add "buttons" (constants containing the different commands used on that record).
-            - Add command keys. 
-    -> In every constant, you can see, the text of the constant, and the position on screen (column/row). If you open it, you can see the different indicators used at constant level, and attributes.
-        Using mouse right button, you can:
-            - Edit constant.
-            - Center constant on the screen.
-            - Change the position.
-            - Apply colors.
-            - Apply attributes.
-    -> In every field, you can see, the name of the field, the length and type, and the position on screen (column/row). If the field is referenced, then you will see it. Also if it is hidden, you will see it. As in the constants, you can open it, and see the different indicators used at field level, and attributes.
-        Using mouse right button, you can:
-            - Edit field.
-            - Center field on screen.
-            - Change the position.
-            - Apply colors and attributes.
-            - Add validity checks.
-            - Add editing keywords.
+- **File level**
+  - View display file attributes (e.g., display size, command keys).
+  - Right-click options:
+    - Create new records.
+    - Assign command keys.
 
-## How to use
+- **Records level**
+  - Each record shows:
+    - Record-level attributes.
+    - Constants and fields.
+  - Right-click options on a record:
+    - Add constant.
+    - Add field.
+    - Copy/Delete record.
+    - Add "buttons" (constants for record commands).
+    - Assign command keys.
 
-Once a display file is opened, you can see the schema of it, and use all the options said earlier.
+- **Constants**
+  - Show text, position (row/column), indicators, and attributes.
+  - Right-click options:
+    - Edit constant.
+    - Center constant on screen.
+    - Change position.
+    - Apply colors/attributes.
 
-## Requirements
+- **Fields**
+  - Show name, length, type, position (row/column), and flags (referenced/hidden).
+  - Indicators and attributes are expandable.
+  - Right-click options:
+    - Edit field.
+    - Center field on screen.
+    - Change position.
+    - Apply colors/attributes.
+    - Add validity checks.
+    - Add editing keywords.
 
-The extension requires version 1.75 of VSCode.
+---
 
-## Known Issues
+## 🚀 How to Use
 
-This is a PREVIEW, so there should be some of them... work in progress!!!
+1. Open a DDS display file in VS Code.  
+2. The **schema view** will appear automatically.  
+3. Use **left-click** to navigate, or **right-click** to access contextual options.  
 
-## To Do
+---
 
-- (TODO) Bug fixes.
-- (TODO) Use of display sizes correctly.
-- (TODO) A lot of things ... will be added soon!
+## ⚙️ Requirements
+
+- Visual Studio Code **v1.75** or higher.
+
+---
+
+## 🐞 Known Issues
+
+This extension is currently in **preview**.  
+Expect bugs — work in progress!
+
+---
+
+## 📝 To Do
+
+- Bug fixes.  
+- Correct handling of display sizes.  
+- Many new features to come!  
+
+---
+
+## 📦 Version History
 
 ### 0.0.1
+- Initial preview release.  
 
-**Please leave a comment, and Enjoy!**
+---
+
+💬 **Feedback is welcome!** Please leave a comment, open an issue, and enjoy using DSPF-edit.
