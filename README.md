@@ -48,6 +48,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
     - Apply colors/attributes.
     - Add validity checks.
     - Add editing keywords.
+    - Add error messages.
 
 ---
 

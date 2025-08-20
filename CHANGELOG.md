@@ -18,4 +18,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Copy/delete records.
   - Apply colors, attributes, and indicators.
   - Add command keys and validity checks.
+  - Add error messages.
 - Support for display size and positioning of elements.
