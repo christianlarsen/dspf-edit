@@ -197,6 +197,7 @@ export interface FieldInfo {
   col: number;
   length: number;
   attributes: string[];
+  indicators: string[];
 };
 
 /** Simplified constant info */

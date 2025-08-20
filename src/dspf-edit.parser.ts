@@ -526,7 +526,8 @@ function addFieldToRecord(field: any, recordEntry: any): void {
             row: field.row || 0,
             col: field.column || 0,
             length: field.length || 0,
-            attributes: field.attributes?.map((attr: any) => attr.value).filter(Boolean) || []
+            attributes: field.attributes?.map((attr: any) => attr.value).filter(Boolean) || [],
+            indicators: field.indicators
         });
     };
 };

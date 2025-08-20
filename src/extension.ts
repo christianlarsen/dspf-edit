@@ -23,6 +23,7 @@ import { addAttribute } from './dspf-edit.add-attribute';
 import { addKeyCommand } from './dspf-edit.add-keys';
 import { addValidityCheck } from './dspf-edit.add-validity-check';
 import { editingKeywords } from './dspf-edit.add-editing-keywords';
+import { addErrorMessage } from './dspf-edit.add-error-messages';
 
 let updateTimeout: NodeJS.Timeout | undefined;
 
@@ -74,7 +75,8 @@ export function activate(context: vscode.ExtensionContext) {
 		{ name: 'addAttribute', handler: addAttribute as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'addKey', handler: addKeyCommand as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'addValidityCheck', handler: addValidityCheck as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
-		{ name: 'addEditingKeywords', handler: editingKeywords as (context: vscode.ExtensionContext) => void, needsTreeProvider: false }
+		{ name: 'addEditingKeywords', handler: editingKeywords as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
+		{ name: 'addErrorMessage', handler: addErrorMessage as (context: vscode.ExtensionContext) => void, needsTreeProvider: false }
 	];
 
 	// Register all commands

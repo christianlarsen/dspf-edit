@@ -114,6 +114,10 @@
       {
         "command": "dspf-edit.add-editing-keywords",
         "title": "Editing Keywords"
+      },
+      {
+        "command": "dspf-edit.add-error-message",
+        "title": "Error Messages"
       }
     ],
     "menus": {
@@ -157,6 +161,11 @@
           "command": "dspf-edit.add-editing-keywords",
           "when": "view == ddsStructureView && viewItem == field",
           "group": "fields_constants_navigation3@4"
+        },
+        {
+          "command": "dspf-edit.add-error-message",
+          "when": "view == ddsStructureView && viewItem == field",
+          "group": "fields_constants_navigation3@5"
         },
         {
           "command": "dspf-edit.copy-record",

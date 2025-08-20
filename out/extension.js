@@ -59,6 +59,7 @@ const dspf_edit_add_attribute_1 = require("./dspf-edit.add-attribute");
 const dspf_edit_add_keys_1 = require("./dspf-edit.add-keys");
 const dspf_edit_add_validity_check_1 = require("./dspf-edit.add-validity-check");
 const dspf_edit_add_editing_keywords_1 = require("./dspf-edit.add-editing-keywords");
+const dspf_edit_add_error_messages_1 = require("./dspf-edit.add-error-messages");
 let updateTimeout;
 // Activate extension
 function activate(context) {
@@ -94,7 +95,8 @@ function activate(context) {
         { name: 'addAttribute', handler: dspf_edit_add_attribute_1.addAttribute, needsTreeProvider: false },
         { name: 'addKey', handler: dspf_edit_add_keys_1.addKeyCommand, needsTreeProvider: false },
         { name: 'addValidityCheck', handler: dspf_edit_add_validity_check_1.addValidityCheck, needsTreeProvider: false },
-        { name: 'addEditingKeywords', handler: dspf_edit_add_editing_keywords_1.editingKeywords, needsTreeProvider: false }
+        { name: 'addEditingKeywords', handler: dspf_edit_add_editing_keywords_1.editingKeywords, needsTreeProvider: false },
+        { name: 'addErrorMessage', handler: dspf_edit_add_error_messages_1.addErrorMessage, needsTreeProvider: false }
     ];
     // Register all commands
     commands.forEach(cmd => {

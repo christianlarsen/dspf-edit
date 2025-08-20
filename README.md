@@ -1,13 +1,16 @@
 # DSPF-edit
 
 This is an extension that can help the users while modifying or creating DDS source files for display files on the IBM i.
+
 The extension shows a schema of the DDS source file. This schema is updated every time the source is modified.
+
 Using the mouse left button, you can navigate through the source file.
+
 Using the mouse right button, you can see some interesting options depending on where you are (a constant, a field, a record ...)
 
 ## Features
 
-- You can navigate through a DDS source file, using the schema, clicking on the different parts.
+* You can navigate through a DDS source file, using the schema, clicking on the different parts.
 - Two levels: "File", and "Records".
 - At "File" level, you can see the different attributes of the DDS source file (i.e. display size and command keys).
     Using mouse right button, you can create new records, or assign command keys (at file level).
