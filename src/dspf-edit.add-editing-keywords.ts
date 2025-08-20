@@ -453,27 +453,10 @@ async function collectEditCode(fieldInfo: any): Promise<EditConfiguration | null
  * @returns Selected edit word configuration
  */
 async function collectEditWord(fieldInfo: any): Promise<EditConfiguration | null> {
-    const examples = [
-        'Example: \'   0.  \' - Fixed decimal format',
-        'Example: \'   $0.  \' - Currency with decimal',
-        'Example: \'( ) -    \' - Phone number format',
-        'Example: \'  /  /    \' - Date format',
-        'Example: \'****0.  CR\' - Protected with credit indicator'
-    ];
-
-    vscode.window.showInformationMessage(
-        'EDTWRD allows custom formatting patterns. Use: blanks for digits, 0 for zero suppression stop, * for asterisk fill, $ for floating currency, &  for blanks in output, CR/- for negative indicators.'
-    );
-
-    await vscode.window.showQuickPick(examples, {
-        title: 'EDTWRD Examples (for reference)',
-        placeHolder: 'Review examples, then click outside to continue'
-    });
-
     const editWordPattern = await vscode.window.showInputBox({
-        title: `Enter Edit Word Pattern for ${fieldInfo.name}`,
-        prompt: `Specify the edit word pattern (Field: ${fieldInfo.length} digits, ${fieldInfo.decimals || 0} decimals)`,
-        placeHolder: 'e.g., \'   0.  \', \'   $0.  \'',
+        title: `Edit Word for ${fieldInfo.name}`,
+        prompt: `Enter edit word pattern (Field: ${fieldInfo.length} digits, ${fieldInfo.decimals || 0} decimals)`,
+        placeHolder: `Examples: '   0.  ' (decimal), '   $0.  ' (currency), '( ) -    ' (phone)`,
         validateInput: (value: string) => {
             if (!value.trim()) return 'Edit word pattern is required';
             if (!value.startsWith('\'') || !value.endsWith('\'')) {
@@ -487,7 +470,7 @@ async function collectEditWord(fieldInfo: any): Promise<EditConfiguration | null
             const fieldLength = parseInt(fieldInfo.length) || 0;
             
             if (digitPositions > 0 && digitPositions !== fieldLength) {
-                return `Edit word must have ${fieldLength} digit positions (blanks + zero-suppression chars), found ${digitPositions}`;
+                return `Must have ${fieldLength} digit positions (blanks + zero chars), found ${digitPositions}`;
             };
             
             return null;
@@ -508,25 +491,10 @@ async function collectEditWord(fieldInfo: any): Promise<EditConfiguration | null
  * @returns Selected edit mask configuration
  */
 async function collectEditMask(baseEdit: EditConfiguration): Promise<EditConfiguration | null> {
-    vscode.window.showInformationMessage(
-        'EDTMSK defines protection for field parts. Use: & for protected areas (displayed but not input), blank for unprotected areas (user can modify).'
-    );
-
-    const examples = [
-        'Example: \'& &  & \' - Protect separators in phone: (XXX) XXX-XXXX',
-        'Example: \'  &  & \' - Protect separators in date: XX/XX/XX',
-        'Example: \'&   .  \' - Protect currency and decimal point'
-    ];
-
-    await vscode.window.showQuickPick(examples, {
-        title: 'EDTMSK Examples (for reference)',
-        placeHolder: 'Review examples, then click outside to continue'
-    });
-
     const editMaskPattern = await vscode.window.showInputBox({
-        title: `Enter Edit Mask Pattern`,
-        prompt: `Specify which parts to protect for ${baseEdit.type}(${baseEdit.value}${baseEdit.modifier ? ' ' + baseEdit.modifier : ''})`,
-        placeHolder: 'e.g., \'& &  & \', \'  &  & \'',
+        title: `Edit Mask for ${baseEdit.type}(${baseEdit.value})`,
+        prompt: `Define protection: & for protected areas, blank for user input areas`,
+        placeHolder: `Examples: '& &  & ' (phone), '  &  & ' (date), '&   .  ' (currency)`,
         validateInput: (value: string) => {
             if (!value.trim()) return 'Edit mask pattern is required';
             if (!value.startsWith('\'') || !value.endsWith('\'')) {
