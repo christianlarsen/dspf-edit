@@ -519,8 +519,10 @@ function linkFieldsAndConstantsToRecords(ddsElements: DdsElement[]): void {
 function addFieldToRecord(field: any, recordEntry: any): void {
     // Avoid duplicate fields
     if (!recordEntry.fields.some((f: any) => f.name === field.name)) {
+        console.log(field.type);
         recordEntry.fields.push({
             name: field.name,
+            type: field.type,
             row: field.row || 0,
             col: field.column || 0,
             length: field.length || 0,
@@ -542,6 +544,7 @@ function addConstantToRecord(constant: any, recordEntry: any): void {
     if (!recordEntry.constants.some((c: any) => c.name === constantName)) {
         recordEntry.constants.push({
             name: constantName,
+            type: undefined,
             row: constant.row || 0,
             col: constant.column || 0,
             length: constantName.length,

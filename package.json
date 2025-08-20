@@ -105,6 +105,10 @@
       {
         "command": "dspf-edit.add-validity-check",
         "title": "Validity Checks"
+      },
+      {
+        "command": "dspf-edit.add-editing-keywords",
+        "title": "Editing Keywords"
       }
     ],
     "menus": {
@@ -143,6 +147,11 @@
           "command": "dspf-edit.add-validity-check",
           "when": "view == ddsStructureView && viewItem == field",
           "group": "fields_constants_navigation3@3"
+        },
+        {
+          "command": "dspf-edit.add-editing-keywords",
+          "when": "view == ddsStructureView && viewItem == field",
+          "group": "fields_constants_navigation3@4"
         },
         {
           "command": "dspf-edit.copy-record",

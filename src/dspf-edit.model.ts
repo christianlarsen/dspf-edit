@@ -192,6 +192,7 @@ export let fileSizeAttributes: DdsSizeAttributes = {
 /** Simplified field info (used for reporting/grouping) */
 export interface FieldInfo {
   name: string;
+  type?: string;
   row: number;
   col: number;
   length: number;
@@ -201,6 +202,7 @@ export interface FieldInfo {
 /** Simplified constant info */
 export interface ConstantInfo {
   name: string;
+  type?: string;
   row: number;
   col: number;
   length: number;
