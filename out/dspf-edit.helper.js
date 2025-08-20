@@ -459,7 +459,8 @@ function findElementsWithAttribute(recordName, attributeCode) {
         return [];
     const elementsWithAttributes = [];
     [...recordInfo.fields, ...recordInfo.constants].forEach(element => {
-        const hasAttribute = element.attributes?.some(attr => {
+        const hasAttribute = element.attributes?.some(attrObj => {
+            const attr = attrObj.value;
             const matchStr = `/^${attributeCode}\([A-Z]{3}\)$/`;
             attr.match(matchStr);
         });

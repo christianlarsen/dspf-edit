@@ -148,7 +148,8 @@ function getCurrentValidityChecksForField(element) {
         return [];
     // Extract validity check attributes
     const validityChecks = [];
-    fieldInfo.attributes.forEach(attr => {
+    fieldInfo.attributes.forEach(attrObj => {
+        const attr = attrObj.value;
         // Check for RANGE
         const rangeMatch = attr.match(/^RANGE\(([^)]+)\)$/);
         if (rangeMatch) {

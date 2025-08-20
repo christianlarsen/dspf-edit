@@ -205,7 +205,8 @@ function getCurrentEditingForField(element: any): EditConfiguration[] {
 
     const editing: EditConfiguration[] = [];
 
-    fieldInfo.attributes.forEach(attr => {
+    fieldInfo.attributes.forEach(attrObj => {
+        const attr = attrObj.value;
         // Check for EDTCDE
         const edtcdeMatch = attr.match(/^EDTCDE\(([^)]+)\)$/);
         if (edtcdeMatch) {

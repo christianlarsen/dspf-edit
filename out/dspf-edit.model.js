@@ -35,6 +35,7 @@ exports.fileSizeAttributes = {
 ;
 ;
 ;
+;
 // GLOBAL DATA ARRAYS
 exports.records = [];
 exports.fieldsPerRecords = [];

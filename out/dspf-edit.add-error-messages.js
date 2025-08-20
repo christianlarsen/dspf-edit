@@ -157,18 +157,18 @@ function getCurrentErrorMessages(field) {
     // Extract ERRMSG attributes 
     const errorMessages = [];
     if (elementInfo) {
-        elementInfo.attributes.forEach(attr => {
-            const attribute = attr;
+        elementInfo.attributes.forEach(attrObj => {
+            const attribute = attrObj.value;
             // Match ERRMSG patterns:
             // ERRMSG('message text')
             // ERRMSG('message text' response-indicator)
             const errmsgMatch = attribute ? attribute.match(/^ERRMSG\('([^']+)'\s*(\d{2})?\)$/) : null;
             if (errmsgMatch) {
                 errorMessages.push({
-                    indicator: errmsgMatch[2],
+                    indicator: (attrObj.indicators) ? (attrObj.indicators[0].number).toString() : '',
                     messageText: errmsgMatch[1],
-                    responseIndicator: errmsgMatch[3],
-                    useResponseIndicator: !!errmsgMatch[3]
+                    responseIndicator: errmsgMatch[2],
+                    useResponseIndicator: !!errmsgMatch[2],
                 });
             }
             ;
@@ -360,17 +360,22 @@ async function addErrorMessagesToField(editor, field, errorMessages) {
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
     // Insert each error message line
+    let crInserted = false;
     let currentInsertionPoint = insertionPoint;
     for (let i = 0; i < errorMessages.length; i++) {
         const errorMessageLines = createErrorMessageLines(errorMessages[i]);
         for (let j = 0; j < errorMessageLines.length; j++) {
             const insertPos = new vscode.Position(currentInsertionPoint, 0);
-            // Insert line break before the content if we're not at end of file
-            if (currentInsertionPoint < editor.document.lineCount) {
+            if (!crInserted && insertPos.line >= editor.document.lineCount) {
                 workspaceEdit.insert(uri, insertPos, '\n');
+                crInserted = true;
             }
             ;
             workspaceEdit.insert(uri, insertPos, errorMessageLines[j]);
+            if (i < errorMessages.length - 1 || insertPos.line < editor.document.lineCount) {
+                workspaceEdit.insert(uri, insertPos, '\n');
+            }
+            ;
         }
         ;
         currentInsertionPoint++; // Move insertion point for next error message
@@ -387,60 +392,48 @@ async function addErrorMessagesToField(editor, field, errorMessages) {
 function createErrorMessageLines(errorMessage) {
     const lines = [];
     const { indicator, messageText, responseIndicator, useResponseIndicator } = errorMessage;
-    // Create the base ERRMSG syntax
-    let errmsgContent = `ERRMSG('${messageText}'`;
+    // Build the complete ERRMSG content
+    let errmsgStart = "ERRMSG('";
+    let errmsgEnd = "')";
     if (useResponseIndicator && responseIndicator) {
-        errmsgContent += ` ${responseIndicator}`;
+        errmsgEnd = `' ${responseIndicator})`;
     }
-    errmsgContent += ')';
-    // Calculate available space for the ERRMSG content
-    // Format: "     A NN                            ERRMSG(...)"
-    //         "12345678901234567890123456789012345678901234567890" (positions)
-    //                  ^^ indicator position
-    //                                              ^ start of ERRMSG at position 44
-    const basePrefix = '     A ' + indicator.padStart(2, '0') + ' '.repeat(35);
-    const availableWidth = 80; // Standard DDS line width
-    const contentStartPos = 44;
-    const maxContentLength = availableWidth - contentStartPos;
-    if (errmsgContent.length <= maxContentLength) {
-        // Single line
-        lines.push(basePrefix + errmsgContent);
+    ;
+    // Calculate available space from position 44 to 79 (36 characters)
+    const maxContentLength = 36; // positions 44-79 inclusive
+    const firstLinePrefix = '     A  ' + indicator.padStart(2, '0') + ' '.repeat(34); // indicator at position 8
+    const continuationPrefix = '     A' + ' '.repeat(38); // no indicator, start at position 44
+    // Check if the complete ERRMSG fits in one line
+    const completeErrmsg = errmsgStart + messageText + errmsgEnd;
+    if (completeErrmsg.length <= maxContentLength) {
+        // Single line - everything fits
+        lines.push(firstLinePrefix + completeErrmsg);
+        return lines;
     }
-    else {
-        // Multi-line with continuation
-        const words = messageText.split(' ');
-        let currentLine = '';
-        let firstLine = true;
-        for (const word of words) {
-            const testLine = currentLine ? currentLine + ' ' + word : word;
-            const testErrmsg = `ERRMSG('${testLine}'${useResponseIndicator && responseIndicator ? ` ${responseIndicator}` : ''})`;
-            if (testErrmsg.length <= maxContentLength || currentLine === '') {
-                currentLine = testLine;
-            }
-            else {
-                // Current word doesn't fit, output current line with continuation
-                const lineErrmsg = `ERRMSG('${currentLine}' +`;
-                if (firstLine) {
-                    lines.push(basePrefix + lineErrmsg);
-                    firstLine = false;
-                }
-                else {
-                    lines.push('     A' + ' '.repeat(37) + lineErrmsg);
-                }
-                ;
-                currentLine = word;
-            }
-            ;
-        }
-        ;
-        // Output final line
-        const finalErrmsg = `'${currentLine}'${useResponseIndicator && responseIndicator ? ` ${responseIndicator}` : ''})`;
-        if (firstLine) {
-            // Everything fit in first line after all
-            lines.push(basePrefix + `ERRMSG(${finalErrmsg}`);
+    ;
+    // Multi-line handling - build the complete content first, then split by character limit
+    const fullContent = errmsgStart + messageText + errmsgEnd;
+    let remainingContent = fullContent;
+    let isFirstLine = true;
+    while (remainingContent.length > 0) {
+        let currentLineContent;
+        if (remainingContent.length <= maxContentLength) {
+            // Last piece fits completely
+            currentLineContent = remainingContent;
+            remainingContent = '';
         }
         else {
-            lines.push('     A' + ' '.repeat(37) + finalErrmsg);
+            // Need to split - take what fits and add continuation marker
+            currentLineContent = remainingContent.substring(0, maxContentLength - 1) + '-';
+            remainingContent = remainingContent.substring(maxContentLength - 1);
+        }
+        ;
+        if (isFirstLine) {
+            lines.push(firstLinePrefix + currentLineContent);
+            isFirstLine = false;
+        }
+        else {
+            lines.push(continuationPrefix + currentLineContent);
         }
         ;
     }
@@ -500,12 +493,14 @@ function findExistingErrorMessageLines(editor, field) {
             errorMessageLines.push(i);
             // Check for continuation lines (lines ending with '+')
             let continuationLine = i + 1;
+            let start = i;
             while (continuationLine < editor.document.lineCount &&
-                editor.document.lineAt(i).text.trim().endsWith('+')) {
+                editor.document.lineAt(start).text.trim().endsWith('-')) {
                 const contLineText = editor.document.lineAt(continuationLine).text;
                 if (contLineText.trim().startsWith('A ')) {
                     errorMessageLines.push(continuationLine);
                     continuationLine++;
+                    start++;
                 }
                 else {
                     break;

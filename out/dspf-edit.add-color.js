@@ -150,7 +150,8 @@ function getCurrentColorsForElement(element) {
     // Extract COLOR attributes with indicators
     const colors = [];
     if (elementInfo) {
-        elementInfo.attributes.forEach(attr => {
+        elementInfo.attributes.forEach(attrObj => {
+            const attr = attrObj.value;
             const colorMatch = attr.match(/^COLOR\(([A-Z]{3})\)$/);
             if (colorMatch) {
                 colors.push({

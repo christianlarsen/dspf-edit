@@ -196,8 +196,8 @@ export interface FieldInfo {
   row: number;
   col: number;
   length: number;
-  attributes: string[];
-  indicators: string[];
+  attributes: AttributeWithIndicators[];
+  indicators?: DdsIndicator[];
 };
 
 /** Simplified constant info */
@@ -207,7 +207,13 @@ export interface ConstantInfo {
   row: number;
   col: number;
   length: number;
-  attributes: string[];
+  attributes: AttributeWithIndicators[];
+};
+
+/*** Attribute with indicadors info */
+export interface AttributeWithIndicators {
+  value: string;
+  indicators?: DdsIndicator[];
 };
 
 /** Record container for fields & constants */

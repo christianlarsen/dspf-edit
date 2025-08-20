@@ -440,15 +440,19 @@ function linkFieldsAndConstantsToRecords(ddsElements) {
 function addFieldToRecord(field, recordEntry) {
     // Avoid duplicate fields
     if (!recordEntry.fields.some((f) => f.name === field.name)) {
-        console.log(field.type);
+        // Process attributes preserving their indicators
+        const processedAttributes = field.attributes?.map((attr) => ({
+            value: attr.value,
+            indicators: attr.indicators || []
+        })).filter((attr) => attr.value) || [];
         recordEntry.fields.push({
             name: field.name,
             type: field.type,
             row: field.row || 0,
             col: field.column || 0,
             length: field.length || 0,
-            attributes: field.attributes?.map((attr) => attr.value).filter(Boolean) || [],
-            indicators: field.indicators
+            attributes: processedAttributes,
+            indicators: field.indicators || []
         });
     }
     ;
@@ -462,6 +466,11 @@ function addFieldToRecord(field, recordEntry) {
 function addConstantToRecord(constant, recordEntry) {
     // Remove quotes from constant name for storage
     const constantName = constant.name.slice(1, -1);
+    // Process attributes preserving their indicators
+    const processedAttributes = constant.attributes?.map((attr) => ({
+        value: attr.value,
+        indicators: attr.indicators || []
+    })).filter((attr) => attr.value) || [];
     // Avoid duplicate constants
     if (!recordEntry.constants.some((c) => c.name === constantName)) {
         recordEntry.constants.push({
@@ -470,7 +479,7 @@ function addConstantToRecord(constant, recordEntry) {
             row: constant.row || 0,
             col: constant.column || 0,
             length: constantName.length,
-            attributes: constant.attributes?.map((attr) => attr.value).filter(Boolean) || []
+            attributes: processedAttributes
         });
     }
     ;

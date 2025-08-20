@@ -150,7 +150,8 @@ function getCurrentAttributesForElement(element) {
     // Extract DSPATR attributes with indicators
     const attributes = [];
     if (elementInfo) {
-        elementInfo.attributes.forEach(attr => {
+        elementInfo.attributes.forEach(attrObj => {
+            const attr = attrObj.value;
             const attributeMatch = attr.match(/^DSPATR\(([A-Z]{2})\)$/);
             if (attributeMatch) {
                 attributes.push({
@@ -263,7 +264,7 @@ async function addAttributesToElement(editor, element, attributes) {
     let crInserted = false;
     for (let i = 0; i < attributes.length; i++) {
         const attributeLine = createAttributeLineWithIndicators(attributes[i]);
-        const insertPos = new vscode.Position(insertionPoint, 0); // +i ???
+        const insertPos = new vscode.Position(insertionPoint, 0);
         if (!crInserted && insertPos.line >= editor.document.lineCount) {
             workspaceEdit.insert(uri, insertPos, '\n');
             crInserted = true;
