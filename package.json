@@ -2,12 +2,17 @@
   "name": "dspf-edit",
   "displayName": "Display file DDS edit",
   "description": "Extension that helps you create and modify your display file DDS on IBM i",
+  "icon": "assets/dds_extension_icon.png",
   "author": {
     "name": "Christian Larsen",
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
   "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/christianlarsen/dspf-edit"
+  },
   "keywords": [
     "rpg",
     "ibmi",
