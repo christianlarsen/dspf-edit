@@ -29,6 +29,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
     - Copy/Delete record.
     - Add "buttons" (constants for record commands).
     - Assign command keys.
+    - Adding/removing/changing indicators.
 
 - **Constants**
   - Show text, position (row/column), indicators, and attributes.
@@ -37,6 +38,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
     - Center constant on screen.
     - Change position.
     - Apply colors/attributes.
+    - Adding/removing/changing indicators.
 
 - **Fields**
   - Show name, length, type, position (row/column), and flags (referenced/hidden).
@@ -85,6 +87,9 @@ Expect bugs — work in progress!
 
 ### 0.0.1
 - Initial preview release.  
+
+### 0.1.0
+- New feat: adding/removing/changing constant/fields indicators (max 3).  
 
 ---
 
