@@ -20,3 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Add command keys and validity checks.
   - Add error messages.
 - Support for display size and positioning of elements.
+
+## [0.1.0] - 2025-08-21
+### Added
+- New feature: adding/modifying/removing indicators on constants/fields.
+- New feature: adding/modifying/removing indicators on constants/fields attributes.
