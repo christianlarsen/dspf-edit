@@ -89,7 +89,8 @@ Expect bugs — work in progress!
 - Initial preview release.  
 
 ### 0.1.0
-- New feat: adding/removing/changing constant/fields indicators (max 3).  
+- New feat: adding/removing/changing constant/fields indicators (max 3).
+- New feat: adding/removing/changing constant/fields attributes indicators (max 3).
 
 ---
 

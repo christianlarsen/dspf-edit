@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
 import { fieldsPerRecords } from './dspf-edit.model';
-import { isAttributeLine, createAttributeLines, findElementInsertionPoint } from './dspf-edit.helper';
+import { isAttributeLine, findElementInsertionPoint } from './dspf-edit.helper';
  
 // INTERFACES AND TYPES
 

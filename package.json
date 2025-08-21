@@ -121,6 +121,10 @@
       {
         "command": "dspf-edit.add-error-message",
         "title": "Error Messages"
+      },
+      {
+        "command": "dspf-edit.add-indicators",
+        "title": "Indicators"
       }
     ],
     "menus": {
@@ -169,6 +173,16 @@
           "command": "dspf-edit.add-error-message",
           "when": "view == ddsStructureView && viewItem == field",
           "group": "fields_constants_navigation3@5"
+        },
+        {
+          "command": "dspf-edit.add-indicators",
+          "when": "view == ddsStructureView && (viewItem == constant || viewItem == field)",
+          "group": "fields_constants_navigation3@6"
+        },
+        {
+          "command": "dspf-edit.add-indicators",
+          "when": "view == ddsStructureView && (viewItem == constantAttribute || viewItem === fieldAttribute)",
+          "group": "attributes_navigation0@1"
         },
         {
           "command": "dspf-edit.copy-record",
