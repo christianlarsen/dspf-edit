@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
-import { recordExists, DisplaySize, DspsizConfig,
+import { recordExists, DspsizConfig,
     checkIfDspsizNeeded, collectDspsizConfiguration, generateDspsizLines } from './dspf-edit.helper';
 import { fileSizeAttributes } from './dspf-edit.model';
 
@@ -397,7 +397,8 @@ function calculateWindowDimensions(size: WindowSize, position: WindowPosition): 
             break;
 
         case 'BOTTOM_CENTERED':
-            startRow = maxRows - size.numRows;
+            const startRowCalculated = maxRows - size.numRows - 2;
+            startRow = (startRowCalculated > 0) ? startRowCalculated : 1;
             startCol = Math.floor((maxCols - size.numCols) / 2) + 1;
             break;
 

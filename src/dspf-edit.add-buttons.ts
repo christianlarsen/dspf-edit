@@ -183,6 +183,13 @@ function validateButtonLabel(value: string): string {
 function getRecordInformation(recordName: string): RecordInformation | null {
     const recordSize = getRecordSize(recordName);
     const recordInfo = fieldsPerRecords.find(r => r.record === recordName);
+    let isWindow : boolean = false;
+    if (recordInfo && recordInfo.attributes) {
+        const windowAttribute = recordInfo.attributes.find(attr =>
+            attr.value.toUpperCase().includes('WINDOW(')
+        );
+        if (windowAttribute) isWindow = true;
+    };
 
     if (!recordSize || !recordInfo) {
         return null;
@@ -194,7 +201,8 @@ function getRecordInformation(recordName: string): RecordInformation | null {
         info: recordInfo,
         endLineIndex: recordInfo.endIndex + 1,
         visibleStart: recordInfo.size?.originRow ?? 0,
-        maxColumns: recordInfo.size?.cols ?? 0
+        maxColumns: recordInfo.size?.cols ?? 0,
+        isWindow : isWindow
     };
 };
 
@@ -207,10 +215,13 @@ function getRecordInformation(recordName: string): RecordInformation | null {
  * @returns Layout information for button placement
  */
 function calculateButtonLayout(buttons: ButtonDefinition[], recordInfo: RecordInformation): ButtonLayout {
-    const startCol = 1;
-    const spacing = 2; // Space between buttons
+    let startCol = 2;       // Start column for buttons (for non window records)
+    const spacing = 2;      // Space between buttons
     let col = startCol;
     let rowsNeeded = 1;
+
+    // If it is a window, then the start column is 1.
+    if (recordInfo.isWindow) startCol = 1;
 
     // Calculate how many rows are needed
     for (const btn of buttons) {
@@ -268,7 +279,7 @@ async function applyButtonsToRecord(
         };
 
         // Create DDS line for this button
-        const ddsLine = createButtonDdsLine(text, currentRow, currentCol + 1);
+        const ddsLine = createButtonDdsLine(text, currentRow, currentCol);
         const insertPos = new vscode.Position(recordInfo.endLineIndex, 0);
 
         // Ensure proper line breaks
@@ -358,6 +369,7 @@ interface RecordInformation {
     endLineIndex: number;   // Line index where the record ends
     visibleStart: number;   // Starting row for visible area
     maxColumns: number;     // Maximum columns available
+    isWindow : boolean;     // True is it is a window
 };
 
 /**
