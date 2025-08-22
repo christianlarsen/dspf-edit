@@ -92,6 +92,10 @@ Expect bugs — work in progress!
 - New feat: adding/removing/changing constant/fields indicators (max 3).
 - New feat: adding/removing/changing constant/fields attributes indicators (max 3).
 
+### 0.1.1
+- Fixes: When creating a new window record, it's not positioned in the correct row. It moves up two positions.
+- Fixes: When creating "buttons," in a window, the starting position should be 1. In records, it should be 2., 
+
 ---
 
 💬 **Feedback is welcome!** Please leave a comment, open an issue, and enjoy using DSPF-edit.

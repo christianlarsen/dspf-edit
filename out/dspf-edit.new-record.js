@@ -359,7 +359,8 @@ function calculateWindowDimensions(size, position) {
             startCol = Math.floor((maxCols - size.numCols) / 2) + 1;
             break;
         case 'BOTTOM_CENTERED':
-            startRow = maxRows - size.numRows;
+            const startRowCalculated = maxRows - size.numRows - 2;
+            startRow = (startRowCalculated > 0) ? startRowCalculated : 1;
             startCol = Math.floor((maxCols - size.numCols) / 2) + 1;
             break;
         default:

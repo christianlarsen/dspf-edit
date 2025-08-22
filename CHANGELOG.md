@@ -25,3 +25,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 - New feature: adding/modifying/removing indicators on constants/fields.
 - New feature: adding/modifying/removing indicators on constants/fields attributes.
+
+## [0.1.1] - 2025-08-22
+### Fixes
+- Fixes: When creating a new window record, it's not positioned in the correct row. It moves up two positions.
+- Fixes: When creating "buttons," in a window, the starting position should be 1. In records, it should be 2., 

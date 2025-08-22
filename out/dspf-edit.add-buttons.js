@@ -209,6 +209,13 @@ function validateButtonLabel(value) {
 function getRecordInformation(recordName) {
     const recordSize = (0, dspf_edit_model_1.getRecordSize)(recordName);
     const recordInfo = dspf_edit_model_1.fieldsPerRecords.find(r => r.record === recordName);
+    let isWindow = false;
+    if (recordInfo && recordInfo.attributes) {
+        const windowAttribute = recordInfo.attributes.find(attr => attr.value.toUpperCase().includes('WINDOW('));
+        if (windowAttribute)
+            isWindow = true;
+    }
+    ;
     if (!recordSize || !recordInfo) {
         return null;
     }
@@ -219,7 +226,8 @@ function getRecordInformation(recordName) {
         info: recordInfo,
         endLineIndex: recordInfo.endIndex + 1,
         visibleStart: recordInfo.size?.originRow ?? 0,
-        maxColumns: recordInfo.size?.cols ?? 0
+        maxColumns: recordInfo.size?.cols ?? 0,
+        isWindow: isWindow
     };
 }
 ;
@@ -231,10 +239,13 @@ function getRecordInformation(recordName) {
  * @returns Layout information for button placement
  */
 function calculateButtonLayout(buttons, recordInfo) {
-    const startCol = 1;
+    let startCol = 2; // Start column for buttons (for non window records)
     const spacing = 2; // Space between buttons
     let col = startCol;
     let rowsNeeded = 1;
+    // If it is a window, then the start column is 1.
+    if (recordInfo.isWindow)
+        startCol = 1;
     // Calculate how many rows are needed
     for (const btn of buttons) {
         const text = `${btn.key}=${btn.label}`;
@@ -282,7 +293,7 @@ async function applyButtonsToRecord(editor, buttons, recordInfo, layout) {
         }
         ;
         // Create DDS line for this button
-        const ddsLine = createButtonDdsLine(text, currentRow, currentCol + 1);
+        const ddsLine = createButtonDdsLine(text, currentRow, currentCol);
         const insertPos = new vscode.Position(recordInfo.endLineIndex, 0);
         // Ensure proper line breaks
         if (!crInserted && insertPos.line >= doc.lineCount) {
