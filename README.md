@@ -104,6 +104,9 @@ Expect bugs — work in progress!
 ### 0.2.0
 - New feat: Add constants in relative position to another on screen.
 
+### 0.2.1
+- New feat: Fill constants with characters.
+
 ---
 
 💬 **Feedback is welcome!** Please leave a comment, open an issue, and enjoy using DSPF-edit.
