@@ -39,6 +39,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
     - Change position.
     - Apply colors/attributes.
     - Adding/removing/changing indicators.
+    - Fill constant with characters.
 
 - **Fields**
   - Show name, length, type, position (row/column), and flags (referenced/hidden).
@@ -51,6 +52,10 @@ The extension provides a **navigable schema view** of the DDS source file that i
     - Add validity checks.
     - Add editing keywords.
     - Add error messages.
+    - Adding/removing/changing indicators.
+
+- **Attributes**
+    - Adding/removing/changing indicators.
 
 ---
 

@@ -125,6 +125,10 @@
       {
         "command": "dspf-edit.add-indicators",
         "title": "Indicators"
+      },
+      {
+        "command": "dspf-edit.fill-constant",
+        "title": "Fill Constant"
       }
     ],
     "menus": {
@@ -223,6 +227,11 @@
           "command": "dspf-edit.add-key",
           "when": "view == ddsStructureView && viewItem == file",
           "group": "file_navigation2@1"
+        },
+        {
+          "command": "dspf-edit.fill-constant",
+          "when": "view == ddsStructureView && viewItem == constant",
+          "group": "fields_constants_navigation4@0"
         }
       ]
     }
