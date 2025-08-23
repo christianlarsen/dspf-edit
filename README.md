@@ -96,6 +96,9 @@ Expect bugs — work in progress!
 - Fixes: When creating a new window record, it's not positioned in the correct row. It moves up two positions.
 - Fixes: When creating "buttons," in a window, the starting position should be 1. In records, it should be 2., 
 
+### 0.2.0
+- New feat: Add constants in relative position to another on screen.
+
 ---
 
 💬 **Feedback is welcome!** Please leave a comment, open an issue, and enjoy using DSPF-edit.

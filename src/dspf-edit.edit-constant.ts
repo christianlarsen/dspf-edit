@@ -9,6 +9,37 @@ import { DdsNode } from './dspf-edit.providers';
 import { fileSizeAttributes, fieldsPerRecords } from './dspf-edit.model';
 import { findEndLineIndex } from './dspf-edit.helper';
 
+// TYPE DEFINITIONS
+
+/**
+ * Information needed to create a new constant.
+ */
+interface NewConstantInfo {
+    text: string;
+    row: number;
+    column: number;
+    recordName: string;
+};
+
+/**
+ * Position information for a constant.
+ */
+interface ConstantPosition {
+    row: number;
+    column: number;
+    recordName: string;
+};
+
+/**
+ * Information about an existing constant.
+ */
+interface ExistingConstantInfo {
+    text: string;
+    row: number;
+    column: number;
+    lineIndex: number;
+};
+
 // COMMAND REGISTRATION FUNCTIONS
 
 /**
@@ -175,6 +206,114 @@ async function getConstantPosition(contextNode?: DdsNode): Promise<ConstantPosit
  * @returns Position information or null if cancelled
  */
 async function getPositionForRecord(recordElement: any): Promise<ConstantPosition | null> {
+    // First ask if user wants relative or absolute positioning
+    const positioningType = await vscode.window.showQuickPick(
+        [
+            { 
+                label: "Absolute position", 
+                description: "Enter specific row and column",
+                value: "absolute" 
+            },
+            { 
+                label: "Relative to existing constant", 
+                description: "Position above or below an existing constant",
+                value: "relative" 
+            }
+        ],
+        {
+            title: `Choose positioning method for record ${recordElement.name}`,
+            placeHolder: "Select how to position the new constant"
+        }
+    );
+
+    if (!positioningType) return null;
+
+    if (positioningType.value === "relative") {
+        return await getRelativePosition(recordElement);
+    } else {
+        return await getAbsolutePositionForRecord(recordElement);
+    }
+};
+
+/**
+ * Gets relative position information based on existing constants.
+ * @param recordElement - The record element
+ * @returns Position information or null if cancelled
+ */
+async function getRelativePosition(recordElement: any): Promise<ConstantPosition | null> {
+    // Get existing constants in this record
+    const existingConstants = await getExistingConstantsInRecord(recordElement.name);
+    
+    if (existingConstants.length === 0) {
+        vscode.window.showInformationMessage("No existing constants found in this record. Using absolute positioning.");
+        return await getAbsolutePositionForRecord(recordElement);
+    };
+
+    // Show constants for selection
+    const selectedConstant = await vscode.window.showQuickPick(
+        existingConstants.map(constant => ({
+            label: `${constant.text}`,
+            description: `Row: ${constant.row}, Column: ${constant.column}`,
+            detail: `Line: ${constant.lineIndex + 1}`,
+            constant: constant
+        })),
+        {
+            title: "Select reference constant",
+            placeHolder: "Choose the constant to position relative to"
+        }
+    );
+
+    if (!selectedConstant) return null;
+
+    // Ask for relative position (above or below)
+    const relativePosition = await vscode.window.showQuickPick(
+        [
+            { 
+                label: "Below", 
+                description: "Position the new constant below the selected one",
+                value: "below" 
+            },
+            { 
+                label: "Above", 
+                description: "Position the new constant above the selected one",
+                value: "above" 
+            }
+        ],
+        {
+            title: "Relative position",
+            placeHolder: "Where should the new constant be positioned?"
+        }
+    );
+
+    if (!relativePosition) return null;
+
+    // Calculate the new position
+    const referenceConstant = selectedConstant.constant;
+    const newRow = relativePosition.value === "above" 
+        ? referenceConstant.row - 1 
+        : referenceConstant.row + 1;
+
+    // Validate the new row position
+    if (newRow < 1 || newRow > 99) {
+        vscode.window.showErrorMessage(`Cannot position constant at row ${newRow}. Row must be between 1 and 99.`);
+        return null;
+    };
+
+
+    // Use the same column as the reference constant
+    return {
+        row: newRow,
+        column: referenceConstant.column,
+        recordName: recordElement.name
+    };
+};
+
+/**
+ * Gets absolute position information for a record.
+ * @param recordElement - The record element
+ * @returns Position information or null if cancelled
+ */
+async function getAbsolutePositionForRecord(recordElement: any): Promise<ConstantPosition | null> {
     const row = await vscode.window.showInputBox({
         title: `Enter row position for constant in record ${recordElement.name}`,
         validateInput: value => validateRowInput(value)
@@ -221,6 +360,105 @@ async function getManualPosition(): Promise<ConstantPosition | null> {
         row: parseInt(row, 10),
         column: parseInt(column, 10),
         recordName: recordName.trim()
+    };
+};
+
+/**
+ * Gets existing constants in a specific record.
+ * @param recordName - The record name to search in
+ * @returns Array of existing constant information
+ */
+async function getExistingConstantsInRecord(recordName: string): Promise<ExistingConstantInfo[]> {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) return [];
+
+    const constants: ExistingConstantInfo[] = [];
+    const document = editor.document;
+    
+    // Find record boundaries
+    const recordInfo = fieldsPerRecords.find(r => r.record === recordName);
+    if (!recordInfo) return [];
+
+    // Scan through the record lines to find constants
+    for (let lineIndex = recordInfo.startIndex; lineIndex <= recordInfo.endIndex; lineIndex++) {
+        if (lineIndex >= document.lineCount) break;
+        
+        const line = document.lineAt(lineIndex);
+        const constant = parseConstantFromLine(line.text, lineIndex);
+        
+        if (constant) {
+            constants.push(constant);
+        };
+    };
+
+    // Sort constants by row, then by column
+    constants.sort((a, b) => {
+        if (a.row !== b.row) return a.row - b.row;
+        return a.column - b.column;
+    });
+
+    return constants;
+};
+
+/**
+ * Parses a constant from a DDS line.
+ * @param lineText - The line text to parse
+ * @param lineIndex - The line index in the document
+ * @returns Constant information or null if not a constant
+ */
+function parseConstantFromLine(lineText: string, lineIndex: number): ExistingConstantInfo | null {
+    // DDS constant format: positions 7-38 are name/blank, 39-41 is row, 42-44 is column, 45+ is constant value
+    if (lineText.length < 45) return null;
+    
+    // Check if this is a constant line (starts with "     A" and has quotes in the constant area)
+    if (!lineText.startsWith('     A')) return null;
+    
+    const constantArea = lineText.substring(44); // From position 45 onwards
+    if (!constantArea.includes("'")) return null;
+    
+    // Extract row and column
+    const rowStr = lineText.substring(38, 41).trim();
+    const colStr = lineText.substring(41, 44).trim();
+    
+    if (!rowStr || !colStr) return null;
+    
+    const row = parseInt(rowStr, 10);
+    const column = parseInt(colStr, 10);
+    
+    if (isNaN(row) || isNaN(column)) return null;
+    
+    // Extract the constant text (find the content between quotes)
+    const quoteStart = constantArea.indexOf("'");
+    if (quoteStart === -1) return null;
+    
+    let text = '';
+    let i = quoteStart + 1;
+    let inQuotes = true;
+    
+    // Handle multi-line constants by continuing to next lines if needed
+    while (inQuotes && i < constantArea.length) {
+        if (constantArea[i] === "'") {
+            inQuotes = false;
+        } else {
+            text += constantArea[i];
+        }
+        i++;
+    };
+    
+    // If we didn't find the closing quote, it might be a multi-line constant
+    if (inQuotes) {
+        text = constantArea.substring(quoteStart + 1);
+        // For simplicity, we'll truncate multi-line constants in the display
+        if (text.length > 20) {
+            text = text.substring(0, 20) + '...';
+        };
+    };
+
+    return {
+        text: text || 'Constant',
+        row: row,
+        column: column,
+        lineIndex: lineIndex
     };
 };
 
@@ -464,25 +702,4 @@ function findConstantInsertionPoint(editor: vscode.TextEditor, recordName: strin
     const recordLineEnd = recordInfo.endIndex + 1;
 
     return recordLineEnd;
-};
-
-// TYPE DEFINITIONS
-
-/**
- * Information needed to create a new constant.
- */
-interface NewConstantInfo {
-    text: string;
-    row: number;
-    column: number;
-    recordName: string;
-};
-
-/**
- * Position information for a constant.
- */
-interface ConstantPosition {
-    row: number;
-    column: number;
-    recordName: string;
 };
