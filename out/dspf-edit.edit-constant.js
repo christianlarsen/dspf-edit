@@ -40,6 +40,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.editConstant = editConstant;
 exports.addConstant = addConstant;
+exports.updateExistingConstant = updateExistingConstant;
 const vscode = __importStar(require("vscode"));
 const dspf_edit_model_1 = require("./dspf-edit.model");
 const dspf_edit_helper_1 = require("./dspf-edit.helper");
@@ -546,7 +547,15 @@ async function updateConstantSingleLine(workspaceEdit, uri, element, newValue, e
     const firstLine = editor.document.lineAt(element.lineIndex).text;
     const updatedLine = firstLine.substring(0, 44) + newValue;
     workspaceEdit.delete(uri, new vscode.Range(element.lineIndex, 0, element.lineIndex + endLineIndex - element.lineIndex + 1, 0));
-    workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), updatedLine + '\n');
+    if (element.lineIndex >= editor.document.lineCount) {
+        workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), '\n');
+    }
+    ;
+    workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), updatedLine);
+    if (element.lineIndex < editor.document.lineCount - 1) {
+        workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), '\n');
+    }
+    ;
 }
 ;
 /**
@@ -562,7 +571,15 @@ async function updateConstantMultiLine(workspaceEdit, uri, element, newValue, en
     const firstLine = editor.document.lineAt(element.lineIndex).text;
     const updatedLines = createMultiLineConstantFromBase(firstLine, newValue);
     workspaceEdit.delete(uri, new vscode.Range(element.lineIndex, 0, element.lineIndex + endLineIndex - element.lineIndex + 1, 0));
-    workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), updatedLines.join('\n') + '\n');
+    if (element.lineIndex >= editor.document.lineCount) {
+        workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), '\n');
+    }
+    ;
+    workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), updatedLines.join('\n'));
+    if (element.lineIndex < editor.document.lineCount - 1) {
+        workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), '\n');
+    }
+    ;
 }
 ;
 /**

@@ -25,6 +25,7 @@ import { addValidityCheck } from './dspf-edit.add-validity-check';
 import { editingKeywords } from './dspf-edit.add-editing-keywords';
 import { addErrorMessage } from './dspf-edit.add-error-messages';
 import { addIndicators } from './dspf-edit.add-indicators';
+import { fillConstant } from './dspf-edit.fill-constant';
 
 let updateTimeout: NodeJS.Timeout | undefined;
 
@@ -78,7 +79,8 @@ export function activate(context: vscode.ExtensionContext) {
 		{ name: 'addValidityCheck', handler: addValidityCheck as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'addEditingKeywords', handler: editingKeywords as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'addErrorMessage', handler: addErrorMessage as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
-		{ name: 'addIndicators', handler: addIndicators as (context: vscode.ExtensionContext) => void, needsTreeProvider: false }
+		{ name: 'addIndicators', handler: addIndicators as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
+		{ name: 'fillConstant', handler: fillConstant as (context: vscode.ExtensionContext) => void, needsTreeProvider: false }
 	];
 
 	// Register all commands

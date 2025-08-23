@@ -519,7 +519,7 @@ function validateColumnInput(value: string): string | null {
  * @param element - The constant element to update
  * @param newText - The new text for the constant
  */
-async function updateExistingConstant(
+export async function updateExistingConstant(
     editor: vscode.TextEditor, 
     element: any, 
     newText: string
@@ -595,7 +595,15 @@ async function updateConstantSingleLine(
         element.lineIndex, 0, 
         element.lineIndex + endLineIndex - element.lineIndex + 1, 0
     ));
-    workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), updatedLine + '\n');
+
+    if (element.lineIndex >= editor.document.lineCount) {
+        workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), '\n');        
+    };
+    workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), updatedLine);
+    if (element.lineIndex < editor.document.lineCount - 1) {
+        workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), '\n');        
+    };
+
 };
 
 /**
@@ -621,7 +629,14 @@ async function updateConstantMultiLine(
         element.lineIndex, 0, 
         element.lineIndex + endLineIndex - element.lineIndex + 1, 0
     ));
-    workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), updatedLines.join('\n') + '\n');
+
+    if (element.lineIndex >= editor.document.lineCount) {
+        workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), '\n');        
+    };
+    workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), updatedLines.join('\n'));
+    if (element.lineIndex < editor.document.lineCount - 1) {
+        workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), '\n');        
+    };
 };
 
 /**
