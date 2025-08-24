@@ -36,7 +36,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
   - Right-click options:
     - Edit constant.
     - Center constant on screen.
-    - Change position.
+    - Change position (absolute position/relative to existing constant).
     - Apply colors/attributes.
     - Adding/removing/changing indicators.
     - Fill constant with characters.
@@ -47,7 +47,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
   - Right-click options:
     - Edit field.
     - Center field on screen.
-    - Change position.
+    - Change position (absolute position/relative to existing constant/field).
     - Apply colors/attributes.
     - Add validity checks.
     - Add editing keywords.
@@ -106,6 +106,9 @@ Expect bugs — work in progress!
 
 ### 0.2.1
 - New feat: Fill constants with characters.
+
+### 0.3.0
+- New feat: Add fields in relative position to another field/constant on screen (below, above or on the right)
 
 ---
 
