@@ -38,3 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [0.2.1] - 2025-08-23
 ### Fixes
 - New feature: Fill constants with characters.
+
+## [0.3.0] - 2025-08-24
+### Fixes
+- New feature: Add fields in relative position to another field/constant on screen.

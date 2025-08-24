@@ -83,6 +83,19 @@ interface NewFieldConfig {
 };
 
 /**
+ * Interface for existing element information (fields and constants)
+ */
+interface ExistingElementInfo {
+    name: string;
+    text: string;
+    row: number;
+    column: number;
+    width: number;
+    lineIndex: number;
+    type: 'field' | 'constant';
+};
+
+/**
  * Available field types for DDS based on IBM official documentation
  * Note: For display files, only certain data types are valid in position 35
  */
@@ -157,9 +170,7 @@ export function editField(context: vscode.ExtensionContext): void {
     registerFieldCommands(context);
 };
 
-// ============================================================================
-// EDIT FIELD FUNCTIONALITY (EXISTING)
-// ============================================================================
+// EDIT FIELD FUNCTIONALITY 
 
 /**
  * Main command handler for editing DDS fields
@@ -213,9 +224,7 @@ async function handleEditFieldCommand(node: DdsNode): Promise<void> {
     };
 };
 
-// ============================================================================
-// ADD FIELD FUNCTIONALITY (NEW)
-// ============================================================================
+// ADD FIELD FUNCTIONALITY
 
 /**
  * Main command handler for adding new DDS fields
@@ -303,7 +312,7 @@ async function collectNewFieldConfiguration(recordElement: any): Promise<NewFiel
         // These field types don't have screen positions
         position = { row: 0, column: 0 };
     } else {
-        const fieldPosition = await collectFieldPosition(fieldName);
+        const fieldPosition = await collectFieldPosition(fieldName, recordElement, typeConfig?.size);
         if (!fieldPosition) return null;
         position = fieldPosition;
     };
@@ -357,16 +366,16 @@ function validateNewFieldName(value: string, recordElement: any): string | null 
 async function promptForFieldReference(): Promise<boolean | null> {
     const choice = await vscode.window.showQuickPick([
         { 
-            label: "Referenced Field", 
-            description: "Field references another file's field",
-            detail: "Will prompt for library, file, and field names",
-            value: true
-        },
-        { 
             label: "New Field", 
             description: "Define new field with type and size",
             detail: "Will prompt for field type, length, and decimals",
             value: false
+        },
+        { 
+            label: "Referenced Field", 
+            description: "Field references another file's field",
+            detail: "Will prompt for library, file, and field names",
+            value: true
         }
     ], {
         title: 'Field Definition Type',
@@ -409,7 +418,7 @@ async function collectFieldReference(fieldName: string): Promise<FieldReference 
     const library = await vscode.window.showInputBox({
         title: `Reference for field '${fieldName}' - Step 1/3`,
         prompt: "Enter library name (max 10 characters)",
-        placeHolder: "MYLIB",
+        placeHolder: "LIBRARY",
         validateInput: (value) => validateLibraryFileName(value, "Library")
     });
     if (!library) return null;
@@ -418,7 +427,7 @@ async function collectFieldReference(fieldName: string): Promise<FieldReference 
     const file = await vscode.window.showInputBox({
         title: `Reference for field '${fieldName}' - Step 2/3`,
         prompt: "Enter file name (max 10 characters)",
-        placeHolder: "MYFILE",
+        placeHolder: "FILE",
         validateInput: (value) => validateLibraryFileName(value, "File")
     });
     if (!file) return null;
@@ -458,8 +467,8 @@ function validateLibraryFileName(value: string, type: string): string | null {
         return `${type} name cannot contain spaces.`;
     };
     
-    if (!/^[A-Za-z][A-Za-z0-9@#$]*$/.test(trimmedValue)) {
-        return `Invalid characters in ${type.toLowerCase()} name. Use letters, numbers, @, #, $.`;
+    if (!/^[A-Za-z][A-Za-z0-9@#$Ñ]*$/.test(trimmedValue)) {
+        return `Invalid characters in ${type.toLowerCase()} name. Use letters, numbers, @, #, $, Ñ`;
     };
     
     return null;
@@ -561,9 +570,152 @@ function validateFieldLength(value: string): string | null {
 };
 
 /**
- * Collects field reference information (library, file, field)
+ * Collects field position information with relative positioning options
  */
-async function collectFieldPosition(fieldName: string): Promise<FieldPosition | null> {
+async function collectFieldPosition(fieldName: string, recordElement: any, fieldSize?: FieldSize): Promise<FieldPosition | null> {
+    // First ask if user wants relative or absolute positioning
+    const positioningType = await vscode.window.showQuickPick(
+        [
+            { 
+                label: "Absolute position", 
+                description: "Enter specific row and column",
+                value: "absolute" 
+            },
+            { 
+                label: "Relative to existing element", 
+                description: "Position above, below, or to the right of an existing field or constant",
+                value: "relative" 
+            }
+        ],
+        {
+            title: `Choose positioning method for field '${fieldName}' in record ${recordElement.name}`,
+            placeHolder: "Select how to position the new field"
+        }
+    );
+
+    if (!positioningType) return null;
+
+    if (positioningType.value === "relative") {
+        return await getRelativeFieldPosition(recordElement, fieldSize);
+    } else {
+        return await getAbsoluteFieldPosition(fieldName);
+    };
+};
+
+/**
+ * Gets relative position information based on existing fields and constants
+ */
+async function getRelativeFieldPosition(recordElement: any, fieldSize?: FieldSize): Promise<FieldPosition | null> {
+    // Get existing elements (fields and constants) in this record
+    const existingElements = await getExistingElementsInRecord(recordElement.name);
+    
+    if (existingElements.length === 0) {
+        vscode.window.showInformationMessage("No existing fields or constants found in this record. Using absolute positioning.");
+        return await getAbsoluteFieldPosition("field");
+    };
+
+    // Show elements for selection
+    const selectedElement = await vscode.window.showQuickPick(
+        existingElements.map(element => ({
+            label: `${element.name} (${element.type})`,
+            description: `Row: ${element.row}, Col: ${element.column}, Width: ${element.width}`,
+            detail: `Line: ${element.lineIndex + 1} - "${element.text}"`,
+            element: element
+        })),
+        {
+            title: "Select reference element",
+            placeHolder: "Choose the field or constant to position relative to"
+        }
+    );
+
+    if (!selectedElement) return null;
+
+    // Ask for relative position (above, below, or right)
+    const relativePosition = await vscode.window.showQuickPick(
+        [
+            { 
+                label: "Above", 
+                description: "Position the new field above the selected element",
+                value: "above" 
+            },
+            { 
+                label: "Below", 
+                description: "Position the new field below the selected element",
+                value: "below" 
+            },
+            { 
+                label: "To the right", 
+                description: "Position the new field to the right of the selected element",
+                value: "right" 
+            }
+        ],
+        {
+            title: "Relative position",
+            placeHolder: "Where should the new field be positioned?"
+        }
+    );
+
+    if (!relativePosition) return null;
+
+    // Calculate the new position
+    const referenceElement = selectedElement.element;
+    let newRow: number;
+    let newColumn: number;
+
+    switch (relativePosition.value) {
+        case "above":
+            newRow = referenceElement.row - 1;
+            newColumn = referenceElement.column;
+            break;
+        case "below":
+            newRow = referenceElement.row + 1;
+            newColumn = referenceElement.column;
+            break;
+        case "right":
+            newRow = referenceElement.row;
+            switch(referenceElement.type) {
+                case 'constant' :
+                    newColumn = referenceElement.column + (referenceElement.width - 2) + 1; // +1 for spacing
+                    break;
+                case 'field' :
+                    newColumn = referenceElement.column + referenceElement.width + 1; // +1 for spacing
+                    break;
+            }
+            break;
+        default:
+            return null;
+    };
+
+    // Validate the new position
+    const maxRows = fileSizeAttributes.maxRow1 || 24;
+    const maxCols = fileSizeAttributes.maxCol1 || 80;
+
+    if (newRow < 1 || newRow > maxRows) {
+        vscode.window.showErrorMessage(`Cannot position field at row ${newRow}. Row must be between 1 and ${maxRows}.`);
+        return null;
+    };
+
+    if (newColumn < 1 || newColumn > maxCols) {
+        vscode.window.showErrorMessage(`Cannot position field at column ${newColumn}. Column must be between 1 and ${maxCols}.`);
+        return null;
+    };
+
+    // Check if the new field would fit within screen bounds
+    if (fieldSize && newColumn + fieldSize.length - 1 > maxCols) {
+        vscode.window.showErrorMessage(`Field would extend beyond screen width (column ${newColumn + fieldSize.length - 1}). Maximum column is ${maxCols}.`);
+        return null;
+    };
+
+    return {
+        row: newRow,
+        column: newColumn
+    };
+};
+
+/**
+ * Gets absolute position information for a field
+ */
+async function getAbsoluteFieldPosition(fieldName: string): Promise<FieldPosition | null> {
     const maxRows = fileSizeAttributes.maxRow1 || 24;
     const maxCols = fileSizeAttributes.maxCol1 || 80;
 
@@ -588,6 +740,153 @@ async function collectFieldPosition(fieldName: string): Promise<FieldPosition | 
     return {
         row: Number(row),
         column: Number(column)
+    };
+};
+
+/**
+ * Gets existing elements (fields and constants) in a specific record
+ */
+async function getExistingElementsInRecord(recordName: string): Promise<ExistingElementInfo[]> {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) return [];
+
+    const elements: ExistingElementInfo[] = [];
+    const document = editor.document;
+    
+    // Find record boundaries
+    const recordInfo = fieldsPerRecords.find(r => r.record === recordName);
+    if (!recordInfo) return [];
+
+    // Scan through the record lines to find fields and constants
+    for (let lineIndex = recordInfo.startIndex; lineIndex <= recordInfo.endIndex; lineIndex++) {
+        if (lineIndex >= document.lineCount) break;
+        
+        const line = document.lineAt(lineIndex);
+        
+        // Try to parse as a field first
+        const field = parseFieldFromLine(line.text, lineIndex);
+        if (field) {
+            elements.push(field);
+            continue;
+        }
+        
+        // Try to parse as a constant
+        const constant = parseConstantFromLine(line.text, lineIndex);
+        if (constant) {
+            elements.push(constant);
+        }
+    }
+
+    // Sort elements by row, then by column
+    elements.sort((a, b) => {
+        if (a.row !== b.row) return a.row - b.row;
+        return a.column - b.column;
+    });
+
+    return elements;
+};
+
+/**
+ * Parses a field from a DDS line
+ */
+function parseFieldFromLine(lineText: string, lineIndex: number): ExistingElementInfo | null {
+    // DDS field format: check if this looks like a field line
+    if (lineText.length < 44) return null;
+    if (!lineText.startsWith('     A')) return null;
+    
+    // Extract field name (positions 19-28)
+    const nameArea = lineText.substring(18, 28).trim();
+    if (!nameArea) return null;
+    
+    // Extract row and column (positions 40-41 and 43-44)
+    const rowStr = lineText.substring(39, 41).trim();
+    const colStr = lineText.substring(42, 44).trim();
+    
+    if (!rowStr || !colStr) return null;
+    
+    const row = parseInt(rowStr, 10);
+    const column = parseInt(colStr, 10);
+    
+    if (isNaN(row) || isNaN(column)) return null;
+    
+    // Extract field length (positions 31-32)
+    const lengthStr = lineText.substring(30, 32).trim();
+    const length = parseInt(lengthStr, 10) || 10; // Default to 10 if can't parse
+    
+    return {
+        name: nameArea,
+        text: nameArea,
+        row: row,
+        column: column,
+        width: length,
+        lineIndex: lineIndex,
+        type: 'field'
+    };
+};
+
+/**
+ * Parses a constant from a DDS line
+ */
+function parseConstantFromLine(lineText: string, lineIndex: number): ExistingElementInfo | null {
+    // DDS constant format: positions 7-38 are name/blank, 39-41 is row, 42-44 is column, 45+ is constant value
+    if (lineText.length < 45) return null;
+    
+    // Check if this is a constant line (starts with "     A" and has quotes in the constant area)
+    if (!lineText.startsWith('     A')) return null;
+    
+    const constantArea = lineText.substring(44); // From position 45 onwards
+    if (!constantArea.includes("'")) return null;
+    
+    // Extract row and column
+    const rowStr = lineText.substring(38, 41).trim();
+    const colStr = lineText.substring(41, 44).trim();
+    
+    if (!rowStr || !colStr) return null;
+    
+    const row = parseInt(rowStr, 10);
+    const column = parseInt(colStr, 10);
+    
+    if (isNaN(row) || isNaN(column)) return null;
+    
+    // Extract the constant text (find the content between quotes)
+    const quoteStart = constantArea.indexOf("'");
+    if (quoteStart === -1) return null;
+    
+    let text = '';
+    let i = quoteStart + 1;
+    let inQuotes = true;
+    
+    // Handle multi-line constants by continuing to next lines if needed
+    while (inQuotes && i < constantArea.length) {
+        if (constantArea[i] === "'") {
+            inQuotes = false;
+        } else {
+            text += constantArea[i];
+        }
+        i++;
+    };
+    
+    // If we didn't find the closing quote, it might be a multi-line constant
+    if (inQuotes) {
+        text = constantArea.substring(quoteStart + 1);
+        // For simplicity, we'll truncate multi-line constants in the display
+        if (text.length > 20) {
+            text = text.substring(0, 20) + '...';
+        }
+    };
+
+    // Calculate width (including quotes)
+    const displayText = text || 'Constant';
+    const width = displayText.length + 2; // +2 for quotes
+
+    return {
+        name: displayText,
+        text: displayText,
+        row: row,
+        column: column,
+        width: width,
+        lineIndex: lineIndex,
+        type: 'constant'
     };
 };
 
