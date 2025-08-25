@@ -110,6 +110,8 @@ Expect bugs — work in progress!
 ### 0.3.0
 - New feat: Add fields in relative position to another field/constant on screen (below, above or on the right)
 
+### 0.3.1
+- Fixes: WDWTITLE command fix.
 ---
 
 💬 **Feedback is welcome!** Please leave a comment, open an issue, and enjoy using DSPF-edit.
