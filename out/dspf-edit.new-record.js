@@ -561,10 +561,10 @@ function generateWindowLine(dimensions) {
  * @returns Array of formatted title lines
  */
 function generateWindowTitleLines(title) {
-    const maxLineLength = 80;
+    const maxLineLength = 90;
     const basePrefix = ' '.repeat(5) + 'A' + ' '.repeat(38);
-    const keyword = "WDWTITLE('";
-    const suffix = "')";
+    const keyword = "WDWTITLE((*TEXT '";
+    const suffix = "') *CENTER)";
     const lines = [];
     let remaining = title;
     let firstLine = true;
