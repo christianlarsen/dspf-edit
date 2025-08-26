@@ -231,6 +231,19 @@ function parseRecordElement(
 };
 
 /**
+ * Checks if a record is a subfile by examining its attributes
+ * @param attributes - Array of DDS attributes
+ * @returns True if the record has SFL attribute
+ */
+function isSubfileRecord(attributes?: DdsAttribute[]): boolean {
+    if (!attributes) return false;
+    
+    return attributes.some(attr => 
+        attr.value.toUpperCase().includes('SFL')
+    );
+};
+
+/**
  * Parses a field element from the current line
  * @param lines - All document lines
  * @param lineIndex - Current line index
@@ -255,6 +268,21 @@ function parseFieldElement(
 
     const { attributes, nextIndex } = extractAttributes('F', lines, lineIndex, true, components.indicators);
 
+    // Check if the current record (lastRecord) is a subfile by looking at its attributes
+    const currentRecordEntry = fieldsPerRecords.find(r => r.record === lastRecord);
+    const isSubfile = currentRecordEntry ? isSubfileRecord(currentRecordEntry.attributes) : false;
+    
+    // For subfiles, swap row and column positions
+    let finalRow = components.row;
+    let finalCol = components.col;
+    
+    if (isSubfile && !isHidden) {
+        // In subfiles, the positions are swapped: what appears in the "row" position is actually the column,
+        // and what appears in the "column" position is actually the row
+        finalRow = components.col;
+        finalCol = components.row;
+    };
+
     const element = {
         kind: 'field' as const,
         name: components.fieldName,
@@ -262,8 +290,8 @@ function parseFieldElement(
         length: length,
         decimals: decimals,
         usage: usage,
-        row: isHidden ? undefined : components.row,
-        column: isHidden ? undefined : components.col,
+        row: isHidden ? undefined : finalRow,
+        column: isHidden ? undefined : finalCol,
         hidden: isHidden,
         referenced: isReferenced,
         lineIndex: lineIndex,
@@ -295,11 +323,26 @@ function parseConstantElement(
     const { fullValue, lastLineIndex } = extractMultiLineConstant(lines, lineIndex, trimmedLine);
     const { attributes, nextIndex } = extractAttributes('C', lines, lastLineIndex, true, components.indicators);
 
+    // Check if the current record (lastRecord) is a subfile by looking at its attributes
+    const currentRecordEntry = fieldsPerRecords.find(r => r.record === lastRecord);
+    const isSubfile = currentRecordEntry ? isSubfileRecord(currentRecordEntry.attributes) : false;
+        
+    // For subfiles, swap row and column positions
+    let finalRow = components.row;
+    let finalCol = components.col;
+        
+    if (isSubfile) {
+        // In subfiles, the positions are swapped: what appears in the "row" position is actually the column,
+        // and what appears in the "column" position is actually the row
+        finalRow = components.col;
+        finalCol = components.row;
+    };
+    
     const element = {
         kind: 'constant' as const,
         name: fullValue,
-        row: components.row!,
-        column: components.col!,
+        row: finalRow,
+        column: finalCol,
         lineIndex: lineIndex,
         recordname: lastRecord,
         attributes: attributes || [],

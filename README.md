@@ -112,6 +112,10 @@ Expect bugs — work in progress!
 
 ### 0.3.1
 - Fixes: WDWTITLE command fix.
+
+### 0.3.2
+- Fixes: SFL field column/rows bad configured.
+
 ---
 
 💬 **Feedback is welcome!** Please leave a comment, open an issue, and enjoy using DSPF-edit.

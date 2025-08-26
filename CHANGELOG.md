@@ -46,3 +46,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [0.3.1] - 2025-08-25
 ### Fixes
 - Fixes: WDWTITLE command fix.
+
+## [0.3.2] - 2025-08-26
+### Fixes
+- Fixes: SFL field column/rows bad configured.
