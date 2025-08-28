@@ -239,7 +239,7 @@ function isSubfileRecord(attributes?: DdsAttribute[]): boolean {
     if (!attributes) return false;
     
     return attributes.some(attr => 
-        attr.value.toUpperCase().includes('SFL')
+        attr.value.toUpperCase() === 'SFL'
     );
 };
 

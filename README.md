@@ -116,6 +116,9 @@ Expect bugs — work in progress!
 ### 0.3.2
 - Fixes: SFL field column/rows bad configured.
 
+### 0.3.3
+- Fixes: Internal parser bug fixes.
+
 ---
 
 💬 **Feedback is welcome!** Please leave a comment, open an issue, and enjoy using DSPF-edit.
