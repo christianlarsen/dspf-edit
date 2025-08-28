@@ -201,7 +201,7 @@ function parseRecordElement(lines, lineIndex, trimmedLine, lastRecord) {
 function isSubfileRecord(attributes) {
     if (!attributes)
         return false;
-    return attributes.some(attr => attr.value.toUpperCase().includes('SFL'));
+    return attributes.some(attr => attr.value.toUpperCase() === 'SFL');
 }
 ;
 /**
