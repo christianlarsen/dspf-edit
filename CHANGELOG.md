@@ -23,34 +23,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [0.1.0] - 2025-08-21
 ### Added
-- New feature: adding/modifying/removing indicators on constants/fields.
-- New feature: adding/modifying/removing indicators on constants/fields attributes.
+- Add / Modify / Remove indicators on constants/fields.
+- Add / Modify / Remove indicators on constants/fields attributes.
 
 ## [0.1.1] - 2025-08-22
 ### Fixes
-- Fixes: When creating a new window record, it's not positioned in the correct row. It moves up two positions.
-- Fixes: When creating "buttons," in a window, the starting position should be 1. In records, it should be 2., 
+- When creating a new window record, it's not positioned in the correct row. It moves up two positions.
+- When creating "buttons," in a window, the starting position should be 1. In records, it should be 2. 
 
 ## [0.2.0] - 2025-08-23
 ### Added
-- New feature: Add constants in relative position to another on screen.
+- Add constants in relative position to another on screen.
 
 ## [0.2.1] - 2025-08-23
 ### Added
-- New feature: Fill constants with characters.
+- Fill constants with characters.
 
 ## [0.3.0] - 2025-08-24
 ### Added
-- New feature: Add fields in relative position to another field/constant on screen.
+- Add fields in relative position to another field/constant on screen.
 
 ## [0.3.1] - 2025-08-25
 ### Fixes
-- Fixes: WDWTITLE command fix.
+- WDWTITLE command fix.
 
 ## [0.3.2] - 2025-08-26
 ### Fixes
-- Fixes: SFL field column/rows bad configured.
+- SFL field column/rows bad configured.
 
 ## [0.3.3] - 2025-08-28
 ### Fixes
-- Fixes: Internal parser bug fixes.
+- Internal parser bug fixes.
+
+## [0.3.4] - 2025-08-28
+### Fixes
+- If the field has no attributes and no color, the first one is set on the same line in the DDS.
+- If the field has no attributes and no color, the first editing keyword is set on the same line in the DDS.
+- The calculation of the position of the "buttons" in "add-buttons" has been modified.
+- The function "isAttributeLine" has been improved.

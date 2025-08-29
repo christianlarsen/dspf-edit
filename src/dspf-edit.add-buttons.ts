@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
-import { getRecordSize, fieldsPerRecords } from './dspf-edit.model';
+import { getRecordSize, fieldsPerRecords, DdsSize, getDefaultSize } from './dspf-edit.model';
 
 // COMMAND REGISTRATION
 
@@ -177,32 +177,84 @@ function validateButtonLabel(value: string): string {
 
 /**
  * Gets comprehensive record information needed for button placement.
+ * Prioritizes WINDOW attributes over file-level size information.
  * @param recordName - The name of the record
  * @returns Complete record information or null if not found
  */
 function getRecordInformation(recordName: string): RecordInformation | null {
-    const recordSize = getRecordSize(recordName);
     const recordInfo = fieldsPerRecords.find(r => r.record === recordName);
-    let isWindow : boolean = false;
-    if (recordInfo && recordInfo.attributes) {
+    
+    if (!recordInfo) {
+        return null;
+    };
+
+    // Check if this record has WINDOW attribute (highest priority)
+    let effectiveSize: DdsSize | null = null;
+    let isWindow = false;
+    
+    if (recordInfo.attributes) {
         const windowAttribute = recordInfo.attributes.find(attr =>
             attr.value.toUpperCase().includes('WINDOW(')
         );
-        if (windowAttribute) isWindow = true;
+        
+        if (windowAttribute) {
+            // Extract WINDOW size directly from attribute
+            const windowMatch = windowAttribute.value.match(
+                /WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\)/i
+            );
+            
+            if (windowMatch) {
+                const startRow = parseInt(windowMatch[1], 10);
+                const startCol = parseInt(windowMatch[2], 10);
+                const rows = parseInt(windowMatch[3], 10);
+                const cols = parseInt(windowMatch[4], 10);
+                
+                effectiveSize = {
+                    rows,
+                    cols,
+                    name: `WINDOW_${startRow}_${startCol}_${rows}_${cols}`,
+                    source: 'window' as const,
+                    originRow: startRow,
+                    originCol: startCol
+                };
+                isWindow = true;
+            };
+        };
     };
-
-    if (!recordSize || !recordInfo) {
+    
+    // Fallback 1: Use parsed size from parser (may be WINDOW or default)
+    if (!effectiveSize && recordInfo.size) {
+        effectiveSize = recordInfo.size;
+        isWindow = recordInfo.size.source === 'window';
+    };
+    
+    // Fallback 2: Use legacy getRecordSize function
+    if (!effectiveSize) {
+        const legacySize = getRecordSize(recordName);
+        if (legacySize) {
+            effectiveSize = legacySize;
+        };
+    };
+    
+    // Fallback 3: Use default size from file attributes
+    if (!effectiveSize) {
+        effectiveSize = getDefaultSize();
+    };
+    
+    // Final validation
+    if (!effectiveSize || effectiveSize.rows <= 0 || effectiveSize.cols <= 0) {
+        console.error(`Invalid size information for record ${recordName}:`, effectiveSize);
         return null;
     };
 
     return {
         name: recordName,
-        size: recordSize,
+        size: effectiveSize,
         info: recordInfo,
         endLineIndex: recordInfo.endIndex + 1,
-        visibleStart: recordInfo.size?.originRow ?? 0,
-        maxColumns: recordInfo.size?.cols ?? 0,
-        isWindow : isWindow
+        visibleStart: effectiveSize.originRow,
+        maxColumns: effectiveSize.cols,
+        isWindow: isWindow
     };
 };
 

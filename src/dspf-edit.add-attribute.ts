@@ -6,7 +6,6 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
-import { fieldsPerRecords } from './dspf-edit.model';
 import { isAttributeLine, findElementInsertionPoint } from './dspf-edit.helper';
  
 // INTERFACES AND TYPES
@@ -14,6 +13,8 @@ import { isAttributeLine, findElementInsertionPoint } from './dspf-edit.helper';
 interface AttributeWithIndicators {
     attribute: string;
     indicators: string[];
+    lineIndex?: number; 
+    isInlineAttribute?: boolean; 
 };
 
 // COMMAND REGISTRATION
@@ -52,8 +53,8 @@ async function handleAddAttributeCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        // Get current attributes from the element
-        const currentAttributes = getCurrentAttributesForElement(node.ddsElement);
+        // Get current attributes from the element (both inline and separate lines)
+        const currentAttributes = getCurrentAttributesForElement(editor, node.ddsElement);
 
         // Get available attributes (excluding current ones)
         let availableAttributes = getAvailableAttributes(currentAttributes.map(a => a.attribute));
@@ -115,43 +116,60 @@ async function handleAddAttributeCommand(node: DdsNode): Promise<void> {
 // ATTRIBUTES EXTRACTION FUNCTIONS
 
 /**
- * Extracts current attributes from a DDS element.
+ * Extracts current attributes from a DDS element, checking both inline and separate lines.
+ * @param editor - The active text editor
  * @param element - The DDS element (field or constant)
- * @returns Array of current attributes codes
+ * @returns Array of current attributes with their location info
  */
-function getCurrentAttributesForElement(element: any): AttributeWithIndicators[] {
-    // Find the element in the fieldsPerRecords data
-    const recordInfo = fieldsPerRecords.find(r => r.record === element.recordname);
-    if (!recordInfo) return [];
+function getCurrentAttributesForElement(editor: vscode.TextEditor, element: any): AttributeWithIndicators[] {
+    const attributes: AttributeWithIndicators[] = [];
+    const isConstant = element.kind === 'constant';
 
-    let elementNameWithoutQuotes: string = '';
-    if (element.kind === 'constant') {
-        elementNameWithoutQuotes = element.name.slice(1, -1);
-    } else {
-        elementNameWithoutQuotes = element.name;
+    // For fields, check if there's an attribute in the same line (position 44+)
+    if (!isConstant) {
+        const fieldLine = editor.document.lineAt(element.lineIndex);
+        const fieldLineText = fieldLine.text;
+        
+        if (fieldLineText.length > 44) {
+            const attributePart = fieldLineText.substring(44).trim();
+            if (attributePart.includes('DSPATR(')) {
+                const attributeMatch = attributePart.match(/DSPATR\(([A-Z]{2})\)/);
+                if (attributeMatch) {
+                    const indicators = parseIndicatorsFromLine(fieldLineText);
+                    attributes.push({
+                        attribute: attributeMatch[1],
+                        indicators: indicators,
+                        lineIndex: element.lineIndex,
+                        isInlineAttribute: true
+                    });
+                };
+            };
+        };
     };
 
-    // Look in both fields and constants
-    const elementInfo = [
-        ...recordInfo.fields,
-        ...recordInfo.constants
-    ].find(item => item.name === elementNameWithoutQuotes);
+    // Check subsequent lines for additional attributes
+    const startLine = element.lineIndex + 1;
+    for (let i = startLine; i < editor.document.lineCount; i++) {
+        const lineText = editor.document.lineAt(i).text;
 
-    if (!elementInfo || !elementInfo.attributes) return [];
+        // Stop if we hit a non-attribute line
+        if (!lineText.trim().startsWith('A ') || !isAttributeLine(lineText)) {
+            break;
+        };
 
-    // Extract DSPATR attributes with indicators
-    const attributes: AttributeWithIndicators[] = [];
-    if (elementInfo) {
-        elementInfo.attributes.forEach(attrObj => {
-            const attr = attrObj.value;
-            const attributeMatch = attr.match(/^DSPATR\(([A-Z]{2})\)$/);
+        // Check if this is a DSPATR attribute
+        if (lineText.includes('DSPATR(')) {
+            const attributeMatch = lineText.match(/DSPATR\(([A-Z]{2})\)/);
             if (attributeMatch) {
+                const indicators = parseIndicatorsFromLine(lineText);
                 attributes.push({
                     attribute: attributeMatch[1],
-                    indicators: []
+                    indicators: indicators,
+                    lineIndex: i,
+                    isInlineAttribute: false
                 });
-            }
-        });
+            };
+        };
     };
 
     return attributes;
@@ -163,7 +181,7 @@ function getCurrentAttributesForElement(element: any): AttributeWithIndicators[]
  * @returns Array of available attributes
  */
 function getAvailableAttributes(currentAttributes: string[]): string[] {
-    const allAttributes: string[] = ['HI', 'RI', 'CS', 'BL', 'ND', 'UL', 'PC'];
+    const allAttributes: string[] = ['HI', 'RI', 'CS', 'BL', 'ND', 'UL', 'PC', 'PR'];
     return allAttributes.filter(attribute => !currentAttributes.includes(attribute));
 };
 
@@ -242,48 +260,120 @@ async function collectIndicatorsForAttribute(attribute: string): Promise<string[
 
         // Validate and add indicator
         indicators.push(trimmedInput.toUpperCase());
-    }
+    };
 
     return indicators;
 };
 
 // DDS MODIFICATION FUNCTIONS
 
-/**
- * Adds attributes with indicators to a DDS element by inserting DSPATR lines after the element.
- * @param editor - The active text editor
- * @param element - The DDS element to add attributes to
- * @param attributes - Array of attributes with indicators to add
- */
+// Modifica la función addAttributesToElement:
+
 async function addAttributesToElement(
     editor: vscode.TextEditor,
     element: any,
     attributes: AttributeWithIndicators[]
 ): Promise<void> {
-    const insertionPoint = findElementInsertionPoint(editor, element);
-    if (insertionPoint === -1) {
-        throw new Error('Could not find insertion point for attributes');
-    };
-
+    const isConstant = element.kind === 'constant';
+    const currentAttributes = getCurrentAttributesForElement(editor, element);
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
 
-    // Insert each attribute line
-    let crInserted : boolean = false;    
-    for (let i = 0; i < attributes.length; i++) {
-        const attributeLine = createAttributeLineWithIndicators(attributes[i]);
-        const insertPos = new vscode.Position(insertionPoint , 0); 
-        if (!crInserted && insertPos.line >= editor.document.lineCount) {
-            workspaceEdit.insert(uri, insertPos, '\n');
-            crInserted = true;
+    // Para campos: solo agregar inline si NO hay atributos existentes Y el primer atributo NO tiene indicadores
+    if (!isConstant && currentAttributes.length === 0 && attributes.length > 0) {
+        const firstAttribute = attributes[0];
+        
+        // Solo agregar inline si el atributo NO tiene indicadores
+        if (firstAttribute.indicators.length === 0) {
+            // Add first attribute inline (position 44+)
+            const fieldLine = editor.document.lineAt(element.lineIndex);
+            const fieldLineText = fieldLine.text;
+            
+            // Ensure the line has at least 44 characters
+            const paddedLine = fieldLineText.padEnd(44, ' ');
+            const firstAttributeText = createInlineAttributeText(firstAttribute);
+            
+            // Replace the entire line with the padded line + first attribute
+            workspaceEdit.replace(
+                uri,
+                fieldLine.range,
+                paddedLine + firstAttributeText
+            );
+
+            // Add remaining attributes as separate lines if any
+            if (attributes.length > 1) {
+                const insertionPoint = findElementInsertionPoint(editor, element);
+                if (insertionPoint === -1) {
+                    throw new Error('Could not find insertion point for additional attributes');
+                };
+
+                let crInserted: boolean = false;
+                for (let i = 1; i < attributes.length; i++) {
+                    const attributeLine = createAttributeLineWithIndicators(attributes[i]);
+                    const insertPos = new vscode.Position(insertionPoint, 0);
+                    if (!crInserted && insertPos.line >= editor.document.lineCount) {
+                        workspaceEdit.insert(uri, insertPos, '\n');
+                        crInserted = true;
+                    };
+                    workspaceEdit.insert(uri, insertPos, attributeLine);
+                    if (i < attributes.length - 1 || insertPos.line < editor.document.lineCount) {
+                        workspaceEdit.insert(uri, insertPos, '\n');
+                    };
+                };
+            };
+        } else {
+            // Si el primer atributo tiene indicadores, todos van en líneas separadas
+            const insertionPoint = findElementInsertionPoint(editor, element);
+            if (insertionPoint === -1) {
+                throw new Error('Could not find insertion point for attributes');
+            };
+
+            let crInserted: boolean = false;
+            for (let i = 0; i < attributes.length; i++) {
+                const attributeLine = createAttributeLineWithIndicators(attributes[i]);
+                const insertPos = new vscode.Position(insertionPoint, 0);
+                if (!crInserted && insertPos.line >= editor.document.lineCount) {
+                    workspaceEdit.insert(uri, insertPos, '\n');
+                    crInserted = true;
+                };
+                workspaceEdit.insert(uri, insertPos, attributeLine);
+                if (i < attributes.length - 1 || insertPos.line < editor.document.lineCount) {
+                    workspaceEdit.insert(uri, insertPos, '\n');
+                };
+            };
         };
-        workspaceEdit.insert(uri, insertPos, attributeLine);
-        if (i < attributes.length - 1 || insertPos.line < editor.document.lineCount) {
-            workspaceEdit.insert(uri, insertPos, '\n');
+    } else {
+        // Add all attributes as separate lines (existing behavior)
+        const insertionPoint = findElementInsertionPoint(editor, element);
+        if (insertionPoint === -1) {
+            throw new Error('Could not find insertion point for attributes');
+        };
+
+        let crInserted: boolean = false;
+        for (let i = 0; i < attributes.length; i++) {
+            const attributeLine = createAttributeLineWithIndicators(attributes[i]);
+            const insertPos = new vscode.Position(insertionPoint, 0);
+            if (!crInserted && insertPos.line >= editor.document.lineCount) {
+                workspaceEdit.insert(uri, insertPos, '\n');
+                crInserted = true;
+            };
+            workspaceEdit.insert(uri, insertPos, attributeLine);
+            if (i < attributes.length - 1 || insertPos.line < editor.document.lineCount) {
+                workspaceEdit.insert(uri, insertPos, '\n');
+            };
         };
     };
 
     await vscode.workspace.applyEdit(workspaceEdit);
+};
+
+/**
+ * Creates inline attribute text for position 44+ on field line.
+ * @param attributeWithIndicators - The attribute and its indicators
+ * @returns Formatted attribute text for inline use
+ */
+function createInlineAttributeText(attributeWithIndicators: AttributeWithIndicators): string {
+    return `DSPATR(${attributeWithIndicators.attribute})`;
 };
 
 /**
@@ -314,26 +404,37 @@ function createAttributeLineWithIndicators(attributeWithIndicators: AttributeWit
 
 /**
  * Removes existing attributes from a DDS element using precise character offsets.
- * Handles edge cases properly to avoid leaving blank lines at the end of the file.
+ * Handles both inline attributes (position 44+) and separate attribute lines.
  * @param editor - The active text editor
  * @param element - The DDS element to remove attributes from
  */
 async function removeAttributesFromElement(editor: vscode.TextEditor, element: any): Promise<void> {
-    const attributeLines = findExistingAttributeLines(editor, element);
-    if (attributeLines.length === 0) return;
+    const currentAttributes = getCurrentAttributesForElement(editor, element);
+    if (currentAttributes.length === 0) return;
 
     const document = editor.document;
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = document.uri;
+    const isConstant = element.kind === 'constant';
 
-    // Group lines by type: element line vs standalone attribute lines
-    const elementLineIndex = element.lineIndex;
-    const standaloneAttributeLines = attributeLines.filter(lineIndex => lineIndex !== elementLineIndex);
-    const hasElementLineAttribute = attributeLines.includes(elementLineIndex);
+    // Separate inline attributes from line attributes
+    const inlineAttributes = currentAttributes.filter(attr => attr.isInlineAttribute);
+    const lineAttributes = currentAttributes.filter(attr => !attr.isInlineAttribute);
 
-    // Handle standalone attribute lines using precise offsets
-    if (standaloneAttributeLines.length > 0) {
-        const deletionRanges = calculateAttributeDeletionRanges(document, standaloneAttributeLines);
+    // Handle inline attribute removal (for fields)
+    if (!isConstant && inlineAttributes.length > 0) {
+        const fieldLine = document.lineAt(element.lineIndex);
+        const fieldLineText = fieldLine.text;
+        
+        // Remove everything from position 44 onwards
+        const truncatedLine = fieldLineText.substring(0, 44).trimRight();
+        workspaceEdit.replace(uri, fieldLine.range, truncatedLine);
+    };
+
+    // Handle separate attribute lines removal
+    if (lineAttributes.length > 0) {
+        const attributeLineIndices = lineAttributes.map(attr => attr.lineIndex!);
+        const deletionRanges = calculateAttributeDeletionRanges(document, attributeLineIndices);
         
         // Apply deletions in reverse order to maintain offsets
         for (let i = deletionRanges.length - 1; i >= 0; i--) {
@@ -342,19 +443,6 @@ async function removeAttributesFromElement(editor: vscode.TextEditor, element: a
             const endPos = document.positionAt(endOffset);
             workspaceEdit.delete(uri, new vscode.Range(startPos, endPos));
         };
-    };
-
-    // Handle attribute on element line (just remove the attribute part)
-    if (hasElementLineAttribute) {
-        const line = document.lineAt(elementLineIndex);
-        workspaceEdit.replace(
-            uri,
-            new vscode.Range(
-                line.range.start.translate(0, 44), 
-                line.range.end 
-            ),
-            ""
-        );
     };
 
     await vscode.workspace.applyEdit(workspaceEdit);
@@ -396,7 +484,7 @@ function calculateAttributeDeletionRanges(
                 const prevLineEndPos = document.lineAt(firstLine - 1).range.end;
                 startOffset = document.offsetAt(prevLineEndPos);
                 endOffset = docLength;
-            }
+            };
         } else {
             // Group is in the middle or at the beginning
             startOffset = document.offsetAt(new vscode.Position(firstLine, 0));
@@ -452,38 +540,14 @@ function groupConsecutiveLines(lines: number[]): number[][] {
 
 /**
  * Finds existing attribute lines for an element.
+ * This function is kept for backward compatibility but the logic has been moved to getCurrentAttributesForElement.
  * @param editor - The active text editor
  * @param element - The DDS element
  * @returns Array of line indices containing attributes
  */
 function findExistingAttributeLines(editor: vscode.TextEditor, element: any): number[] {
-    const attributeLines: number[] = [];
-    const isConstant = element.kind === 'constant';
-    const startLine = isConstant ? element.lineIndex + 1 : element.lineIndex;
-
-    // Look for DSPATR attribute lines after the element
-    for (let i = startLine; i < editor.document.lineCount; i++) {
-        const lineText = editor.document.lineAt(i).text;
-
-        // Special case: first line of a field can have attributes
-        if (i === element.lineIndex && !isConstant) {
-            if (lineText.includes('DSPATR(')) {
-                attributeLines.push(i);
-            };
-            continue;
-        };
-
-        if (!lineText.trim().startsWith('A ') || !isAttributeLine(lineText)) {
-            break;
-        };
-
-        // Check if this is a DSPATR attribute
-        if (lineText.includes('DSPATR(')) {
-            attributeLines.push(i);
-        };
-    };
-
-    return attributeLines;
+    const attributes = getCurrentAttributesForElement(editor, element);
+    return attributes.map(attr => attr.lineIndex!);
 };
 
 /**
