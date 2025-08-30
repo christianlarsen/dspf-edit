@@ -92,8 +92,10 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.3.4** - 2025-08-28
-- Fixes: If the field has no attributes or no color, the first one is set on the same line in the DDS.
+**0.3.4** - 2025-08-30
+- Fixes: If the field has no attributes, the first attribute is set on the same line in the DDS.
+- Fixes: If the field has no attributes, the first color is set on the same line in the DDS.
+- Fixes: If the field has no attributes, the first editing keyword is set on the same line in the DDS.
 - Fixes: The calculation of the position of the "buttons" in "add-buttons" has been modified.
 - Fixes: The function "isAttributeLine" has been improved.
 
