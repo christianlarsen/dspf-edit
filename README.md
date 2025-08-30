@@ -30,6 +30,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
     - Add "buttons" (constants for record commands).
     - Assign command keys.
     - Add / Remove / Change indicators.
+    - Resizing (if window record).
 
 - **Constants**
   - Show text, position (row/column), indicators, and attributes.
@@ -62,7 +63,8 @@ The extension provides a **navigable schema view** of the DDS source file that i
 ## 🚀 How to Use
 
 1. Open a DDS display file in VS Code.  
-2. The **schema view** will appear automatically.  
+2. Go to **explorer view** in VS Code.
+2. The **schema view** will appear automatically with the name "DSPF STRUCTURE".  
 3. Use **left-click** to navigate, or **right-click** to access contextual options.  
 
 ---
@@ -92,12 +94,8 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.3.4** - 2025-08-30
-- Fixes: If the field has no attributes, the first attribute is set on the same line in the DDS.
-- Fixes: If the field has no attributes, the first color is set on the same line in the DDS.
-- Fixes: If the field has no attributes, the first editing keyword is set on the same line in the DDS.
-- Fixes: The calculation of the position of the "buttons" in "add-buttons" has been modified.
-- Fixes: The function "isAttributeLine" has been improved.
+**0.4.0** - 2025-08-30
+- Add: possibility of window resizing.
 
 ---
 

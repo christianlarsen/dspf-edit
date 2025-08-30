@@ -8,7 +8,7 @@
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
@@ -129,6 +129,10 @@
       {
         "command": "dspf-edit.fill-constant",
         "title": "Fill Constant"
+      },
+      {
+        "command": "dspf-edit.window-resize",
+        "title": "Change Window Size"
       }
     ],
     "menus": {
@@ -187,6 +191,11 @@
           "command": "dspf-edit.add-indicators",
           "when": "view == ddsStructureView && (viewItem == constantAttribute || viewItem === fieldAttribute)",
           "group": "attributes_navigation0@1"
+        },
+        {
+          "command": "dspf-edit.window-resize",
+          "when": "view == ddsStructureView && viewItem == record",
+          "group": "records_navigation1@0"
         },
         {
           "command": "dspf-edit.copy-record",

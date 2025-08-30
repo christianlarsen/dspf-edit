@@ -62,6 +62,7 @@ const dspf_edit_add_editing_keywords_1 = require("./dspf-edit.add-editing-keywor
 const dspf_edit_add_error_messages_1 = require("./dspf-edit.add-error-messages");
 const dspf_edit_add_indicators_1 = require("./dspf-edit.add-indicators");
 const dspf_edit_fill_constant_1 = require("./dspf-edit.fill-constant");
+const dspf_edit_window_resize_1 = require("./dspf-edit.window-resize");
 let updateTimeout;
 // Activate extension
 function activate(context) {
@@ -100,7 +101,8 @@ function activate(context) {
         { name: 'addEditingKeywords', handler: dspf_edit_add_editing_keywords_1.editingKeywords, needsTreeProvider: false },
         { name: 'addErrorMessage', handler: dspf_edit_add_error_messages_1.addErrorMessage, needsTreeProvider: false },
         { name: 'addIndicators', handler: dspf_edit_add_indicators_1.addIndicators, needsTreeProvider: false },
-        { name: 'fillConstant', handler: dspf_edit_fill_constant_1.fillConstant, needsTreeProvider: false }
+        { name: 'fillConstant', handler: dspf_edit_fill_constant_1.fillConstant, needsTreeProvider: false },
+        { name: 'windowResize', handler: dspf_edit_window_resize_1.windowResize, needsTreeProvider: false }
     ];
     // Register all commands
     commands.forEach(cmd => {

@@ -62,3 +62,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - If the field has no attributes, the first editing keyword is set on the same line in the DDS.
 - The calculation of the position of the "buttons" in "add-buttons" has been modified.
 - The function "isAttributeLine" has been improved.
+
+## [0.4.0] - 2025-08-30
+### Added
+- Possibility of window resizing.
