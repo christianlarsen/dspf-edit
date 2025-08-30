@@ -29,7 +29,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
     - Copy/Delete record.
     - Add "buttons" (constants for record commands).
     - Assign command keys.
-    - Adding/removing/changing indicators.
+    - Add / Remove / Change indicators.
 
 - **Constants**
   - Show text, position (row/column), indicators, and attributes.
@@ -38,7 +38,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
     - Center constant on screen.
     - Change position (absolute position/relative to existing constant).
     - Apply colors/attributes.
-    - Adding/removing/changing indicators.
+    - Add / Remove / Change indicators.
     - Fill constant with characters.
 
 - **Fields**
@@ -52,10 +52,10 @@ The extension provides a **navigable schema view** of the DDS source file that i
     - Add validity checks.
     - Add editing keywords.
     - Add error messages.
-    - Adding/removing/changing indicators.
+    - Add / Remove / Change indicators.
 
 - **Attributes**
-    - Adding/removing/changing indicators.
+    - Add / Remove / Change indicators.
 
 ---
 
@@ -76,7 +76,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
 ## 🐞 Known Issues
 
 This extension is currently in **preview**.  
-Expect bugs — work in progress!
+Some features may not work as expected. Please leave an issue if something is not working fine!
 
 ---
 
@@ -89,35 +89,15 @@ Expect bugs — work in progress!
 ---
 
 ## 📦 Version History
+See the full changelog [here](./CHANGELOG.md).
 
-### 0.0.1
-- Initial preview release.  
-
-### 0.1.0
-- New feat: adding/removing/changing constant/fields indicators (max 3).
-- New feat: adding/removing/changing constant/fields attributes indicators (max 3).
-
-### 0.1.1
-- Fixes: When creating a new window record, it's not positioned in the correct row. It moves up two positions.
-- Fixes: When creating "buttons," in a window, the starting position should be 1. In records, it should be 2., 
-
-### 0.2.0
-- New feat: Add constants in relative position to another on screen.
-
-### 0.2.1
-- New feat: Fill constants with characters.
-
-### 0.3.0
-- New feat: Add fields in relative position to another field/constant on screen (below, above or on the right)
-
-### 0.3.1
-- Fixes: WDWTITLE command fix.
-
-### 0.3.2
-- Fixes: SFL field column/rows bad configured.
-
-### 0.3.3
-- Fixes: Internal parser bug fixes.
+### Latest
+**0.3.4** - 2025-08-30
+- Fixes: If the field has no attributes, the first attribute is set on the same line in the DDS.
+- Fixes: If the field has no attributes, the first color is set on the same line in the DDS.
+- Fixes: If the field has no attributes, the first editing keyword is set on the same line in the DDS.
+- Fixes: The calculation of the position of the "buttons" in "add-buttons" has been modified.
+- Fixes: The function "isAttributeLine" has been improved.
 
 ---
 

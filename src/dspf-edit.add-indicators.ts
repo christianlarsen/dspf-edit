@@ -16,6 +16,12 @@ interface IndicatorAssignment {
     value: string;          // raw value without N prefix
 };
 
+interface InlineAttributeInfo {
+    attributeText: string;
+    fieldLineIndex: number;
+    isInline: boolean;
+};
+
 // COMMAND REGISTRATION
 
 /**
@@ -53,6 +59,15 @@ async function handleAddIndicatorsCommand(node: DdsNode): Promise<void> {
             node.ddsElement.kind !== 'constantAttribute' && node.ddsElement.kind !== 'fieldAttribute') {
             vscode.window.showWarningMessage('Indicators can only be managed for constants, fields or their attributes');
             return;
+        };
+
+        // Special handling for inline field attributes
+        if (node.ddsElement.kind === 'fieldAttribute') {
+            const inlineInfo = getInlineAttributeInfo(editor, node.ddsElement);
+            if (inlineInfo.isInline) {
+                await handleInlineAttributeIndicators(editor, node.ddsElement, inlineInfo);
+                return;
+            };
         };
 
         // Get current indicators from the element
@@ -124,6 +139,148 @@ async function handleAddIndicatorsCommand(node: DdsNode): Promise<void> {
         console.error('Error managing indicators:', error);
         vscode.window.showErrorMessage('An error occurred while managing indicators.');
     };
+};
+
+// INLINE ATTRIBUTE HANDLING
+
+/**
+ * Gets information about inline attributes for field attributes.
+ * @param editor - The active text editor
+ * @param element - The field attribute element
+ * @returns Inline attribute information
+ */
+function getInlineAttributeInfo(editor: vscode.TextEditor, element: any): InlineAttributeInfo {
+    // For field attributes, we need to check if the attribute is inline
+    // This assumes the element has a reference to its parent field
+    const fieldLineIndex = element.fieldLineIndex || element.lineIndex;
+    const fieldLine = editor.document.lineAt(fieldLineIndex);
+    const fieldLineText = fieldLine.text;
+    
+    // Check if there's an attribute at position 44+
+    if (fieldLineText.length > 44) {
+        const attributePart = fieldLineText.substring(44).trim();
+        if (/\b(DSPATR|COLOR)\(/i.test(attributePart)) {
+            return {
+                attributeText: attributePart,
+                fieldLineIndex: fieldLineIndex,
+                isInline: true
+            };
+        };
+    };
+        
+    return {
+        attributeText: '',
+        fieldLineIndex: fieldLineIndex,
+        isInline: false
+    };
+};
+
+/**
+ * Handles indicators for inline field attributes by moving them to separate lines.
+ * @param editor - The active text editor
+ * @param element - The field attribute element
+ * @param inlineInfo - Information about the inline attribute
+ */
+async function handleInlineAttributeIndicators(
+    editor: vscode.TextEditor, 
+    element: any, 
+    inlineInfo: InlineAttributeInfo
+): Promise<void> {
+    // Inform the user about what will happen
+    const proceed = await vscode.window.showWarningMessage(
+        'To add indicators to this attribute, it must be moved to a separate line. The attribute will no longer be inline with the field.',
+        'Continue', 'Cancel'
+    );
+
+    if (proceed !== 'Continue') return;
+
+    // Get indicators to add
+    const indicators = await collectIndicatorsFromUser(3);
+    if (indicators.length === 0) {
+        vscode.window.showInformationMessage('No indicators selected.');
+        return;
+    };
+
+    // Move the attribute to a separate line with indicators
+    await moveInlineAttributeToSeparateLine(editor, inlineInfo, indicators);
+    
+    const indicatorsSummary = formatIndicatorsSummary(indicators);
+    vscode.window.showInformationMessage(
+        `Moved attribute to separate line and added indicators: ${indicatorsSummary}`
+    );
+};
+
+/**
+ * Moves an inline attribute to a separate line with indicators.
+ * @param editor - The active text editor
+ * @param inlineInfo - Information about the inline attribute
+ * @param indicators - Indicators to add to the attribute
+ */
+async function moveInlineAttributeToSeparateLine(
+    editor: vscode.TextEditor,
+    inlineInfo: InlineAttributeInfo,
+    indicators: IndicatorAssignment[]
+): Promise<void> {
+    const workspaceEdit = new vscode.WorkspaceEdit();
+    const uri = editor.document.uri;
+    const fieldLineIndex = inlineInfo.fieldLineIndex;
+
+    // 1. Remove the attribute from the field line (truncate at position 44)
+    const fieldLine = editor.document.lineAt(fieldLineIndex);
+    const fieldLineText = fieldLine.text;
+    const truncatedFieldLine = fieldLineText.substring(0, 44).trimRight();
+    
+    workspaceEdit.replace(uri, fieldLine.range, truncatedFieldLine);
+
+    // 2. Create new attribute line with indicators
+    const attributeLine = createAttributeLineWithIndicators(inlineInfo.attributeText, indicators);
+    const insertPos = new vscode.Position(fieldLineIndex + 1, 0);
+    
+    // Check if we need to add a newline at the end of the file
+    if (insertPos.line >= editor.document.lineCount) {
+        workspaceEdit.insert(uri, insertPos, '\n');
+    };
+    
+    workspaceEdit.insert(uri, insertPos, attributeLine);
+    
+    // Add newline after the attribute if we're not at the end
+    if (insertPos.line < editor.document.lineCount) {
+        workspaceEdit.insert(uri, insertPos, '\n');
+    };
+
+    await vscode.workspace.applyEdit(workspaceEdit);
+};
+
+/**
+ * Creates an attribute line with indicators.
+ * @param attributeText - The attribute text (e.g., 'DSPATR(HI)', 'COLOR(RED)')
+ * @param indicators - The indicators to add
+ * @returns Formatted DDS line with attribute and indicators
+ */
+function createAttributeLineWithIndicators(attributeText: string, indicators: IndicatorAssignment[]): string {
+    let line = '     A '; // Start with 'A' and spaces up to position 7
+
+    // Add indicators in positions 8-16 (0-based: 7-15)
+    for (let i = 0; i < 3; i++) {
+        const startPos = 7 + (i * 3);
+        if (i < indicators.length) {
+            const indicator = indicators[i];
+            const indicatorText = (indicator.isNegated ? 'N' : ' ') + indicator.value.padStart(2, '0');
+            line += indicatorText;
+        } else {
+            line += '   '; // Three spaces if no indicator
+        };
+    };
+
+    // Pad to position 44
+    while (line.length < 44) {
+        line += ' ';
+    };
+
+    // Add the attribute
+    line += attributeText;
+
+    return line;
 };
 
 // INDICATORS EXTRACTION FUNCTIONS

@@ -6,14 +6,15 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
-import { fieldsPerRecords } from './dspf-edit.model';
 import { isAttributeLine, findElementInsertionPoint } from './dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
 interface ColorWithIndicators {
     color: string;
-    indicators: string[]; 
+    indicators: string[];
+    lineIndex?: number; 
+    isInlineColor?: boolean; 
 };
 
 // COMMAND REGISTRATION
@@ -52,8 +53,8 @@ async function handleAddColorCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        // Get current colors from the element
-        const currentColors = getCurrentColorsForElement(node.ddsElement);
+        // Get current colors from the element (both inline and separate lines)
+        const currentColors = getCurrentColorsForElement(editor, node.ddsElement);
         
         // Get available colors (excluding current ones)
         let availableColors = getAvailableColors(currentColors.map(c => c.color));
@@ -115,43 +116,60 @@ async function handleAddColorCommand(node: DdsNode): Promise<void> {
 // COLOR EXTRACTION FUNCTIONS
 
 /**
- * Extracts current color attributes with indicators from a DDS element.
+ * Extracts current color attributes from a DDS element, checking both inline and separate lines.
+ * @param editor - The active text editor
  * @param element - The DDS element (field or constant)
- * @returns Array of current colors with their indicators
+ * @returns Array of current colors with their location info
  */
-function getCurrentColorsForElement(element: any): ColorWithIndicators[] {
-    // Find the element in the fieldsPerRecords data
-    const recordInfo = fieldsPerRecords.find(r => r.record === element.recordname);
-    if (!recordInfo) return [];
+function getCurrentColorsForElement(editor: vscode.TextEditor, element: any): ColorWithIndicators[] {
+    const colors: ColorWithIndicators[] = [];
+    const isConstant = element.kind === 'constant';
 
-    let elementNameWithoutQuotes: string = '';
-    if (element.kind === 'constant') {
-        elementNameWithoutQuotes = element.name.slice(1, -1);
-    } else {
-        elementNameWithoutQuotes = element.name;
+    // For fields, check if there's a color in the same line (position 44+)
+    if (!isConstant) {
+        const fieldLine = editor.document.lineAt(element.lineIndex);
+        const fieldLineText = fieldLine.text;
+        
+        if (fieldLineText.length > 44) {
+            const colorPart = fieldLineText.substring(44).trim();
+            if (colorPart.includes('COLOR(')) {
+                const colorMatch = colorPart.match(/COLOR\(([A-Z]{3})\)/);
+                if (colorMatch) {
+                    const indicators = parseIndicatorsFromLine(fieldLineText);
+                    colors.push({
+                        color: colorMatch[1],
+                        indicators: indicators,
+                        lineIndex: element.lineIndex,
+                        isInlineColor: true
+                    });
+                };
+            };
+        };
     };
 
-    // Look in both fields and constants
-    const elementInfo = [
-        ...recordInfo.fields,
-        ...recordInfo.constants
-    ].find(item => item.name === elementNameWithoutQuotes);
+    // Check subsequent lines for additional colors
+    const startLine = element.lineIndex + 1;
+    for (let i = startLine; i < editor.document.lineCount; i++) {
+        const lineText = editor.document.lineAt(i).text;
 
-    if (!elementInfo || !elementInfo.attributes) return [];
+        // Stop if we hit a non-attribute line
+        if (!lineText.trim().startsWith('A ') || !isAttributeLine(lineText)) {
+            break;
+        };
 
-    // Extract COLOR attributes with indicators
-    const colors: ColorWithIndicators[] = [];
-    if (elementInfo) {
-        elementInfo.attributes.forEach(attrObj => {
-            const attr = attrObj.value; 
-            const colorMatch = attr.match(/^COLOR\(([A-Z]{3})\)$/);
+        // Check if this is a COLOR attribute
+        if (lineText.includes('COLOR(')) {
+            const colorMatch = lineText.match(/COLOR\(([A-Z]{3})\)/);
             if (colorMatch) {
+                const indicators = parseIndicatorsFromLine(lineText);
                 colors.push({
                     color: colorMatch[1],
-                    indicators: []
+                    indicators: indicators,
+                    lineIndex: i,
+                    isInlineColor: false
                 });
-            }
-        });
+            };
+        };
     };
 
     return colors;
@@ -250,7 +268,9 @@ async function collectIndicatorsForColor(color: string): Promise<string[]> {
 // DDS MODIFICATION FUNCTIONS
 
 /**
- * Adds color attributes with indicators to a DDS element by inserting COLOR lines after the element.
+ * Adds color attributes with indicators to a DDS element.
+ * For fields: if no existing colors, adds first one inline (position 44+).
+ * If colors already exist, adds to separate lines after existing ones.
  * @param editor - The active text editor
  * @param element - The DDS element to add colors to
  * @param colors - Array of colors with indicators to add
@@ -260,30 +280,81 @@ async function addColorsToElement(
     element: any,
     colors: ColorWithIndicators[]
 ): Promise<void> {
-    const insertionPoint = findElementInsertionPoint(editor, element);
-    if (insertionPoint === -1) {
-        throw new Error('Could not find insertion point for color attributes');
-    };
-
+    const isConstant = element.kind === 'constant';
+    const currentColors = getCurrentColorsForElement(editor, element);
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
 
-    // Insert each color line
-    let crInserted : boolean = false;    
-    for (let i = 0; i < colors.length; i++) {
-        const attributeLine = createColorLineWithIndicators(colors[i]);
-        const insertPos = new vscode.Position(insertionPoint , 0); // +i ???
-        if (!crInserted && insertPos.line >= editor.document.lineCount) {
-            workspaceEdit.insert(uri, insertPos, '\n');
-            crInserted = true;
+    // For fields: if no existing colors, add first one inline
+    if (!isConstant && currentColors.length === 0 && colors.length > 0) {
+        // Add first color inline (position 44+)
+        const fieldLine = editor.document.lineAt(element.lineIndex);
+        const fieldLineText = fieldLine.text;
+        
+        // Ensure the line has at least 44 characters
+        const paddedLine = fieldLineText.padEnd(44, ' ');
+        const firstColorText = createInlineColorText(colors[0]);
+        
+        // Replace the entire line with the padded line + first color
+        workspaceEdit.replace(
+            uri,
+            fieldLine.range,
+            paddedLine + firstColorText
+        );
+
+        // Add remaining colors as separate lines if any
+        if (colors.length > 1) {
+            const insertionPoint = findElementInsertionPoint(editor, element);
+            if (insertionPoint === -1) {
+                throw new Error('Could not find insertion point for additional colors');
+            };
+
+            let crInserted: boolean = false;
+            for (let i = 1; i < colors.length; i++) {
+                const colorLine = createColorLineWithIndicators(colors[i]);
+                const insertPos = new vscode.Position(insertionPoint, 0);
+                if (!crInserted && insertPos.line >= editor.document.lineCount) {
+                    workspaceEdit.insert(uri, insertPos, '\n');
+                    crInserted = true;
+                };
+                workspaceEdit.insert(uri, insertPos, colorLine);
+                if (i < colors.length - 1 || insertPos.line < editor.document.lineCount) {
+                    workspaceEdit.insert(uri, insertPos, '\n');
+                };
+            };
         };
-        workspaceEdit.insert(uri, insertPos, attributeLine);
-        if (i < colors.length - 1 || insertPos.line < editor.document.lineCount) {
-            workspaceEdit.insert(uri, insertPos, '\n');
+    } else {
+        // Add all colors as separate lines (existing behavior)
+        const insertionPoint = findElementInsertionPoint(editor, element);
+        if (insertionPoint === -1) {
+            throw new Error('Could not find insertion point for color attributes');
+        };
+
+        let crInserted: boolean = false;
+        for (let i = 0; i < colors.length; i++) {
+            const colorLine = createColorLineWithIndicators(colors[i]);
+            const insertPos = new vscode.Position(insertionPoint, 0);
+            if (!crInserted && insertPos.line >= editor.document.lineCount) {
+                workspaceEdit.insert(uri, insertPos, '\n');
+                crInserted = true;
+            };
+            workspaceEdit.insert(uri, insertPos, colorLine);
+            if (i < colors.length - 1 || insertPos.line < editor.document.lineCount) {
+                workspaceEdit.insert(uri, insertPos, '\n');
+            };
         };
     };
-    
+
     await vscode.workspace.applyEdit(workspaceEdit);
+};
+
+/**
+ * Creates inline color text for position 44+ on field line.
+ * @param colorWithIndicators - The color and its indicators
+ * @returns Formatted color text for inline use
+ */
+function createInlineColorText(colorWithIndicators: ColorWithIndicators): string {
+    return `COLOR(${colorWithIndicators.color})`;
 };
 
 /**
@@ -304,7 +375,7 @@ function createColorLineWithIndicators(colorWithIndicators: ColorWithIndicators)
         };
     };
     
-    // Ensure line is long enough for the COLOR keyword (starts around position 45)
+    // Ensure line is long enough for the COLOR keyword (starts around position 44)
     while (line.length < 44) {
         line += ' ';
     };
@@ -316,27 +387,38 @@ function createColorLineWithIndicators(colorWithIndicators: ColorWithIndicators)
 };
 
 /**
- * Removes existing color attributes from a DDS element using precise character offsets.
- * Handles edge cases properly to avoid leaving blank lines at the end of the file.
+ * Removes existing color attributes from a DDS element.
+ * Handles both inline colors (position 44+) and separate color lines.
  * @param editor - The active text editor
  * @param element - The DDS element to remove colors from
  */
 async function removeColorsFromElement(editor: vscode.TextEditor, element: any): Promise<void> {
-    const colorLines = findExistingColorLines(editor, element);
-    if (colorLines.length === 0) return;
+    const currentColors = getCurrentColorsForElement(editor, element);
+    if (currentColors.length === 0) return;
 
     const document = editor.document;
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = document.uri;
+    const isConstant = element.kind === 'constant';
 
-    // Group lines by type: element line vs standalone color lines
-    const elementLineIndex = element.lineIndex;
-    const standaloneColorLines = colorLines.filter(lineIndex => lineIndex !== elementLineIndex);
-    const hasElementLineColor = colorLines.includes(elementLineIndex);
+    // Separate inline colors from line colors
+    const inlineColors = currentColors.filter(color => color.isInlineColor);
+    const lineColors = currentColors.filter(color => !color.isInlineColor);
 
-    // Handle standalone color lines using precise offsets
-    if (standaloneColorLines.length > 0) {
-        const deletionRanges = calculateColorDeletionRanges(document, standaloneColorLines);
+    // Handle inline color removal (for fields)
+    if (!isConstant && inlineColors.length > 0) {
+        const fieldLine = document.lineAt(element.lineIndex);
+        const fieldLineText = fieldLine.text;
+        
+        // Remove everything from position 44 onwards
+        const truncatedLine = fieldLineText.substring(0, 44).trimRight();
+        workspaceEdit.replace(uri, fieldLine.range, truncatedLine);
+    };
+
+    // Handle separate color lines removal
+    if (lineColors.length > 0) {
+        const colorLineIndices = lineColors.map(color => color.lineIndex!);
+        const deletionRanges = calculateColorDeletionRanges(document, colorLineIndices);
         
         // Apply deletions in reverse order to maintain offsets
         for (let i = deletionRanges.length - 1; i >= 0; i--) {
@@ -345,19 +427,6 @@ async function removeColorsFromElement(editor: vscode.TextEditor, element: any):
             const endPos = document.positionAt(endOffset);
             workspaceEdit.delete(uri, new vscode.Range(startPos, endPos));
         };
-    };
-
-    // Handle color on element line (just remove the color part)
-    if (hasElementLineColor) {
-        const line = document.lineAt(elementLineIndex);
-        workspaceEdit.replace(
-            uri,
-            new vscode.Range(
-                line.range.start.translate(0, 44), 
-                line.range.end 
-            ),
-            ""
-        );
     };
 
     await vscode.workspace.applyEdit(workspaceEdit);
@@ -455,38 +524,14 @@ function groupConsecutiveLines(lines: number[]): number[][] {
 
 /**
  * Finds existing color attribute lines for an element.
+ * This function is kept for backward compatibility but the logic has been moved to getCurrentColorsForElement.
  * @param editor - The active text editor
  * @param element - The DDS element
  * @returns Array of line indices containing color attributes
  */
 function findExistingColorLines(editor: vscode.TextEditor, element: any): number[] {
-    const colorLines: number[] = [];
-    const isConstant = element.kind === 'constant';
-    const startLine = isConstant ? element.lineIndex + 1 : element.lineIndex;
-
-    // Look for COLOR attribute lines after the element
-    for (let i = startLine; i < editor.document.lineCount; i++) {
-        const lineText = editor.document.lineAt(i).text;
-
-        // Special case: first line of a field can have attributes
-        if (i === element.lineIndex && !isConstant) {
-            if (lineText.includes('COLOR(')) {
-                colorLines.push(i);
-            };
-            continue;
-        };
-
-        if (!lineText.trim().startsWith('A ') || !isAttributeLine(lineText)) {
-            break;
-        };
-
-        // Check if this is a COLOR attribute
-        if (lineText.includes('COLOR(')) {
-            colorLines.push(i);
-        };
-    };
-
-    return colorLines;
+    const colors = getCurrentColorsForElement(editor, element);
+    return colors.map(color => color.lineIndex!);
 };
 
 /**

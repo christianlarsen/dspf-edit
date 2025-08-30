@@ -271,7 +271,7 @@ function isNumericField(fieldInfo) {
         'B', // Binary
         'F', // Floating point
         'I', // Integer
-        'Y', // Numeric-only (digits 0-9, no sign) ← Este era el que faltaba
+        'Y', // Numeric-only (digits 0-9, no sign)
         'L', // Date (can have numeric edit)
         'T', // Time (can have numeric edit)
         'Z' // Timestamp (can have numeric edit)
@@ -517,14 +517,109 @@ async function collectEditMask(baseEdit) {
  * @param editing - Array of editing configurations to add
  */
 async function addEditingToField(editor, element, editing) {
-    const insertionPoint = (0, dspf_edit_helper_1.findElementInsertionPoint)(editor, element);
-    if (insertionPoint === -1) {
-        throw new Error('Could not find insertion point for field editing');
-    }
-    ;
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
-    // Insert each editing line
+    const fieldLine = editor.document.lineAt(element.lineIndex);
+    const fieldLineText = fieldLine.text;
+    // Check if field already has attributes on the field line
+    const hasAttributesOnFieldLine = hasExistingAttributes(fieldLineText);
+    // Check if field has any attribute lines following it
+    const hasAttributeLines = hasExistingAttributeLines(editor, element);
+    if (!hasAttributesOnFieldLine && !hasAttributeLines) {
+        // No existing attributes - add first editing to the field line itself
+        await addFirstEditingToFieldLine(editor, element, editing[0], workspaceEdit, uri);
+        // Add remaining editing keywords as separate lines if any
+        if (editing.length > 1) {
+            const insertionPoint = (0, dspf_edit_helper_1.findElementInsertionPoint)(editor, element);
+            if (insertionPoint !== -1) {
+                await addAdditionalEditingLines(editing.slice(1), insertionPoint, workspaceEdit, uri, editor);
+            }
+            ;
+        }
+        ;
+    }
+    else {
+        // Field already has attributes - add all editing as separate lines
+        const insertionPoint = (0, dspf_edit_helper_1.findElementInsertionPoint)(editor, element);
+        if (insertionPoint === -1) {
+            throw new Error('Could not find insertion point for field editing');
+        }
+        ;
+        await addAdditionalEditingLines(editing, insertionPoint, workspaceEdit, uri, editor);
+    }
+    ;
+    await vscode.workspace.applyEdit(workspaceEdit);
+}
+;
+/**
+ * Checks if a field line already has attributes/keywords.
+ * @param fieldLineText - The text of the field line
+ * @returns true if field line has attributes
+ */
+function hasExistingAttributes(fieldLineText) {
+    // Check if line has content beyond position 44 (where keywords start)
+    if (fieldLineText.length <= 44)
+        return false;
+    // Check for common attribute patterns beyond position 44
+    const attributesPart = fieldLineText.substring(44).trim();
+    return attributesPart.length > 0 && !attributesPart.startsWith("'");
+}
+;
+/**
+ * Checks if a field has existing attribute lines following it.
+ * @param editor - The text editor
+ * @param element - The DDS field element
+ * @returns true if field has attribute lines
+ */
+function hasExistingAttributeLines(editor, element) {
+    const startLine = element.lineIndex + 1;
+    for (let i = startLine; i < editor.document.lineCount; i++) {
+        const lineText = editor.document.lineAt(i).text;
+        // Stop at next field or record
+        if (!lineText.trim().startsWith('A ') || !(0, dspf_edit_helper_1.isAttributeLine)(lineText)) {
+            break;
+        }
+        ;
+        // Found at least one attribute line
+        return true;
+    }
+    ;
+    return false;
+}
+;
+/**
+ * Adds the first editing keyword to the field line itself.
+ * @param editor - The text editor
+ * @param element - The field element
+ * @param editing - The editing configuration
+ * @param workspaceEdit - The workspace edit
+ * @param uri - The document URI
+ */
+async function addFirstEditingToFieldLine(editor, element, editing, workspaceEdit, uri) {
+    const fieldLine = editor.document.lineAt(element.lineIndex);
+    const fieldLineText = fieldLine.text;
+    // Ensure line is at least 44 characters (pad with spaces if needed)
+    let updatedLine = fieldLineText;
+    while (updatedLine.length < 44) {
+        updatedLine += ' ';
+    }
+    ;
+    // Add the editing keyword
+    const editingText = createEditingKeywordText(editing);
+    updatedLine += editingText;
+    // Replace the entire line
+    workspaceEdit.replace(uri, fieldLine.range, updatedLine);
+}
+;
+/**
+ * Adds additional editing keywords as separate attribute lines.
+ * @param editing - Array of editing configurations
+ * @param insertionPoint - The line index where to insert
+ * @param workspaceEdit - The workspace edit
+ * @param uri - The document URI
+ * @param editor - The text editor
+ */
+async function addAdditionalEditingLines(editing, insertionPoint, workspaceEdit, uri, editor) {
     let crInserted = false;
     for (let i = 0; i < editing.length; i++) {
         const editingLine = createEditingLine(editing[i]);
@@ -541,11 +636,34 @@ async function addEditingToField(editor, element, editing) {
         ;
     }
     ;
-    await vscode.workspace.applyEdit(workspaceEdit);
 }
 ;
 /**
- * Creates a DDS editing line.
+ * Creates editing keyword text (without the 'A' prefix and positioning).
+ * @param editConfig - The editing configuration
+ * @returns Keyword text
+ */
+function createEditingKeywordText(editConfig) {
+    if (editConfig.type === 'EDTCDE') {
+        let params = editConfig.value;
+        if (editConfig.modifier) {
+            params += ' ' + editConfig.modifier;
+        }
+        ;
+        return `EDTCDE(${params})`;
+    }
+    else if (editConfig.type === 'EDTWRD') {
+        return `EDTWRD(${editConfig.value})`;
+    }
+    else if (editConfig.type === 'EDTMSK') {
+        return `EDTMSK(${editConfig.value})`;
+    }
+    ;
+    return '';
+}
+;
+/**
+ * Creates a DDS editing line (complete line with 'A' prefix and positioning).
  * @param editConfig - The editing configuration
  * @returns Formatted DDS line
  */
@@ -557,21 +675,7 @@ function createEditingLine(editConfig) {
     }
     ;
     // Add the editing keyword and parameters
-    if (editConfig.type === 'EDTCDE') {
-        let params = editConfig.value;
-        if (editConfig.modifier) {
-            params += ' ' + editConfig.modifier;
-        }
-        ;
-        line += `EDTCDE(${params})`;
-    }
-    else if (editConfig.type === 'EDTWRD') {
-        line += `EDTWRD(${editConfig.value})`;
-    }
-    else if (editConfig.type === 'EDTMSK') {
-        line += `EDTMSK(${editConfig.value})`;
-    }
-    ;
+    line += createEditingKeywordText(editConfig);
     return line;
 }
 ;

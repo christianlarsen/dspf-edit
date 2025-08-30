@@ -326,22 +326,8 @@ function isAttributeLine(line) {
     // Rest of cases
     // Checks for COLOR, DSPATR, EDTCDE... ???
     const trimmed = line.trim();
-    return trimmed.startsWith('A ') && (trimmed.includes('COLOR') ||
-        trimmed.includes('DSPATR') ||
-        trimmed.includes('EDTCDE') ||
-        trimmed.includes('EDTWD') ||
-        trimmed.includes('REFFLD') ||
-        trimmed.includes('ERRMSG') ||
-        trimmed.includes('CF') ||
-        trimmed.includes('CA') ||
-        trimmed.includes('VALUES') ||
-        trimmed.includes('RANGE') ||
-        trimmed.includes('COMP') ||
-        trimmed.includes('SFLRCDNBR') ||
-        trimmed.includes('DSPSIZ') ||
-        trimmed.includes('INDARA') ||
-        // Add other attribute patterns as needed
-        /[A-Z]+\(/.test(trimmed));
+    const attributes = line.substring(44).trim();
+    return trimmed.startsWith('A ') && attributes.length > 0;
 }
 ;
 /**
