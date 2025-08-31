@@ -66,3 +66,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [0.4.0] - 2025-08-30
 ### Added
 - Possibility of window resizing.
+
+## [0.4.1] - 2025-08-31
+### Fixes
+- The WDWTITLE opcode was not split properly if the line exceeded column 80.
