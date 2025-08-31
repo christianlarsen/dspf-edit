@@ -94,8 +94,8 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.4.0** - 2025-08-30
-- Add: possibility of window resizing.
+**0.4.1** - 2025-08-31
+- Fixes: The WDWTITLE opcode was not split properly if the line exceeded column 80.
 
 ---
 

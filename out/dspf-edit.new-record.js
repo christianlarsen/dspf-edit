@@ -561,14 +561,14 @@ function generateWindowLine(dimensions) {
  * @returns Array of formatted title lines
  */
 function generateWindowTitleLines(title) {
-    const maxLineLength = 90;
+    const maxLineLength = 80;
     const basePrefix = ' '.repeat(5) + 'A' + ' '.repeat(38);
     const keyword = "WDWTITLE((*TEXT '";
     const suffix = "') *CENTER)";
     const lines = [];
     let remaining = title;
     let firstLine = true;
-    while (remaining.length > 0) {
+    while (remaining.length >= 0) {
         if (firstLine) {
             const available = maxLineLength - (basePrefix.length + keyword.length + suffix.length);
             if (remaining.length <= available) {
@@ -576,9 +576,11 @@ function generateWindowTitleLines(title) {
                 break;
             }
             else {
-                const part = remaining.substring(0, available);
+                // Para la primera línea con continuación, necesitamos espacio para el '-'
+                const availableWithDash = maxLineLength - (basePrefix.length + keyword.length + 1); // +1 para el '-'
+                const part = remaining.substring(0, availableWithDash);
                 lines.push(basePrefix + keyword + part + '-');
-                remaining = remaining.substring(available);
+                remaining = remaining.substring(availableWithDash);
                 firstLine = false;
             }
             ;
@@ -590,9 +592,11 @@ function generateWindowTitleLines(title) {
                 break;
             }
             else {
-                const part = remaining.substring(0, available);
+                // Para líneas intermedias con continuación, necesitamos espacio para el '-'
+                const availableWithDash = maxLineLength - (basePrefix.length + 1); // +1 para el '-'
+                const part = remaining.substring(0, availableWithDash);
                 lines.push(basePrefix + part + '-');
-                remaining = remaining.substring(available);
+                remaining = remaining.substring(availableWithDash);
             }
             ;
         }

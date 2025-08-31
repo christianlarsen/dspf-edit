@@ -608,42 +608,48 @@ function generateWindowLine(dimensions: WindowDimensions): string {
  * @returns Array of formatted title lines
  */
 function generateWindowTitleLines(title: string): string[] {
-    const maxLineLength = 90;
-    const basePrefix = ' '.repeat(5) + 'A' + ' '.repeat(38); 
+    const maxLineLength = 80;
+    const basePrefix = ' '.repeat(5) + 'A' + ' '.repeat(38);
+    
     const keyword = "WDWTITLE((*TEXT '";
     const suffix = "') *CENTER)";
-
+    
     const lines: string[] = [];
     let remaining = title;
     let firstLine = true;
-
-    while (remaining.length > 0) {
+    
+    while (remaining.length >= 0) {
         if (firstLine) {
             const available = maxLineLength - (basePrefix.length + keyword.length + suffix.length);
-
+            
             if (remaining.length <= available) {
                 lines.push(basePrefix + keyword + remaining + suffix);
                 break;
             } else {
-                const part = remaining.substring(0, available);
-                lines.push(basePrefix + keyword + part + '-'); 
-                remaining = remaining.substring(available);
+                // Para la primera línea con continuación, necesitamos espacio para el '-'
+                const availableWithDash = maxLineLength - (basePrefix.length + keyword.length + 1); // +1 para el '-'
+                const part = remaining.substring(0, availableWithDash);
+                lines.push(basePrefix + keyword + part + '-');
+                
+                remaining = remaining.substring(availableWithDash);
                 firstLine = false;
             };
         } else {
             const available = maxLineLength - (basePrefix.length + suffix.length);
-
+            
             if (remaining.length <= available) {
                 lines.push(basePrefix + remaining + suffix);
                 break;
             } else {
-                const part = remaining.substring(0, available);
+                // Para líneas intermedias con continuación, necesitamos espacio para el '-'
+                const availableWithDash = maxLineLength - (basePrefix.length + 1); // +1 para el '-'
+                const part = remaining.substring(0, availableWithDash);
                 lines.push(basePrefix + part + '-');
-                remaining = remaining.substring(available);
+                remaining = remaining.substring(availableWithDash);
             };
         };
     };
-
+    
     return lines;
 };
 
