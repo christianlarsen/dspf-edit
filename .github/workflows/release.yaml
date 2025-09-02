@@ -1,17 +1,12 @@
-name: Build Extension
+name: Release Extension
 
 on:
-  workflow_dispatch:
-
-  push:
-    branches: ["main"]
-
-  pull_request:
-    branches: ["main"]
+  release:
+    types: [created]
 
 jobs:
-  build:
-    name: Build
+  release:
+    name: Release
 
     runs-on: ubuntu-latest
 
@@ -29,10 +24,15 @@ jobs:
           node-version: ${{ matrix.node-version }}
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Install Dependencies
+      - name: Install Extension Dependencies
         run: |
           npm install
           npm install -g vsce
 
       - name: Build Extension
         run: vsce package
+
+      - name: Publish to Marketplace
+        run: vsce publish -p $PUBLISHER_TOKEN
+        env:
+          PUBLISHER_TOKEN: ${{ secrets.PUBLISHER_TOKEN }}
