@@ -97,29 +97,29 @@ interface ExistingElementInfo {
 
 /**
  * Available field types for DDS based on IBM official documentation
- * Note: For display files, only certain data types are valid in position 35
+ * Updated with correct length requirements based on IBM System i Programming DDS manual
  */
 const FIELD_TYPES = {
-    // Character data types
-    'A': { label: 'A - Alphanumeric shift', hasDecimals: false, description: 'Character field with alphanumeric shift', keyboardShift: 'A' },
-    'X': { label: 'X - Alphabetic only', hasDecimals: false, description: 'Character field, only A-Z, comma, period, dash, space', keyboardShift: 'X' },
-    'M': { label: 'M - Numeric only character', hasDecimals: false, description: 'Character field allowing only digits and numeric symbols', keyboardShift: 'M' },
+    // Character data types - require length
+    'A': { label: 'A - Alphanumeric shift', hasLength: true, hasDecimals: false, description: 'Character field with alphanumeric shift', keyboardShift: 'A' },
+    'X': { label: 'X - Alphabetic only', hasLength: true, hasDecimals: false, description: 'Character field, only A-Z, comma, period, dash, space', keyboardShift: 'X' },
+    'M': { label: 'M - Numeric only character', hasLength: true, hasDecimals: false, description: 'Character field allowing only digits and numeric symbols', keyboardShift: 'M' },
     
-    // Numeric data types  
-    'Y': { label: 'Y - Numeric only', hasDecimals: true, description: 'Numeric field with editing support', keyboardShift: 'Y' },
-    'S': { label: 'S - Signed numeric', hasDecimals: true, description: 'Numeric field, digits 0-9 only, no editing', keyboardShift: 'S' },
-    'N': { label: 'N - Numeric shift', hasDecimals: true, description: 'Numeric field with numeric shift', keyboardShift: 'N' },
-    'D': { label: 'D - Digits only', hasDecimals: false, description: 'Character/numeric field, digits 0-9 only', keyboardShift: 'D' },
+    // Numeric data types - require length
+    'Y': { label: 'Y - Numeric only', hasLength: true, hasDecimals: true, description: 'Numeric field with editing support', keyboardShift: 'Y' },
+    'S': { label: 'S - Signed numeric', hasLength: true, hasDecimals: true, description: 'Numeric field, digits 0-9 only, no editing', keyboardShift: 'S' },
+    'N': { label: 'N - Numeric shift', hasLength: true, hasDecimals: true, description: 'Numeric field with numeric shift', keyboardShift: 'N' },
+    'D': { label: 'D - Digits only', hasLength: true, hasDecimals: false, description: 'Character/numeric field, digits 0-9 only', keyboardShift: 'D' },
+    'F': { label: 'F - Floating point', hasLength: true, hasDecimals: true, description: 'Floating point numeric field', keyboardShift: 'F' },
     
-    // Special data types
-    'F': { label: 'F - Floating point', hasDecimals: true, description: 'Floating point numeric field', keyboardShift: 'F' },
-    'L': { label: 'L - Date', hasDecimals: false, description: 'Date field', keyboardShift: 'L' },
-    'T': { label: 'T - Time', hasDecimals: false, description: 'Time field', keyboardShift: 'T' },
-    'Z': { label: 'Z - Timestamp', hasDecimals: false, description: 'Timestamp field', keyboardShift: 'Z' },
+    // Fixed-length data types - NO length required (system defined)
+    'L': { label: 'L - Date', hasLength: false, hasDecimals: false, description: 'Date field (length determined by DATFMT)', keyboardShift: 'L' },
+    'T': { label: 'T - Time', hasLength: false, hasDecimals: false, description: 'Time field (length=8)', keyboardShift: 'T' },
+    'Z': { label: 'Z - Timestamp', hasLength: false, hasDecimals: false, description: 'Timestamp field (length=26)', keyboardShift: 'Z' },
     
-    // Other types
-    'I': { label: 'I - Inhibit keyboard entry', hasDecimals: false, description: 'Field that does not accept keyboard input', keyboardShift: 'I' },
-    'W': { label: 'W - Katakana', hasDecimals: false, description: 'Katakana keyboard shift (Japan only)', keyboardShift: 'W' }
+    // Special types - require length
+    'I': { label: 'I - Inhibit keyboard entry', hasLength: true, hasDecimals: false, description: 'Field that does not accept keyboard input', keyboardShift: 'I' },
+    'W': { label: 'W - Katakana', hasLength: true, hasDecimals: false, description: 'Katakana keyboard shift (Japan only)', keyboardShift: 'W' }
 } as const;
 
 /**
@@ -476,20 +476,48 @@ function validateLibraryFileName(value: string, type: string): string | null {
 
 /**
  * Collects field type configuration (type, size, decimals)
+ * Updated to handle fixed-length fields correctly
  */
 async function collectFieldTypeConfiguration(fieldName: string): Promise<FieldTypeConfig | null> {
     // Get field type
     const fieldType = await promptForFieldType(fieldName);
     if (!fieldType) return null;
 
-    // Get field size
-    const fieldSize = await promptForNewFieldSize(fieldName, fieldType);
-    if (!fieldSize) return null;
+    const typeConfig = FIELD_TYPES[fieldType as keyof typeof FIELD_TYPES];
+    
+    // Get field size based on type
+    let fieldSize: FieldSize;
+    
+    if (typeConfig.hasLength) {
+        // Field requires user-specified length
+        fieldSize = await promptForNewFieldSize(fieldName, fieldType) || { length: 10, decimals: 0 };
+        if (!fieldSize) return null;
+    } else {
+        // Fixed-length field - system determines length
+        fieldSize = getSystemDefinedLength(fieldType);
+    }
 
     return {
         type: fieldType,
         size: fieldSize
     };
+};
+
+/**
+ * Gets system-defined lengths for fixed-length field types
+ */
+function getSystemDefinedLength(fieldType: string): FieldSize {
+    switch (fieldType) {
+        case 'L': // Date - length determined by DATFMT (default *ISO = 10)
+            return { length: 10, decimals: 0 };
+        case 'T': // Time - always length 8 
+            return { length: 8, decimals: 0 };
+        case 'Z': // Timestamp - always length 26
+            return { length: 26, decimals: 0 };
+        default:
+            // This should not happen as we only call this for fixed-length types
+            return { length: 10, decimals: 0 };
+    }
 };
 
 /**
@@ -499,7 +527,7 @@ async function promptForFieldType(fieldName: string): Promise<string | null> {
     const typeOptions = Object.entries(FIELD_TYPES).map(([key, config]) => ({
         label: key,
         description: config.label,
-        detail: config.description
+        detail: config.hasLength ? config.description : `${config.description} (Fixed length)`
     }));
 
     const selection = await vscode.window.showQuickPick(typeOptions, {
@@ -514,6 +542,7 @@ async function promptForFieldType(fieldName: string): Promise<string | null> {
 
 /**
  * Prompts for field size based on field type
+ * Updated to only be called for variable-length fields
  */
 async function promptForNewFieldSize(fieldName: string, fieldType: string): Promise<FieldSize | null> {
     const typeConfig = FIELD_TYPES[fieldType as keyof typeof FIELD_TYPES];
@@ -892,6 +921,7 @@ function parseConstantFromLine(lineText: string, lineIndex: number): ExistingEle
 
 /**
  * Generates a DDS line for the new field
+ * Updated to handle fixed-length fields correctly
  */
 function generateNewFieldLine(config: NewFieldConfig): string {
     let line = ' '.repeat(80);
@@ -911,13 +941,17 @@ function generateNewFieldLine(config: NewFieldConfig): string {
     } else if (config.typeConfig) {
         // New field with type specification
         
-        const sizeStr = config.typeConfig.size.length.toString().padStart(2, ' ');
-        line = replaceAt(line, 32, sizeStr);
-        
         const fieldType = FIELD_TYPES[config.typeConfig.type as keyof typeof FIELD_TYPES];
+        
+        // Only specify length for fields that require it
+        if (fieldType.hasLength) {
+            const sizeStr = config.typeConfig.size.length.toString().padStart(2, ' ');
+            line = replaceAt(line, 30, sizeStr);
+        }
+        
         line = replaceAt(line, 34, fieldType.keyboardShift);
         
-        if (fieldType.hasDecimals && config.typeConfig.size.decimals != undefined) {
+        if (fieldType.hasDecimals && config.typeConfig.size.decimals !== undefined && config.typeConfig.size.decimals > 0) {
             const decStr = config.typeConfig.size.decimals.toString().padStart(2, ' ');
             line = replaceAt(line, 35, decStr);
         };

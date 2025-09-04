@@ -70,3 +70,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [0.4.1] - 2025-08-31
 ### Fixes
 - The WDWTITLE opcode was not split properly if the line exceeded column 80.
+
+## [0.4.2] - 2025-09-02
+### Fixes
+- Internal changes.
+
+## [0.4.3] - 2025-09-04
+### Fixes
+- Now only the field length is requested when the type requires it.

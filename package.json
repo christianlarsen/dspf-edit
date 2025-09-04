@@ -8,13 +8,13 @@
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
   },
   "bugs": {
-  "url": "https://github.com/christianlarsen/dspf-edit/issues"
+    "url": "https://github.com/christianlarsen/dspf-edit/issues"
   },
   "homepage": "https://github.com/christianlarsen/dspf-edit#readme",
   "keywords": [
@@ -32,14 +32,14 @@
   "engines": {
     "vscode": "^1.75.0"
   },
-  "license" : "MIT",
+  "license": "MIT",
   "categories": [
     "Programming Languages",
     "Other"
   ],
   "activationEvents": [],
   "main": "./out/extension.js",
-  "preview" : true,
+  "preview": true,
   "contributes": {
     "views": {
       "explorer": [
@@ -254,14 +254,15 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.75.0",
     "@types/mocha": "^10.0.10",
-    "@types/node": "20.x",
+    "@types/node": "^20.19.11",
+    "@types/vscode": "^1.103.0",
     "@typescript-eslint/eslint-plugin": "^8.31.1",
     "@typescript-eslint/parser": "^8.31.1",
-    "eslint": "^9.25.1",
-    "typescript": "^5.8.3",
     "@vscode/test-cli": "^0.0.10",
-    "@vscode/test-electron": "^2.5.2"
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.25.1",
+    "mocha": "^11.7.2",
+    "typescript": "^5.8.3"
   }
 }
