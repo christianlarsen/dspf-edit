@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
 import { getRecordSize, DdsRecord } from './dspf-edit.model';
-import { describeDdsRecord } from './dspf-edit.helper';
+import { lastDdsDocument, lastDdsEditor } from './extension';
 
 // POSITION CENTERING FUNCTIONALITY
 
@@ -42,10 +42,10 @@ async function handleCenterCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        // Get active editor
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-            vscode.window.showWarningMessage("No active editor found.");
+        const editor = lastDdsEditor;
+        const document = editor?.document ?? lastDdsDocument;
+        if (!document || !editor) {
+            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 

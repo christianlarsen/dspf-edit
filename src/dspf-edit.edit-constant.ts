@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
 import { fileSizeAttributes, fieldsPerRecords } from './dspf-edit.model';
 import { findEndLineIndex } from './dspf-edit.helper';
+import { lastDdsDocument, lastDdsEditor } from './extension';
 
 // TYPE DEFINITIONS
 
@@ -84,9 +85,10 @@ async function handleEditConstantCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-            vscode.window.showWarningMessage("No active editor found.");
+        const editor = lastDdsEditor;
+        const document = editor?.document ?? lastDdsDocument;
+        if (!document || !editor) {
+            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 
@@ -117,14 +119,15 @@ async function handleEditConstantCommand(node: DdsNode): Promise<void> {
  */
 async function handleAddConstantCommand(node?: DdsNode): Promise<void> {
     try {
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-            vscode.window.showWarningMessage("No active editor found.");
+        const editor = lastDdsEditor;
+        const document = editor?.document ?? lastDdsDocument;
+        if (!document || !editor) {
+            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 
         // Get constant properties from user
-        const constantInfo = await getNewConstantInfo(node);
+        const constantInfo = await getNewConstantInfo(editor, node);
         if (!constantInfo) return;
 
         // Apply the new constant
@@ -164,7 +167,7 @@ async function getConstantTextFromUser(
  * @param contextNode - Optional node for context
  * @returns Complete constant information or null if cancelled
  */
-async function getNewConstantInfo(contextNode?: DdsNode): Promise<NewConstantInfo | null> {
+async function getNewConstantInfo(editor: vscode.TextEditor, contextNode?: DdsNode): Promise<NewConstantInfo | null> {
     // Get constant text
     const text = await getConstantTextFromUser(
         "Enter constant text (without quotes)",
@@ -174,7 +177,7 @@ async function getNewConstantInfo(contextNode?: DdsNode): Promise<NewConstantInf
     if (!text) return null;
 
     // Get position information
-    const position = await getConstantPosition(contextNode);
+    const position = await getConstantPosition(editor, contextNode);
     if (!position) return null;
 
     return {
@@ -190,10 +193,10 @@ async function getNewConstantInfo(contextNode?: DdsNode): Promise<NewConstantInf
  * @param contextNode - Optional node for context
  * @returns Position information or null if cancelled
  */
-async function getConstantPosition(contextNode?: DdsNode): Promise<ConstantPosition | null> {
+async function getConstantPosition(editor: vscode.TextEditor, contextNode?: DdsNode): Promise<ConstantPosition | null> {
     // If we have a record context, suggest positions within that record
     if (contextNode && contextNode.ddsElement.kind === 'record') {
-        return await getPositionForRecord(contextNode.ddsElement);
+        return await getPositionForRecord(editor, contextNode.ddsElement);
     };
 
     // Otherwise, ask for manual position entry
@@ -205,7 +208,7 @@ async function getConstantPosition(contextNode?: DdsNode): Promise<ConstantPosit
  * @param recordElement - The record element
  * @returns Position information or null if cancelled
  */
-async function getPositionForRecord(recordElement: any): Promise<ConstantPosition | null> {
+async function getPositionForRecord(editor: vscode.TextEditor, recordElement: any): Promise<ConstantPosition | null> {
     // First ask if user wants relative or absolute positioning
     const positioningType = await vscode.window.showQuickPick(
         [
@@ -229,7 +232,7 @@ async function getPositionForRecord(recordElement: any): Promise<ConstantPositio
     if (!positioningType) return null;
 
     if (positioningType.value === "relative") {
-        return await getRelativePosition(recordElement);
+        return await getRelativePosition(editor, recordElement);
     } else {
         return await getAbsolutePositionForRecord(recordElement);
     }
@@ -240,9 +243,9 @@ async function getPositionForRecord(recordElement: any): Promise<ConstantPositio
  * @param recordElement - The record element
  * @returns Position information or null if cancelled
  */
-async function getRelativePosition(recordElement: any): Promise<ConstantPosition | null> {
+async function getRelativePosition(editor: vscode.TextEditor, recordElement: any): Promise<ConstantPosition | null> {
     // Get existing constants in this record
-    const existingConstants = await getExistingConstantsInRecord(recordElement.name);
+    const existingConstants = await getExistingConstantsInRecord(recordElement.name, editor);
     
     if (existingConstants.length === 0) {
         vscode.window.showInformationMessage("No existing constants found in this record. Using absolute positioning.");
@@ -368,8 +371,8 @@ async function getManualPosition(): Promise<ConstantPosition | null> {
  * @param recordName - The record name to search in
  * @returns Array of existing constant information
  */
-async function getExistingConstantsInRecord(recordName: string): Promise<ExistingConstantInfo[]> {
-    const editor = vscode.window.activeTextEditor;
+async function getExistingConstantsInRecord(recordName: string, editor : vscode.TextEditor): Promise<ExistingConstantInfo[]> {
+    
     if (!editor) return [];
 
     const constants: ExistingConstantInfo[] = [];
@@ -532,9 +535,9 @@ export async function updateExistingConstant(
     const fitsInSingleLine = newValue.length <= 36;
 
     if (fitsInSingleLine) {
-        await updateConstantSingleLine(workspaceEdit, uri, element, newValue, endLineIndex);
+        await updateConstantSingleLine(workspaceEdit, uri, editor, element, newValue, endLineIndex);
     } else {
-        await updateConstantMultiLine(workspaceEdit, uri, element, newValue, endLineIndex);
+        await updateConstantMultiLine(workspaceEdit, uri, editor, element, newValue, endLineIndex);
     };
 
     await vscode.workspace.applyEdit(workspaceEdit);
@@ -583,11 +586,11 @@ async function insertNewConstant(editor: vscode.TextEditor, constantInfo: NewCon
 async function updateConstantSingleLine(
     workspaceEdit: vscode.WorkspaceEdit,
     uri: vscode.Uri,
+    editor: vscode.TextEditor,
     element: any,
     newValue: string,
     endLineIndex: number
 ): Promise<void> {
-    const editor = vscode.window.activeTextEditor!;
     const firstLine = editor.document.lineAt(element.lineIndex).text;
     const updatedLine = firstLine.substring(0, 44) + newValue;
 
@@ -617,11 +620,11 @@ async function updateConstantSingleLine(
 async function updateConstantMultiLine(
     workspaceEdit: vscode.WorkspaceEdit,
     uri: vscode.Uri,
+    editor: vscode.TextEditor,
     element: any,
     newValue: string,
     endLineIndex: number
 ): Promise<void> {
-    const editor = vscode.window.activeTextEditor!;
     const firstLine = editor.document.lineAt(element.lineIndex).text;
     const updatedLines = createMultiLineConstantFromBase(firstLine, newValue);
 

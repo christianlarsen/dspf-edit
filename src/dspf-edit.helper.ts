@@ -237,32 +237,13 @@ export function updateTreeProvider(treeProvider: DdsTreeProvider, document?: vsc
 };
 
 /**
- * Navigates to a specific line number in the active text editor.
- * Centers the view on the target line and positions the cursor at the beginning.
- * @param lineNumber - The line number to navigate to (1-based)
- */
-export function goToLine(lineNumber: number): void {
-    const editor = vscode.window.activeTextEditor;
-
-    if (!editor) {
-        vscode.window.showErrorMessage('No active editor.');
-        return;
-    };
-
-    // Convert to 0-based line number for VS Code API
-    const position = new vscode.Position(lineNumber - 1, 0);
-    editor.selection = new vscode.Selection(position, position);
-    editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
-};
-
-/**
  * Determines if a line is a DDS attribute line.
  * @param line - The line text to check
  * @returns True if the line contains attribute definitions
  */
 export function isAttributeLine(line: string): boolean {
     // If line is a "record", returns false
-    if (line.length > 15 && line[15] === 'R') {
+    if (line.length > 16 && line[16] === 'R') {
         return false;
     };
     // If there is a field, returns false    
@@ -299,19 +280,32 @@ export function createAttributeLines(attributeCode: string, attributes: string[]
  */
 export function findElementInsertionPoint(editor: vscode.TextEditor, element: any): number {
     const elementLineIndex = element.lineIndex;
-    
-    // Look for the line after the element definition
-    // Skip any existing attribute lines
+
+    // Look for the last line that belongs to the field/constant
+    // Skip commented lines
     let insertionPoint = elementLineIndex + 1;
     
-    // Skip existing attribute lines (lines that start with "     A" and have attributes)
     while (insertionPoint < editor.document.lineCount) {
         const line = editor.document.lineAt(insertionPoint).text;
-        if (line.trim().startsWith('A ') && isAttributeLine(line)) {
-            insertionPoint++;
-        } else {
+
+        // Skip commented lines
+        if (line.startsWith('     A*')) {
+            continue;
+        };
+        // If the line is a new record, breaks
+        if (line.charAt(16) === 'R') {
+            break;
+        }
+        // If the line has a new field, breaks
+        if (line.substring(18, 28).trim() !== '') {
             break;
         };
+        // If the line has a constant, breaks
+        if (line.charAt(40) !== ' ' && line.charAt(43) !== ' ') {
+            break;
+        };
+
+        insertionPoint++;
     };
     
     return insertionPoint;

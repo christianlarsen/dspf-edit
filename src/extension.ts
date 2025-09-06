@@ -5,7 +5,7 @@
 */
 
 import * as vscode from 'vscode';
-import { DdsTreeProvider} from './dspf-edit.providers';
+import { DdsTreeProvider } from './dspf-edit.providers';
 import { changePosition } from './dspf-edit.change-position';
 import { centerPosition } from './dspf-edit.center';
 import { editConstant, addConstant } from './dspf-edit.edit-constant';
@@ -29,33 +29,56 @@ import { fillConstant } from './dspf-edit.fill-constant';
 import { windowResize } from './dspf-edit.window-resize';
 
 let updateTimeout: NodeJS.Timeout | undefined;
+export let lastDdsDocument : vscode.TextDocument | undefined;
+export let lastDdsEditor : vscode.TextEditor | undefined;
 
 // Activate extension
 export function activate(context: vscode.ExtensionContext) {
 
 	// Registers the tree data provider
 	const treeProvider = new DdsTreeProvider();
-	vscode.window.registerTreeDataProvider('ddsStructureView', treeProvider);
+	vscode.window.registerTreeDataProvider('dspf-edit.schema-view', treeProvider);
 
-	// Generates the DDS structure
-	generateStructure(treeProvider);
+	// Generate DDS structure for the active editor at startup
+	const activeDoc = vscode.window.activeTextEditor?.document;
+	if (activeDoc && activeDoc.languageId === 'dds.dspf') {
+		lastDdsDocument = activeDoc;
+		lastDdsEditor = vscode.window.activeTextEditor;
 
-	// If the document changes, the extension re-generates the DDS structure
+		generateStructure(treeProvider);
+		debounceUpdate(treeProvider, activeDoc);
+	};
+	// If the document changes, update DDS structure
 	context.subscriptions.push(
 		vscode.workspace.onDidChangeTextDocument(event => {
 			if (event.document === vscode.window.activeTextEditor?.document) {
 				debounceUpdate(treeProvider, event.document);
-			}
+			};
 		})
 	);
-
-	// If user changes active editor, the extension re-generates the DDS structure
+	// If user changes active editor
 	context.subscriptions.push(
 		vscode.window.onDidChangeActiveTextEditor(editor => {
-			debounceUpdate(treeProvider, editor?.document);
+
+			generateIfDds(treeProvider, editor?.document, vscode.window.activeTextEditor);
 		})
 	);
+	// If a document is closed, clear lastDdsDocument if it's that one
+	context.subscriptions.push(
+		vscode.workspace.onDidCloseTextDocument(document => {
+			if (lastDdsDocument && document === lastDdsDocument) {
 
+				if (updateTimeout) {
+					clearTimeout(updateTimeout);
+					updateTimeout = undefined;	
+				};
+				lastDdsDocument = undefined;
+				lastDdsEditor = undefined;
+				treeProvider.setElements([]);
+				treeProvider.refresh();
+			};
+		})
+	);
 	interface CommandConfig {
 		name: string;
 		handler: ((context: vscode.ExtensionContext) => void) | ((context: vscode.ExtensionContext, treeProvider: DdsTreeProvider) => void);
@@ -81,7 +104,7 @@ export function activate(context: vscode.ExtensionContext) {
 		{ name: 'addEditingKeywords', handler: editingKeywords as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'addErrorMessage', handler: addErrorMessage as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'addIndicators', handler: addIndicators as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
-		{ name: 'fillConstant', handler: fillConstant as (context: vscode.ExtensionContext) => void, needsTreeProvider: false } ,
+		{ name: 'fillConstant', handler: fillConstant as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'windowResize', handler: windowResize as (context: vscode.ExtensionContext) => void, needsTreeProvider: false }
 	];
 
@@ -93,7 +116,6 @@ export function activate(context: vscode.ExtensionContext) {
 			(cmd.handler as (context: vscode.ExtensionContext) => void)(context);
 		}
 	});
-
 };
 
 export function deactivate() {
@@ -109,5 +131,17 @@ function debounceUpdate(treeProvider: DdsTreeProvider, document?: vscode.TextDoc
 	}
 	updateTimeout = setTimeout(() => {
 		updateTreeProvider(treeProvider, document);
-	}, 150); 
+	}, 150);
 };
+
+function generateIfDds(treeProvider: DdsTreeProvider, doc?: vscode.TextDocument, editor?: vscode.TextEditor) {
+    if (doc && doc.languageId === 'dds.dspf') {
+        lastDdsDocument = doc;
+		lastDdsEditor = editor;
+        debounceUpdate(treeProvider, doc);
+    } else if (lastDdsDocument) {
+        // Keep showing the last DDS, do not overwrite
+        debounceUpdate(treeProvider, lastDdsDocument);
+    };
+};
+

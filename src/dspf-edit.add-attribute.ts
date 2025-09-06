@@ -7,6 +7,8 @@
 import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
 import { isAttributeLine, findElementInsertionPoint } from './dspf-edit.helper';
+import { lastDdsDocument, lastDdsEditor } from './extension';
+import { fieldsPerRecords } from './dspf-edit.model';
  
 // INTERFACES AND TYPES
 
@@ -41,9 +43,10 @@ export function addAttribute(context: vscode.ExtensionContext): void {
  */
 async function handleAddAttributeCommand(node: DdsNode): Promise<void> {
     try {
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-            vscode.window.showErrorMessage('No active editor found.');
+        const editor = lastDdsEditor;
+        const document = editor?.document ?? lastDdsDocument;
+        if (!document || !editor) {
+            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 
@@ -175,6 +178,32 @@ function getCurrentAttributesForElement(editor: vscode.TextEditor, element: any)
     return attributes;
 };
 
+function getNumberOfAttributesForElement(element: any): number | undefined {
+    // If element doesn't have required properties, return undefined
+    if (!element.name || !element.recordname) {
+        return undefined;
+    };
+
+    // Find the record that contains this element
+    const recordEntry = fieldsPerRecords.find(r => r.record === element.recordname);
+    if (!recordEntry) {
+        return undefined;
+    };
+
+    // Determine if we're looking for a field or constant
+    const isConstant = element.kind === 'constant';
+    const targetArray = isConstant ? recordEntry.constants : recordEntry.fields;
+
+    // Find the specific field/constant by name
+    const targetElement = targetArray.find(item => item.name === element.name);
+    if (!targetElement) {
+        return undefined;
+    };
+
+    // Return the attributes directly from the structure
+    return (targetElement.attributes.length) || 0;
+};
+
 /**
  * Gets available attributes excluding those already selected.
  * @param currentAttributes - Array of currently selected attributes
@@ -267,29 +296,35 @@ async function collectIndicatorsForAttribute(attribute: string): Promise<string[
 
 // DDS MODIFICATION FUNCTIONS
 
-// Modifica la función addAttributesToElement:
-
+/**
+ * Adds display attributes to a DDS element (field or constant) either inline or as separate attribute lines.
+ * Handles both inline attributes (position 44+) and multi-line attributes with indicators.
+ * @param editor - The VSCode text editor instance containing the DDS source
+ * @param element - The DDS element (field/constant) to add attributes to
+ * @param attrToAdd - Array of attributes with indicators to be added to the element
+ * @returns Promise that resolves when the edit operation is complete
+ */
 async function addAttributesToElement(
     editor: vscode.TextEditor,
     element: any,
-    attributes: AttributeWithIndicators[]
+    attrToAdd: AttributeWithIndicators[]
 ): Promise<void> {
     const isConstant = element.kind === 'constant';
-    const currentAttributes = getCurrentAttributesForElement(editor, element);
+    const numberOfAttributes = getNumberOfAttributesForElement(element);
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
 
-    // Para campos: solo agregar inline si NO hay atributos existentes Y el primer atributo NO tiene indicadores
-    if (!isConstant && currentAttributes.length === 0 && attributes.length > 0) {
-        const firstAttribute = attributes[0];
+    // Handle first-time attribute addition for fields (not constants)
+    if (!isConstant && numberOfAttributes === 0 && attrToAdd.length > 0) {
+        const firstAttribute = attrToAdd[0];
         
-        // Solo agregar inline si el atributo NO tiene indicadores
+        // Add attributes inline if the first attribute has no indicators
         if (firstAttribute.indicators.length === 0) {
             // Add first attribute inline (position 44+)
             const fieldLine = editor.document.lineAt(element.lineIndex);
             const fieldLineText = fieldLine.text;
             
-            // Ensure the line has at least 44 characters
+            // Ensure the line has at least 44 characters for proper DDS formatting
             const paddedLine = fieldLineText.padEnd(44, ' ');
             const firstAttributeText = createInlineAttributeText(firstAttribute);
             
@@ -300,70 +335,86 @@ async function addAttributesToElement(
                 paddedLine + firstAttributeText
             );
 
-            // Add remaining attributes as separate lines if any
-            if (attributes.length > 1) {
+            // Add remaining attributes as separate lines if any exist
+            if (attrToAdd.length > 1) {
                 const insertionPoint = findElementInsertionPoint(editor, element);
                 if (insertionPoint === -1) {
                     throw new Error('Could not find insertion point for additional attributes');
                 };
 
                 let crInserted: boolean = false;
-                for (let i = 1; i < attributes.length; i++) {
-                    const attributeLine = createAttributeLineWithIndicators(attributes[i]);
+                for (let i = 1; i < attrToAdd.length; i++) {
+                    const attributeLine = createAttributeLineWithIndicators(attrToAdd[i]);
                     const insertPos = new vscode.Position(insertionPoint, 0);
+                    
+                    // Insert carriage return if we're at the end of the document
                     if (!crInserted && insertPos.line >= editor.document.lineCount) {
                         workspaceEdit.insert(uri, insertPos, '\n');
                         crInserted = true;
                     };
+                    
                     workspaceEdit.insert(uri, insertPos, attributeLine);
-                    if (i < attributes.length - 1 || insertPos.line < editor.document.lineCount) {
+                    
+                    // Add line break between attributes (except for the last one at document end)
+                    if (i < attrToAdd.length - 1 || insertPos.line < editor.document.lineCount) {
                         workspaceEdit.insert(uri, insertPos, '\n');
                     };
                 };
             };
         } else {
-            // Si el primer atributo tiene indicadores, todos van en líneas separadas
+            // If the first attribute has indicators, all attributes go on separate lines
             const insertionPoint = findElementInsertionPoint(editor, element);
             if (insertionPoint === -1) {
                 throw new Error('Could not find insertion point for attributes');
             };
 
             let crInserted: boolean = false;
-            for (let i = 0; i < attributes.length; i++) {
-                const attributeLine = createAttributeLineWithIndicators(attributes[i]);
+            for (let i = 0; i < attrToAdd.length; i++) {
+                const attributeLine = createAttributeLineWithIndicators(attrToAdd[i]);
                 const insertPos = new vscode.Position(insertionPoint, 0);
+                
+                // Insert carriage return if we're at the end of the document
                 if (!crInserted && insertPos.line >= editor.document.lineCount) {
                     workspaceEdit.insert(uri, insertPos, '\n');
                     crInserted = true;
                 };
+                
                 workspaceEdit.insert(uri, insertPos, attributeLine);
-                if (i < attributes.length - 1 || insertPos.line < editor.document.lineCount) {
+                
+                // Add line break between attributes (except for the last one at document end)
+                if (i < attrToAdd.length - 1 || insertPos.line < editor.document.lineCount) {
                     workspaceEdit.insert(uri, insertPos, '\n');
                 };
             };
         };
     } else {
-        // Add all attributes as separate lines (existing behavior)
+        // Add all attributes as separate lines (existing behavior for constants or elements with existing attributes)
         const insertionPoint = findElementInsertionPoint(editor, element);
         if (insertionPoint === -1) {
             throw new Error('Could not find insertion point for attributes');
         };
 
         let crInserted: boolean = false;
-        for (let i = 0; i < attributes.length; i++) {
-            const attributeLine = createAttributeLineWithIndicators(attributes[i]);
+        for (let i = 0; i < attrToAdd.length; i++) {
+            const attributeLine = createAttributeLineWithIndicators(attrToAdd[i]);
             const insertPos = new vscode.Position(insertionPoint, 0);
+            
+            // Insert carriage return if we're at the end of the document
             if (!crInserted && insertPos.line >= editor.document.lineCount) {
                 workspaceEdit.insert(uri, insertPos, '\n');
                 crInserted = true;
             };
+            
             workspaceEdit.insert(uri, insertPos, attributeLine);
-            if (i < attributes.length - 1 || insertPos.line < editor.document.lineCount) {
+            
+            // Add line break between attributes (except for the last one at document end)
+            if (i < attrToAdd.length - 1 || insertPos.line < editor.document.lineCount) {
                 workspaceEdit.insert(uri, insertPos, '\n');
             };
         };
     };
 
+    // Apply all the text edits to the document
     await vscode.workspace.applyEdit(workspaceEdit);
 };
 

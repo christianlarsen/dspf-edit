@@ -7,6 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
 import { fileSizeAttributes } from './dspf-edit.model';
+import { lastDdsDocument, lastDdsEditor } from './extension';
 
 // INTERFACES AND TYPES
 
@@ -58,9 +59,10 @@ async function handleChangePositionCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-            vscode.window.showErrorMessage("No active editor found.");
+        const editor = lastDdsEditor;
+        const document = editor?.document ?? lastDdsDocument;
+        if (!document || !editor) {
+            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 

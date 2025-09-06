@@ -7,6 +7,8 @@
 import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
 import { isAttributeLine, findElementInsertionPoint } from './dspf-edit.helper';
+import { lastDdsDocument, lastDdsEditor } from './extension';
+import { fieldsPerRecords } from './dspf-edit.model';
 
 // INTERFACES AND TYPES
 
@@ -41,9 +43,10 @@ export function addColor(context: vscode.ExtensionContext): void {
  */
 async function handleAddColorCommand(node: DdsNode): Promise<void> {
     try {
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-            vscode.window.showErrorMessage('No active editor found.');
+        const editor = lastDdsEditor;
+        const document = editor?.document ?? lastDdsDocument;
+        if (!document || !editor) {
+            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 
@@ -278,22 +281,22 @@ async function collectIndicatorsForColor(color: string): Promise<string[]> {
 async function addColorsToElement(
     editor: vscode.TextEditor,
     element: any,
-    colors: ColorWithIndicators[]
+    colorsToAdd: ColorWithIndicators[]
 ): Promise<void> {
     const isConstant = element.kind === 'constant';
-    const currentColors = getCurrentColorsForElement(editor, element);
+    const numberOfAttributes = getNumberOfAttributesForElement(element);
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
 
     // For fields: if no existing colors, add first one inline
-    if (!isConstant && currentColors.length === 0 && colors.length > 0) {
+    if (!isConstant && numberOfAttributes === 0 && colorsToAdd.length > 0) {
         // Add first color inline (position 44+)
         const fieldLine = editor.document.lineAt(element.lineIndex);
         const fieldLineText = fieldLine.text;
         
         // Ensure the line has at least 44 characters
         const paddedLine = fieldLineText.padEnd(44, ' ');
-        const firstColorText = createInlineColorText(colors[0]);
+        const firstColorText = createInlineColorText(colorsToAdd[0]);
         
         // Replace the entire line with the padded line + first color
         workspaceEdit.replace(
@@ -303,22 +306,22 @@ async function addColorsToElement(
         );
 
         // Add remaining colors as separate lines if any
-        if (colors.length > 1) {
+        if (colorsToAdd.length > 1) {
             const insertionPoint = findElementInsertionPoint(editor, element);
             if (insertionPoint === -1) {
                 throw new Error('Could not find insertion point for additional colors');
             };
 
             let crInserted: boolean = false;
-            for (let i = 1; i < colors.length; i++) {
-                const colorLine = createColorLineWithIndicators(colors[i]);
+            for (let i = 1; i < colorsToAdd.length; i++) {
+                const colorLine = createColorLineWithIndicators(colorsToAdd[i]);
                 const insertPos = new vscode.Position(insertionPoint, 0);
                 if (!crInserted && insertPos.line >= editor.document.lineCount) {
                     workspaceEdit.insert(uri, insertPos, '\n');
                     crInserted = true;
                 };
                 workspaceEdit.insert(uri, insertPos, colorLine);
-                if (i < colors.length - 1 || insertPos.line < editor.document.lineCount) {
+                if (i < colorsToAdd.length - 1 || insertPos.line < editor.document.lineCount) {
                     workspaceEdit.insert(uri, insertPos, '\n');
                 };
             };
@@ -331,21 +334,47 @@ async function addColorsToElement(
         };
 
         let crInserted: boolean = false;
-        for (let i = 0; i < colors.length; i++) {
-            const colorLine = createColorLineWithIndicators(colors[i]);
+        for (let i = 0; i < colorsToAdd.length; i++) {
+            const colorLine = createColorLineWithIndicators(colorsToAdd[i]);
             const insertPos = new vscode.Position(insertionPoint, 0);
             if (!crInserted && insertPos.line >= editor.document.lineCount) {
                 workspaceEdit.insert(uri, insertPos, '\n');
                 crInserted = true;
             };
             workspaceEdit.insert(uri, insertPos, colorLine);
-            if (i < colors.length - 1 || insertPos.line < editor.document.lineCount) {
+            if (i < colorsToAdd.length - 1 || insertPos.line < editor.document.lineCount) {
                 workspaceEdit.insert(uri, insertPos, '\n');
             };
         };
     };
 
     await vscode.workspace.applyEdit(workspaceEdit);
+};
+
+function getNumberOfAttributesForElement(element: any): number | undefined {
+    // If element doesn't have required properties, return undefined
+    if (!element.name || !element.recordname) {
+        return undefined;
+    };
+
+    // Find the record that contains this element
+    const recordEntry = fieldsPerRecords.find(r => r.record === element.recordname);
+    if (!recordEntry) {
+        return undefined;
+    };
+
+    // Determine if we're looking for a field or constant
+    const isConstant = element.kind === 'constant';
+    const targetArray = isConstant ? recordEntry.constants : recordEntry.fields;
+
+    // Find the specific field/constant by name
+    const targetElement = targetArray.find(item => item.name === element.name);
+    if (!targetElement) {
+        return undefined;
+    };
+
+    // Return the attributes directly from the structure
+    return (targetElement.attributes.length) || 0;
 };
 
 /**

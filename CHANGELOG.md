@@ -78,3 +78,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [0.4.3] - 2025-09-04
 ### Fixes
 - Now only the field length is requested when the type requires it.
+
+## [0.5.0] - 2025-09-06
+### Added
+- The extension can be launched from a separate icon in the activity bar.
+- The extension remembers the last opened DDS display file source and allows you to use other extensions simultaneously (for example, you can use IBM i Renderer without losing the DDS structure on the screen).
+### Fixes
+- Problems adding a new field.
