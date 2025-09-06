@@ -692,6 +692,7 @@ function updateFileSizeAttributes(sizes: Array<{ row: number; col: number; name:
         fileSizeAttributes.maxCol2 = sizes[1].col;
         fileSizeAttributes.nameDsply2 = sizes[1].name;
     };
+
 };
 
 /**

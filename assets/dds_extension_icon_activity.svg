@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+  <!-- Hexagon outline -->
+  <path d="M12 2 L20 6.5 L20 17.5 L12 22 L4 17.5 L4 6.5 Z" 
+        stroke="currentColor" 
+        stroke-width="1.5" 
+        fill="none"/>
+  
+  <!-- DDS Text -->
+  <text x="12" 
+        y="13.5" 
+        font-family="Arial, sans-serif" 
+        font-size="7" 
+        font-weight="bold" 
+        text-anchor="middle" 
+        fill="currentColor">DDS</text>
+</svg>

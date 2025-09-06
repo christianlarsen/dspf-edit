@@ -7,6 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
 import { getRecordSize, fieldsPerRecords, DdsSize, getDefaultSize } from './dspf-edit.model';
+import { lastDdsDocument, lastDdsEditor } from './extension';
 
 // COMMAND REGISTRATION
 
@@ -32,12 +33,13 @@ export function addButtons(context: vscode.ExtensionContext): void {
  */
 async function handleAddButtonsCommand(node: DdsNode): Promise<void> {
     try {
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-            vscode.window.showErrorMessage('No active editor found.');
+        const editor = lastDdsEditor;
+        const document = editor?.document ?? lastDdsDocument;
+        if (!document || !editor) {
+            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
-
+        
         // Validate that the node is a record
         if (node.ddsElement.kind !== 'record') {
             vscode.window.showWarningMessage('Buttons can only be added to records.');

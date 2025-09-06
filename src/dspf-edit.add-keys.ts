@@ -11,6 +11,7 @@ import {
     isAttributeLine, findElementInsertionPointRecordFirstLine, findElementInsertionPointFileFirstLine,
     handleDspsizWorkflow, DspsizConfig
 } from './dspf-edit.helper';
+import { lastDdsDocument, lastDdsEditor } from './extension';
 
 // INTERFACES AND TYPES
 
@@ -45,9 +46,10 @@ export function addKeyCommand(context: vscode.ExtensionContext): void {
  */
 async function handleAddKeyCommandCommand(node: DdsNode): Promise<void> {
     try {
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-            vscode.window.showErrorMessage('No active editor found.');
+        const editor = lastDdsEditor;
+        const document = editor?.document ?? lastDdsDocument;
+        if (!document || !editor) {
+            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 

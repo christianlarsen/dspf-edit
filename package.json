@@ -8,7 +8,7 @@
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
@@ -41,11 +41,22 @@
   "main": "./out/extension.js",
   "preview": true,
   "contributes": {
-    "views": {
-      "explorer": [
+    "viewsContainers": {
+      "activitybar": [
         {
-          "id": "ddsStructureView",
-          "name": "DSPF Structure"
+          "id" : "dspf-edit",
+          "title" : "DSPF Structure",
+          "icon" : "assets/dds_extension_icon_activity.svg",
+          "when" : "true"
+        }
+      ]
+    },
+    "views": {
+      "dspf-edit" : [
+        {
+          "id" : "dspf-edit.schema-view",
+          "name" : "Definition",
+          "when" : "true"
         }
       ]
     },
@@ -139,107 +150,107 @@
       "view/item/context": [
         {
           "command": "dspf-edit.edit-constant",
-          "when": "view == ddsStructureView && viewItem == constant",
+          "when": "view == dspf-edit.schema-view && viewItem == constant",
           "group": "fields_constants_navigation1@1"
         },
         {
           "command": "dspf-edit.edit-field",
-          "when": "view == ddsStructureView && viewItem == field",
+          "when": "view == dspf-edit.schema-view && viewItem == field",
           "group": "fields_constants_navigation1@1"
         },
         {
           "command": "dspf-edit.center",
-          "when": "view == ddsStructureView && (viewItem == constant || viewItem == field)",
+          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem == field)",
           "group": "fields_constants_navigation2@2"
         },
         {
           "command": "dspf-edit.change-position",
-          "when": "view == ddsStructureView && (viewItem == constant || viewItem == field)",
+          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem == field)",
           "group": "fields_constants_navigation2@3"
         },
         {
           "command": "dspf-edit.add-color",
-          "when": "view == ddsStructureView && (viewItem == constant || viewItem == field)",
+          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem == field)",
           "group": "fields_constants_navigation3@1"
         },
         {
           "command": "dspf-edit.add-attribute",
-          "when": "view == ddsStructureView && (viewItem == constant || viewItem == field)",
+          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem == field)",
           "group": "fields_constants_navigation3@2"
         },
         {
           "command": "dspf-edit.add-validity-check",
-          "when": "view == ddsStructureView && viewItem == field",
+          "when": "view == dspf-edit.schema-view && viewItem == field",
           "group": "fields_constants_navigation3@3"
         },
         {
           "command": "dspf-edit.add-editing-keywords",
-          "when": "view == ddsStructureView && viewItem == field",
+          "when": "view == dspf-edit.schema-view && viewItem == field",
           "group": "fields_constants_navigation3@4"
         },
         {
           "command": "dspf-edit.add-error-message",
-          "when": "view == ddsStructureView && viewItem == field",
+          "when": "view == dspf-edit.schema-view && viewItem == field",
           "group": "fields_constants_navigation3@5"
         },
         {
           "command": "dspf-edit.add-indicators",
-          "when": "view == ddsStructureView && (viewItem == constant || viewItem == field)",
+          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem == field)",
           "group": "fields_constants_navigation3@6"
         },
         {
           "command": "dspf-edit.add-indicators",
-          "when": "view == ddsStructureView && (viewItem == constantAttribute || viewItem === fieldAttribute)",
+          "when": "view == dspf-edit.schema-view && (viewItem == constantAttribute || viewItem === fieldAttribute)",
           "group": "attributes_navigation0@1"
         },
         {
           "command": "dspf-edit.window-resize",
-          "when": "view == ddsStructureView && viewItem == record",
+          "when": "view == dspf-edit.schema-view && viewItem == record",
           "group": "records_navigation1@0"
         },
         {
           "command": "dspf-edit.copy-record",
-          "when": "view == ddsStructureView && viewItem == record",
+          "when": "view == dspf-edit.schema-view && viewItem == record",
           "group": "records_navigation1@1"
         },
         {
           "command": "dspf-edit.delete-record",
-          "when": "view == ddsStructureView && viewItem == record",
+          "when": "view == dspf-edit.schema-view && viewItem == record",
           "group": "records_navigation1@2"
         },
         {
           "command": "dspf-edit.add-buttons",
-          "when": "view == ddsStructureView && viewItem == record",
+          "when": "view == dspf-edit.schema-view && viewItem == record",
           "group": "records_navigation2@1"
         },
         {
           "command": "dspf-edit.add-key",
-          "when": "view == ddsStructureView && viewItem == record",
+          "when": "view == dspf-edit.schema-view && viewItem == record",
           "group": "records_navigation3@1"
         },
         {
           "command": "dspf-edit.new-record",
-          "when": "view == ddsStructureView && (viewItem == file || viewItem == group)",
+          "when": "view == dspf-edit.schema-view && (viewItem == file || viewItem == group)",
           "group": "file_navigation1@1"
         },
         {
           "command": "dspf-edit.add-constant",
-          "when": "view == ddsStructureView && viewItem == record",
+          "when": "view == dspf-edit.schema-view && viewItem == record",
           "group": "records_navigation0@1"
         },
         {
           "command": "dspf-edit.add-field",
-          "when": "view == ddsStructureView && viewItem == record",
+          "when": "view == dspf-edit.schema-view && viewItem == record",
           "group": "records_navigation0@2"
         },
         {
           "command": "dspf-edit.add-key",
-          "when": "view == ddsStructureView && viewItem == file",
+          "when": "view == dspf-edit.schema-view && viewItem == file",
           "group": "file_navigation2@1"
         },
         {
           "command": "dspf-edit.fill-constant",
-          "when": "view == ddsStructureView && viewItem == constant",
+          "when": "view == dspf-edit.schema-view && viewItem == constant",
           "group": "fields_constants_navigation4@0"
         }
       ]

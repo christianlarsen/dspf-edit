@@ -7,8 +7,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { DdsElement, DdsGroup } from './dspf-edit.model';
-import { describeDdsField, describeDdsConstant, describeDdsRecord, describeDdsFile, formatDdsIndicators, goToLine } from './dspf-edit.helper';
-
+import { describeDdsField, describeDdsConstant, describeDdsRecord, describeDdsFile, formatDdsIndicators } from './dspf-edit.helper';
+import { lastDdsEditor } from './extension';
 
 // DDS TREE PROVIDER CLASS
 
@@ -94,7 +94,7 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 	 */
 	private getRootChildren(elements: DdsElement[]): Thenable<DdsNode[]> {
 		const file = elements.find(e => e.kind === 'file');
-		const editor = vscode.window.activeTextEditor;
+		const editor = lastDdsEditor || vscode.window.activeTextEditor;
 		const fileName = editor ? path.basename(editor.document.fileName) : 'Unknown';
 		let fileNode: DdsNode | undefined;
 

@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
 import { fileSizeAttributes, fieldsPerRecords } from './dspf-edit.model';
 import { parseSize } from './dspf-edit.helper';
+import { lastDdsDocument, lastDdsEditor } from './extension';
 
 /**
  * Interface defining the structure of a field's size properties
@@ -186,10 +187,10 @@ async function handleEditFieldCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        // Get the active text editor
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-            vscode.window.showWarningMessage("No active editor found. Please open a file to edit.");
+        const editor = lastDdsEditor;
+        const document = editor?.document ?? lastDdsDocument;
+        if (!document || !editor) {
+            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 
@@ -240,17 +241,17 @@ async function handleAddFieldCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        // Get the active text editor
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-            vscode.window.showWarningMessage("No active editor found. Please open a file to edit.");
+        const editor = lastDdsEditor;
+        const document = editor?.document ?? lastDdsDocument;
+        if (!document || !editor) {
+            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 
         const element = node.ddsElement;
 
         // Collect complete field configuration
-        const fieldConfig = await collectNewFieldConfiguration(element);
+        const fieldConfig = await collectNewFieldConfiguration(editor, element);
         if (!fieldConfig) {
             return; // User cancelled
         };
@@ -281,7 +282,7 @@ async function handleAddFieldCommand(node: DdsNode): Promise<void> {
  * @param recordElement - The record element where the field will be added
  * @returns Complete field configuration or null if cancelled
  */
-async function collectNewFieldConfiguration(recordElement: any): Promise<NewFieldConfig | null> {
+async function collectNewFieldConfiguration(editor: vscode.TextEditor, recordElement: any): Promise<NewFieldConfig | null> {
     // Step 1: Get field name
     const fieldName = await promptForNewFieldName(recordElement);
     if (!fieldName) return null;
@@ -312,7 +313,7 @@ async function collectNewFieldConfiguration(recordElement: any): Promise<NewFiel
         // These field types don't have screen positions
         position = { row: 0, column: 0 };
     } else {
-        const fieldPosition = await collectFieldPosition(fieldName, recordElement, typeConfig?.size);
+        const fieldPosition = await collectFieldPosition(editor, fieldName, recordElement, typeConfig?.size);
         if (!fieldPosition) return null;
         position = fieldPosition;
     };
@@ -601,7 +602,7 @@ function validateFieldLength(value: string): string | null {
 /**
  * Collects field position information with relative positioning options
  */
-async function collectFieldPosition(fieldName: string, recordElement: any, fieldSize?: FieldSize): Promise<FieldPosition | null> {
+async function collectFieldPosition(editor: vscode.TextEditor, fieldName: string, recordElement: any, fieldSize?: FieldSize): Promise<FieldPosition | null> {
     // First ask if user wants relative or absolute positioning
     const positioningType = await vscode.window.showQuickPick(
         [
@@ -625,7 +626,7 @@ async function collectFieldPosition(fieldName: string, recordElement: any, field
     if (!positioningType) return null;
 
     if (positioningType.value === "relative") {
-        return await getRelativeFieldPosition(recordElement, fieldSize);
+        return await getRelativeFieldPosition(editor, recordElement, fieldSize);
     } else {
         return await getAbsoluteFieldPosition(fieldName);
     };
@@ -634,9 +635,9 @@ async function collectFieldPosition(fieldName: string, recordElement: any, field
 /**
  * Gets relative position information based on existing fields and constants
  */
-async function getRelativeFieldPosition(recordElement: any, fieldSize?: FieldSize): Promise<FieldPosition | null> {
+async function getRelativeFieldPosition(editor: vscode.TextEditor, recordElement: any, fieldSize?: FieldSize): Promise<FieldPosition | null> {
     // Get existing elements (fields and constants) in this record
-    const existingElements = await getExistingElementsInRecord(recordElement.name);
+    const existingElements = await getExistingElementsInRecord(editor, recordElement.name);
     
     if (existingElements.length === 0) {
         vscode.window.showInformationMessage("No existing fields or constants found in this record. Using absolute positioning.");
@@ -775,8 +776,7 @@ async function getAbsoluteFieldPosition(fieldName: string): Promise<FieldPositio
 /**
  * Gets existing elements (fields and constants) in a specific record
  */
-async function getExistingElementsInRecord(recordName: string): Promise<ExistingElementInfo[]> {
-    const editor = vscode.window.activeTextEditor;
+async function getExistingElementsInRecord(editor: vscode.TextEditor, recordName: string): Promise<ExistingElementInfo[]> {
     if (!editor) return [];
 
     const elements: ExistingElementInfo[] = [];
@@ -838,8 +838,7 @@ function parseFieldFromLine(lineText: string, lineIndex: number): ExistingElemen
     
     if (isNaN(row) || isNaN(column)) return null;
     
-    // Extract field length (positions 31-32)
-    const lengthStr = lineText.substring(30, 32).trim();
+    const lengthStr = lineText.substring(32, 33).trim();
     const length = parseInt(lengthStr, 10) || 10; // Default to 10 if can't parse
     
     return {
@@ -946,7 +945,7 @@ function generateNewFieldLine(config: NewFieldConfig): string {
         // Only specify length for fields that require it
         if (fieldType.hasLength) {
             const sizeStr = config.typeConfig.size.length.toString().padStart(2, ' ');
-            line = replaceAt(line, 30, sizeStr);
+            line = replaceAt(line, 32, sizeStr);
         }
         
         line = replaceAt(line, 34, fieldType.keyboardShift);
