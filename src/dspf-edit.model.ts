@@ -24,6 +24,7 @@ export type DdsElement =
 export interface DdsAttribute {
   kind: 'attribute';
   lineIndex: number;
+  lastLineIndex?: number;
   value: string;
   attribute?: string;
   indicators?: DdsIndicator[];
@@ -199,6 +200,7 @@ export interface FieldInfo {
   attributes: AttributeWithIndicators[];
   indicators?: DdsIndicator[];
   lineIndex: number;
+  lastLineIndex: number;
 };
 
 /** Simplified constant info */
@@ -210,6 +212,7 @@ export interface ConstantInfo {
   length: number;
   attributes: AttributeWithIndicators[];
   lineIndex: number;
+  lastLineIndex: number;
 };
 
 /*** Attribute with indicadors info */
@@ -217,6 +220,7 @@ export interface AttributeWithIndicators {
   value: string;
   indicators?: DdsIndicator[];
   lineIndex: number;
+  lastLineIndex: number;
 };
 
 /** Record container for fields & constants */

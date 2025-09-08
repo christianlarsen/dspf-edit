@@ -6,9 +6,8 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from './dspf-edit.providers';
-import { isAttributeLine } from './dspf-edit.helper';
 import { lastDdsDocument, lastDdsEditor } from './extension';
-import { fieldsPerRecords, FieldInfo, ConstantInfo } from './dspf-edit.model';
+import { fieldsPerRecords, FieldInfo, ConstantInfo, DdsRecord } from './dspf-edit.model';
 
 // INTERFACES AND TYPES
 
@@ -16,7 +15,9 @@ interface ElementWithAttributes {
     element: FieldInfo | ConstantInfo;
     kind: 'field' | 'constant';
     lineIndex: number;
+    lastLineIndex: number;
     attributeLines: number[];
+    attributeRanges: Array<{ start: number , end: number}>,
     row: number;
     column: number;
     originalOrder: number;
@@ -74,7 +75,7 @@ async function handleSortElementsCommand(node: DdsNode): Promise<void> {
 
         // Show current elements summary
         const elementsSummary = elementsWithAttributes.map(e => 
-            `${e.element.name} (${e.row},${e.column})`
+            `${e.element.name}`
         ).join(', ');
 
         // Get sort criteria from user
@@ -102,12 +103,12 @@ async function handleSortElementsCommand(node: DdsNode): Promise<void> {
 
 /**
  * Gets all elements (fields and constants) with their attributes for a specific record.
- * Uses the model's lineIndex directly from FieldInfo/ConstantInfo for efficiency.
+ * Uses the model's lineIndex/lastLineIndex directly from FieldInfo/ConstantInfo.
  * @param editor - The active text editor
  * @param record - The DDS record
  * @returns Array of elements with their attributes and position info
  */
-function getElementsWithAttributesForRecord(editor: vscode.TextEditor, record: any): ElementWithAttributes[] {
+function getElementsWithAttributesForRecord(editor: vscode.TextEditor, record: DdsRecord): ElementWithAttributes[] {
     const elements: ElementWithAttributes[] = [];
     
     // Find the record in fieldsPerRecords to get its elements
@@ -148,8 +149,7 @@ function getElementsWithAttributesForRecord(editor: vscode.TextEditor, record: a
 };
 
 /**
- * Creates an ElementWithAttributes object using the lineIndex from the model.
- * Now uses attribute information directly from the model instead of searching.
+ * Creates an ElementWithAttributes object using ranges from the model
  * @param editor - The active text editor
  * @param element - The field or constant from the model
  * @param kind - Whether it's a 'field' or 'constant'
@@ -164,22 +164,26 @@ function createElementWithAttributesFromModel(
     originalOrder: number,
     recordEndIndex: number
 ): ElementWithAttributes | null {
-    // Use lineIndex directly from the model - no searching needed!
+    
+    // Get range from the model
     const elementLineIndex = element.lineIndex;
+    const elementLastLineIndex = element.lastLineIndex ?? element.lineIndex;
     
     // Validate that the line index is within document bounds
     if (elementLineIndex >= editor.document.lineCount || elementLineIndex < 0) {
         return null;
     };
 
-    // Get attribute lines directly from the model instead of searching
-    const attributeLines = extractAttributeLinesFromModel(element, recordEndIndex);
+    // Get attribute information from the model
+    const { attributeLines, attributeRanges } = extractAttributeRangesFromModel(element, recordEndIndex);
 
     return {
         element: element,
         kind: kind,
         lineIndex: elementLineIndex,
+        lastLineIndex: elementLastLineIndex,
         attributeLines,
+        attributeRanges,
         row: element.row,
         column: element.col, // Note: model uses 'col', not 'column'
         originalOrder
@@ -187,65 +191,47 @@ function createElementWithAttributesFromModel(
 };
 
 /**
- * Extracts attribute line indices from the model data.
- * Uses the lineIndex stored in each attribute instead of searching the document.
+ * Extracts attribute line indices and ranges from the model data.
  * @param element - The field or constant from the model
  * @param recordEndIndex - End index of the record to validate boundaries
- * @returns Array of line indices containing attributes
+ * @returns Object with attribute lines and ranges
  */
-function extractAttributeLinesFromModel(
+function extractAttributeRangesFromModel(
     element: FieldInfo | ConstantInfo,
     recordEndIndex: number
-): number[] {
+): { attributeLines: number[]; attributeRanges: Array<{start: number, end: number}> } {
     const attributeLines: number[] = [];
+    const attributeRanges: Array<{start: number, end: number}> = [];
     
-    // Get attribute lines directly from the model
+    // Get attribute ranges from the model
     if (element.attributes && element.attributes.length > 0) {
         element.attributes.forEach(attr => {
-            // Validate that the attribute line is within record boundaries
-            if (attr.lineIndex <= recordEndIndex && attr.lineIndex > element.lineIndex) {
-                attributeLines.push(attr.lineIndex);
+            const startLine = attr.lineIndex;
+            const endLine = attr.lastLineIndex ?? attr.lineIndex;
+            
+            // Validate that the attribute range is within record boundaries
+            if (startLine <= recordEndIndex && startLine > element.lineIndex) {
+                // Add all lines in the range to attributeLines
+                for (let line = startLine; line <= endLine; line++) {
+                    if (line <= recordEndIndex && !attributeLines.includes(line)) {
+                        attributeLines.push(line);
+                    };
+                };
+                
+                // Add the range information
+                attributeRanges.push({
+                    start: startLine,
+                    end: endLine
+                });
             };
         });
     };
     
     // Sort attribute lines to maintain proper order
-    return attributeLines.sort((a, b) => a - b);
-};
-
-/**
- * Finds all attribute lines that belong to a specific element within record boundaries.
- * @param editor - The active text editor
- * @param elementLineIndex - Line index of the main element (from model)
- * @param recordEndIndex - End index of the record to avoid crossing boundaries
- * @returns Array of line indices containing attributes
- */
-function findAttributeLinesForElement(
-    editor: vscode.TextEditor, 
-    elementLineIndex: number,
-    recordEndIndex: number
-): number[] {
-    const attributeLines: number[] = [];
-    const actualEndIndex = Math.min(recordEndIndex, editor.document.lineCount - 1);
+    attributeLines.sort((a, b) => a - b);
+    attributeRanges.sort((a, b) => a.start - b.start);
     
-    // Check subsequent lines for attributes within record boundaries
-    for (let i = elementLineIndex + 1; i <= actualEndIndex; i++) {
-        const lineText = editor.document.lineAt(i).text;
-        
-        // Stop if we hit a non-attribute line or if it's a new element
-        if (!lineText.trim().startsWith('A ') || !isAttributeLine(lineText)) {
-            break;
-        };
-        
-        // Check if this line belongs to a new element (field or constant definition)
-        if (isNewElementLine(lineText)) {
-            break;
-        };
-        
-        attributeLines.push(i);
-    };
-    
-    return attributeLines;
+    return { attributeLines, attributeRanges };
 };
 
 // USER INTERACTION FUNCTIONS
@@ -352,7 +338,7 @@ function sortElementsByCriteria(elements: ElementWithAttributes[], criteria: Sor
 
 /**
  * Applies the sorted order to the document by moving elements and their attributes.
- * Uses the lineIndex from the model for precise element location.
+ * Uses complete line ranges for each element.
  * @param editor - The active text editor
  * @param sortedElements - Array of elements in the desired order
  */
@@ -372,9 +358,7 @@ async function applySortToDocument(editor: vscode.TextEditor, sortedElements: El
             throw new Error('No valid element blocks found for sorting');
         };
         
-        // Find the range that encompasses all elements within the record
-        const allLineIndices = sortedElements.flatMap(e => [e.lineIndex, ...e.attributeLines]);
-        
+        const allLineIndices = getAllLineIndicesFromElements(sortedElements);
         if (allLineIndices.length === 0) {
             throw new Error('No line indices found for elements');
         };
@@ -406,6 +390,33 @@ async function applySortToDocument(editor: vscode.TextEditor, sortedElements: El
 };
 
 /**
+ * Gets all line indices from elements, considering their complete ranges.
+ * @param elements - Array of elements
+ * @returns Array of all line indices used by the elements
+ */
+function getAllLineIndicesFromElements(elements: ElementWithAttributes[]): number[] {
+    const allLines: number[] = [];
+    
+    elements.forEach(element => {
+        // Add all lines from the element itself (lineIndex to lastLineIndex)
+        for (let line = element.lineIndex; line <= element.lastLineIndex; line++) {
+            if (!allLines.includes(line)) {
+                allLines.push(line);
+            };
+        };
+        
+        // Add all attribute lines
+        element.attributeLines.forEach(line => {
+            if (!allLines.includes(line)) {
+                allLines.push(line);
+            }
+        });
+    });
+    
+    return allLines.sort((a, b) => a - b);
+};
+
+/**
  * Extracts text blocks for elements and their attributes in the sorted order.
  * @param document - The text document
  * @param sortedElements - Elements in the desired sorted order
@@ -415,9 +426,13 @@ function extractElementBlocks(document: vscode.TextDocument, sortedElements: Ele
     return sortedElements.map(element => {
         const lines: string[] = [];
         
-        // Add the main element line using lineIndex from model
-        lines.push(document.lineAt(element.lineIndex).text);
-        
+        // Add all lines from the main element (lineIndex to lastLineIndex)
+        for (let line = element.lineIndex; line <= element.lastLineIndex; line ++) {
+            if (line < document.lineCount) {
+                lines.push(document.lineAt(line).text);
+            };
+        };
+
         // Add all attribute lines from the model data
         // The attributeLines array is already sorted from extractAttributeLinesFromModel
         element.attributeLines.forEach(lineIndex => {
@@ -428,22 +443,4 @@ function extractElementBlocks(document: vscode.TextDocument, sortedElements: Ele
         
         return lines.join('\n');
     });
-};
-
-// UTILITY FUNCTIONS
-
-/**
- * Checks if a line represents a new element (field or constant) definition.
- * Used to stop attribute scanning when we encounter a new element.
- * @param lineText - The line text to check
- * @returns True if it's a new element definition
- */
-function isNewElementLine(lineText: string): boolean {
-    // Field definition pattern: starts with A followed by field name
-    const fieldPattern = /^\s*A\s+[A-Z0-9_]+/;
-    
-    // Constant definition pattern: contains literal text in quotes
-    const constantPattern = /^\s*A\s+.*'.*'/;
-    
-    return fieldPattern.test(lineText) || constantPattern.test(lineText);
 };
