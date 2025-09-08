@@ -235,7 +235,7 @@
         {
           "command": "dspf-edit.sort-elements",
           "when": "view == dspf-edit.schema-view && viewItem == record",
-          "group": "records_navigation1@2"
+          "group": "records_navigation4@1"
         },
         {
           "command": "dspf-edit.new-record",
