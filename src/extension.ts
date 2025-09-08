@@ -27,6 +27,7 @@ import { addErrorMessage } from './dspf-edit.add-error-messages';
 import { addIndicators } from './dspf-edit.add-indicators';
 import { fillConstant } from './dspf-edit.fill-constant';
 import { windowResize } from './dspf-edit.window-resize';
+import { sortElements } from './dspf-edit.sort-elements';
 
 let updateTimeout: NodeJS.Timeout | undefined;
 export let lastDdsDocument : vscode.TextDocument | undefined;
@@ -105,7 +106,8 @@ export function activate(context: vscode.ExtensionContext) {
 		{ name: 'addErrorMessage', handler: addErrorMessage as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'addIndicators', handler: addIndicators as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
 		{ name: 'fillConstant', handler: fillConstant as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
-		{ name: 'windowResize', handler: windowResize as (context: vscode.ExtensionContext) => void, needsTreeProvider: false }
+		{ name: 'windowResize', handler: windowResize as (context: vscode.ExtensionContext) => void, needsTreeProvider: false },
+		{ name: 'sortElements', handler: sortElements as (context: vscode.ExtensionContext) => void, needsTreeProvider: false }
 	];
 
 	// Register all commands

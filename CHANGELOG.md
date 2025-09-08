@@ -89,3 +89,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [0.5.1] - 2025-09-08
 ### Fixes
 - Field size validation is fixed when editing fields.
+
+## [0.6.0] - 2025-09-08
+### Added
+- New feature: Sort elements function for sorting constants/fields in a record by row, column or row/column, ascending or descending.
+## Fixes
+- You can add a new record from the "File" node, or from the "Records" node.

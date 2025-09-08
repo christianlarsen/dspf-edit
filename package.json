@@ -8,7 +8,7 @@
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
@@ -144,6 +144,10 @@
       {
         "command": "dspf-edit.window-resize",
         "title": "Change Window Size"
+      },
+      {
+        "command": "dspf-edit.sort-elements",
+        "title": "Sort Elements"
       }
     ],
     "menus": {
@@ -229,8 +233,13 @@
           "group": "records_navigation3@1"
         },
         {
+          "command": "dspf-edit.sort-elements",
+          "when": "view == dspf-edit.schema-view && viewItem == record",
+          "group": "records_navigation4@1"
+        },
+        {
           "command": "dspf-edit.new-record",
-          "when": "view == dspf-edit.schema-view && (viewItem == file || viewItem == group)",
+          "when": "view == dspf-edit.schema-view && (viewItem == file || viewItem == group:records)",
           "group": "file_navigation1@1"
         },
         {

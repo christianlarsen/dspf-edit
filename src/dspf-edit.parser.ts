@@ -332,8 +332,6 @@ function parseConstantElement(
     let finalCol = components.col;
         
     if (isSubfile) {
-        // In subfiles, the positions are swapped: what appears in the "row" position is actually the column,
-        // and what appears in the "column" position is actually the row
         finalRow = components.col;
         finalCol = components.row;
     };
@@ -344,6 +342,7 @@ function parseConstantElement(
         row: finalRow,
         column: finalCol,
         lineIndex: lineIndex,
+        lastLineIndex: lastLineIndex,
         recordname: lastRecord,
         attributes: attributes || [],
         indicators: components.indicators
@@ -401,9 +400,14 @@ function parseAttributeElement(
     const { attributes, nextIndex } = extractAttributes('A', lines, lineIndex, true, components.indicators);
 
     if (attributes.length > 0) {
+        const maxLastLineIndex = attributes.reduce(
+            (max, attr) => Math.max(max, attr.lastLineIndex ?? lineIndex),
+            lineIndex
+        );
         const element = {
             kind: 'attribute' as const,
             lineIndex: lineIndex,
+            lastLineIndex: maxLastLineIndex,
             value: '',
             indicators: components.indicators,
             attributes: attributes
@@ -491,7 +495,8 @@ function extractAttributes(
     // Create attribute object
     const attribute: DdsAttribute = {
         kind: 'attribute',
-        lineIndex: currentIndex,
+        lineIndex: startIndex,
+        lastLineIndex: currentIndex,
         value: lineType === 'C' ? '' : rawAttributeText,
         indicators: includeIndicators && indicators ? indicators : []
     };
@@ -566,7 +571,9 @@ function addFieldToRecord(field: any, recordEntry: any): void {
         // Process attributes preserving their indicators
         const processedAttributes = field.attributes?.map((attr: any) => ({
             value: attr.value,
-            indicators: attr.indicators || []
+            indicators: attr.indicators || [],
+            lineIndex: attr.lineIndex,
+            lastLineIndex: attr.lastLineIndex ?? attr.lineIndex
         })).filter((attr: any) => attr.value) || [];
 
         recordEntry.fields.push({
@@ -576,9 +583,11 @@ function addFieldToRecord(field: any, recordEntry: any): void {
             col: field.column || 0,
             length: field.length || 0,
             attributes: processedAttributes,
-            indicators: field.indicators || []
+            indicators: field.indicators || [],
+            lineIndex: field.lineIndex,
+            lastLineIndex: field.lastLineIndex || field.lineIndex
         });
-    };
+    }
 };
 
 /**
@@ -590,10 +599,12 @@ function addConstantToRecord(constant: any, recordEntry: any): void {
     // Remove quotes from constant name for storage
     const constantName = constant.name.slice(1, -1);
 
-     // Process attributes preserving their indicators
-     const processedAttributes = constant.attributes?.map((attr: any) => ({
+    // Process attributes preserving their indicators
+    const processedAttributes = constant.attributes?.map((attr: any) => ({
         value: attr.value,
-        indicators: attr.indicators || []
+        indicators: attr.indicators || [],
+        lineIndex: attr.lineIndex,
+        lastLineIndex: attr.lastLineIndex ?? attr.lineIndex
     })).filter((attr: any) => attr.value) || [];
 
     // Avoid duplicate constants
@@ -604,7 +615,9 @@ function addConstantToRecord(constant: any, recordEntry: any): void {
             row: constant.row || 0,
             col: constant.column || 0,
             length: constantName.length,
-            attributes: processedAttributes
+            attributes: processedAttributes,
+            lineIndex: constant.lineIndex,
+            lastLineIndex: constant.lastLineIndex
         });
     };
 };

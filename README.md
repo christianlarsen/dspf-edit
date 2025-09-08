@@ -20,6 +20,8 @@ The extension provides a **navigable schema view** of the DDS source file that i
     - Assign command keys.
 
 - **Records level**
+  - Right-click options:
+    - Create new records.
   - Each record shows:
     - Record-level attributes.
     - Constants and fields.
@@ -31,6 +33,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
     - Assign command keys.
     - Add / Remove / Change indicators.
     - Resizing (if window record).
+    - Sort elements.
 
 - **Constants**
   - Show text, position (row/column), indicators, and attributes.
@@ -94,8 +97,9 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.5.1** - 2025-09-08
-- Fix: Field size validation is fixed when editing fields.
+**0.6.0** - 2025-09-08
+- New: Sort elements function for sorting constants/fields in a record by row, column or row/column, ascending or descending.
+- Fixes: Now you can create a new record from the "File" node or from the "Records" node.
 
 ---
 
