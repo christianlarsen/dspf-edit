@@ -5,8 +5,8 @@
 */
 
 import * as vscode from 'vscode';
-import { DdsNode } from './dspf-edit.providers';
-import { lastDdsDocument, lastDdsEditor } from './extension';
+import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
+import { ExtensionState } from '../dspf-edit.states/state';
 
 // COMMAND REGISTRATION
 
@@ -40,8 +40,8 @@ async function handleDeleteRecordCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        const editor = lastDdsEditor;
-        const document = editor?.document ?? lastDdsDocument;
+        const editor = ExtensionState.lastDdsEditor;
+        const document = editor?.document ?? ExtensionState.lastDdsDocument;
         if (!document || !editor) {
             vscode.window.showErrorMessage('No DDS editor found.');
             return;

@@ -6,9 +6,11 @@
 
 
 import * as vscode from 'vscode';
-import { DdsElement, DdsIndicator, DdsAttribute, records, FieldsPerRecord, ConstantInfo, FieldInfo, fieldsPerRecords } from './dspf-edit.model';
-import { DdsTreeProvider } from './dspf-edit.providers';
-import { parseDocument } from './dspf-edit.parser';
+import { DdsElement, DdsIndicator, DdsAttribute, records, FieldsPerRecord, ConstantInfo, FieldInfo, fieldsPerRecords } from '../dspf-edit.parser/dspf-edit.model';
+import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
+import { parseDocument } from '../dspf-edit.parser/dspf-edit.parser';
+import { ExtensionState } from '../dspf-edit.states/state';
+
 
 // FIELD DESCRIPTION FUNCTIONS
 
@@ -640,3 +642,25 @@ export async function handleDspsizWorkflow(editor: vscode.TextEditor, operationN
     return dspsizConfig;
 };
 
+export function debounceUpdate(treeProvider: DdsTreeProvider, document?: vscode.TextDocument) {
+    if (ExtensionState.updateTimeout) {
+        clearTimeout(ExtensionState.updateTimeout);
+    };
+    ExtensionState.updateTimeout = setTimeout(() => {
+        updateTreeProvider(treeProvider, document);
+    }, 150);
+};
+
+export function generateIfDds(
+    treeProvider: DdsTreeProvider,
+    doc?: vscode.TextDocument,
+    editor?: vscode.TextEditor
+) {
+    if (doc && doc.languageId === 'dds.dspf') {
+        ExtensionState.lastDdsDocument = doc;
+        ExtensionState.lastDdsEditor = editor;
+        debounceUpdate(treeProvider, doc);
+    } else if (ExtensionState.lastDdsDocument) {
+        debounceUpdate(treeProvider, ExtensionState.lastDdsDocument);
+    };
+};

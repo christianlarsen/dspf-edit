@@ -5,9 +5,9 @@
 */
 
 import * as vscode from 'vscode';
-import { DdsNode } from './dspf-edit.providers';
-import { fileSizeAttributes, fieldsPerRecords } from './dspf-edit.model';
-import { lastDdsDocument, lastDdsEditor } from './extension';
+import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
+import { fileSizeAttributes, fieldsPerRecords } from '../dspf-edit.parser/dspf-edit.model';
+import { ExtensionState } from '../dspf-edit.states/state';
 
 // INTERFACES AND TYPES
 
@@ -89,8 +89,8 @@ async function handleWindowResizeCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        const editor = lastDdsEditor;
-        const document = editor?.document ?? lastDdsDocument;
+        const editor = ExtensionState.lastDdsEditor;
+        const document = editor?.document ?? ExtensionState.lastDdsDocument;
         if (!document || !editor) {
             vscode.window.showErrorMessage('No DDS editor found.');
             return;

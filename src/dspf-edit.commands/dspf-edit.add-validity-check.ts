@@ -5,10 +5,10 @@
 */
 
 import * as vscode from 'vscode';
-import { DdsNode } from './dspf-edit.providers';
-import { fieldsPerRecords } from './dspf-edit.model';
-import { isAttributeLine, findElementInsertionPoint } from './dspf-edit.helper';
-import { lastDdsDocument, lastDdsEditor } from './extension';
+import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
+import { fieldsPerRecords } from '../dspf-edit.parser/dspf-edit.model';
+import { isAttributeLine, findElementInsertionPoint } from '../dspf-edit.utils/dspf-edit.helper';
+import { ExtensionState } from '../dspf-edit.states/state';
 
 // INTERFACES AND TYPES
 
@@ -46,8 +46,8 @@ export function addValidityCheck(context: vscode.ExtensionContext): void {
  */
 async function handleAddValidityCheckCommand(node: DdsNode): Promise<void> {
     try {
-        const editor = lastDdsEditor;
-        const document = editor?.document ?? lastDdsDocument;
+        const editor = ExtensionState.lastDdsEditor;
+        const document = editor?.document ?? ExtensionState.lastDdsDocument;
         if (!document || !editor) {
             vscode.window.showErrorMessage('No DDS editor found.');
             return;
