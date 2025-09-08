@@ -89,3 +89,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [0.5.1] - 2025-09-08
 ### Fixes
 - Field size validation is fixed when editing fields.
+
+## [0.6.0] - 2025-09-07
+### Added
+- New "sort" function for sorting elements in a record by row/column

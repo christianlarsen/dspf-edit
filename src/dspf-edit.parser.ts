@@ -566,7 +566,8 @@ function addFieldToRecord(field: any, recordEntry: any): void {
         // Process attributes preserving their indicators
         const processedAttributes = field.attributes?.map((attr: any) => ({
             value: attr.value,
-            indicators: attr.indicators || []
+            indicators: attr.indicators || [],
+            lineIndex: attr.lineIndex
         })).filter((attr: any) => attr.value) || [];
 
         recordEntry.fields.push({
@@ -576,9 +577,10 @@ function addFieldToRecord(field: any, recordEntry: any): void {
             col: field.column || 0,
             length: field.length || 0,
             attributes: processedAttributes,
-            indicators: field.indicators || []
+            indicators: field.indicators || [],
+            lineIndex: field.lineIndex
         });
-    };
+    }
 };
 
 /**
@@ -593,7 +595,8 @@ function addConstantToRecord(constant: any, recordEntry: any): void {
      // Process attributes preserving their indicators
      const processedAttributes = constant.attributes?.map((attr: any) => ({
         value: attr.value,
-        indicators: attr.indicators || []
+        indicators: attr.indicators || [],
+        lineIndex: attr.lineIndex
     })).filter((attr: any) => attr.value) || [];
 
     // Avoid duplicate constants
@@ -604,7 +607,8 @@ function addConstantToRecord(constant: any, recordEntry: any): void {
             row: constant.row || 0,
             col: constant.column || 0,
             length: constantName.length,
-            attributes: processedAttributes
+            attributes: processedAttributes,
+            lineIndex: constant.lineIndex
         });
     };
 };

@@ -94,8 +94,8 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.5.1** - 2025-09-08
-- Fix: Field size validation is fixed when editing fields.
+**0.6.0** - 2025-09-07
+- New: "Sort" function for sorting elements in a record by row/column
 
 ---
 
