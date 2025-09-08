@@ -85,3 +85,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - The extension remembers the last opened DDS display file source and allows you to use other extensions simultaneously (for example, you can use IBM i Renderer without losing the DDS structure on the screen).
 ### Fixes
 - Problems adding a new field.
+
+## [0.5.1] - 2025-09-08
+### Fixes
+- Field size validation is fixed when editing fields.

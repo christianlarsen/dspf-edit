@@ -1159,11 +1159,9 @@ function validateFieldName(value: string, element: any): string | null {
     const basicValidation = validateFieldNameFormat(value);
     if (basicValidation) return basicValidation;
     
-    // Check screen size constraints
-    const column = element.column ?? 1;
-    const totalLength = value.trim().length + 2; // Account for padding
-    if (column + totalLength - 1 > fileSizeAttributes.maxCol1) {
-        return "Text too long for screen size. Please choose a shorter name.";
+    // DDS field name cannot exceed 10 characters
+    if (value.trim().length > 10) {
+        return "Field name cannot exceed 10 characters.";
     };
     
     return null;

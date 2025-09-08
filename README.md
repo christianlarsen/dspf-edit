@@ -94,10 +94,8 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.5.0** - 2025-09-06
-- New: The extension can be launched from a separate icon in the activity bar.
-- New: The extension remembers the last opened DDS display file source and allows you to use other extensions simultaneously (for example, you can use IBM i Renderer without losing the DDS structure on the screen).
-- Fixes: Problems adding new fields.
+**0.5.1** - 2025-09-08
+- Fix: Field size validation is fixed when editing fields.
 
 ---
 
