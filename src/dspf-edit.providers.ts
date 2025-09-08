@@ -505,7 +505,12 @@ export class DdsNode extends vscode.TreeItem {
 		// Configure node properties
 		this.tooltip = this.getTooltip(ddsElement);
 		this.description = this.getDescription(ddsElement);
-		this.contextValue = ddsElement.kind;
+		
+		if (label === '📂 Records') {
+			this.contextValue = 'group:records' 
+		} else {
+			this.contextValue = ddsElement.kind;
+		};
 
 		// Add navigation command if applicable
 		if (this.shouldHaveNavigationCommand(ddsElement)) {

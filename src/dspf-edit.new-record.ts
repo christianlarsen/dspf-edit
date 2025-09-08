@@ -95,12 +95,6 @@ async function handleNewRecordCommand(node: DdsNode): Promise<void> {
     try {
         const element = node.ddsElement;
 
-        // Validate element type - records can only be created from file or record level
-        if (element.kind !== "record" && element.kind !== "file") {
-            vscode.window.showWarningMessage("A record can be created only from file level or record level");
-            return;
-        };
-
         const editor = lastDdsEditor;
         const document = editor?.document ?? lastDdsDocument;
         if (!document || !editor) {

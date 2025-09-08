@@ -239,7 +239,7 @@
         },
         {
           "command": "dspf-edit.new-record",
-          "when": "view == dspf-edit.schema-view && (viewItem == file || viewItem == group)",
+          "when": "view == dspf-edit.schema-view && (viewItem == file || viewItem == group:records)",
           "group": "file_navigation1@1"
         },
         {
