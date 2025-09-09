@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { ExtensionState } from '../dspf-edit.states/state';
-import { fieldsPerRecords, FieldInfo, ConstantInfo, DdsRecord } from '../dspf-edit.parser/dspf-edit.model';
+import { fieldsPerRecords, FieldInfo, ConstantInfo, DdsRecord } from '../dspf-edit.model/dspf-edit.model';
 
 // INTERFACES AND TYPES
 

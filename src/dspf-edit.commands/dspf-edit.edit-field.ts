@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { fileSizeAttributes, fieldsPerRecords } from '../dspf-edit.parser/dspf-edit.model';
+import { fileSizeAttributes, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
 import { parseSize } from '../dspf-edit.utils/dspf-edit.helper';
 import { ExtensionState } from '../dspf-edit.states/state';
 

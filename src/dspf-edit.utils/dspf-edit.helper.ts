@@ -6,7 +6,7 @@
 
 
 import * as vscode from 'vscode';
-import { DdsElement, DdsIndicator, DdsAttribute, records, FieldsPerRecord, ConstantInfo, FieldInfo, fieldsPerRecords } from '../dspf-edit.parser/dspf-edit.model';
+import { DdsElement, DdsIndicator, DdsAttribute, records, FieldsPerRecord, ConstantInfo, FieldInfo, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
 import { parseDocument } from '../dspf-edit.parser/dspf-edit.parser';
 import { ExtensionState } from '../dspf-edit.states/state';

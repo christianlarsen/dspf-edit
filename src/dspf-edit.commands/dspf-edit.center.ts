@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { getRecordSize } from '../dspf-edit.parser/dspf-edit.model';
+import { getRecordSize } from '../dspf-edit.model/dspf-edit.model';
 import { ExtensionState } from '../dspf-edit.states/state';
 
 // POSITION CENTERING FUNCTIONALITY

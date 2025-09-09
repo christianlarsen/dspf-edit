@@ -8,7 +8,7 @@ import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { recordExists, DspsizConfig,
     checkIfDspsizNeeded, collectDspsizConfiguration, generateDspsizLines } from '../dspf-edit.utils/dspf-edit.helper';
-import { fileSizeAttributes } from '../dspf-edit.parser/dspf-edit.model';
+import { fileSizeAttributes } from '../dspf-edit.model/dspf-edit.model';
 import { ExtensionState } from '../dspf-edit.states/state';
 
 // INTERFACES AND TYPES

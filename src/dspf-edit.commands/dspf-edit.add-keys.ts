@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { attributesFileLevel, fieldsPerRecords } from '../dspf-edit.parser/dspf-edit.model';
+import { attributesFileLevel, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
 import {
     isAttributeLine, findElementInsertionPointRecordFirstLine, findElementInsertionPointFileFirstLine,
     handleDspsizWorkflow, DspsizConfig

@@ -16,7 +16,7 @@ import {
     fieldsPerRecords,
     getDefaultSize,
     attributesFileLevel
-} from '../dspf-edit.parser/dspf-edit.model';
+} from '../dspf-edit.model/dspf-edit.model';
 
 
 // Global state to store current parsed DDS elements

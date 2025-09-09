@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { DdsConstant } from '../dspf-edit.parser/dspf-edit.model';
+import { DdsConstant } from '../dspf-edit.model/dspf-edit.model';
 import { updateExistingConstant } from './dspf-edit.edit-constant';
 import { ExtensionState } from '../dspf-edit.states/state';
 

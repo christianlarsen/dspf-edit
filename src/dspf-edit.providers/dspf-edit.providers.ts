@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { DdsElement, DdsGroup } from '../dspf-edit.parser/dspf-edit.model';
+import { DdsElement, DdsGroup } from '../dspf-edit.model/dspf-edit.model';
 import { describeDdsField, describeDdsConstant, describeDdsRecord, describeDdsFile, formatDdsIndicators } from '../dspf-edit.utils/dspf-edit.helper';
 import { ExtensionState } from '../dspf-edit.states/state';
 
