@@ -5,8 +5,8 @@
 */
 
 import * as vscode from 'vscode';
-import { DdsNode } from './dspf-edit.providers';
-import { lastDdsDocument, lastDdsEditor } from './extension';
+import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
+import { ExtensionState } from '../dspf-edit.states/state';
 
 // INTERFACES AND TYPES
 
@@ -49,8 +49,8 @@ export function addIndicators(context: vscode.ExtensionContext): void {
  */
 async function handleAddIndicatorsCommand(node: DdsNode): Promise<void> {
     try {
-        const editor = lastDdsEditor;
-        const document = editor?.document ?? lastDdsDocument;
+        const editor = ExtensionState.lastDdsEditor;
+        const document = editor?.document ?? ExtensionState.lastDdsDocument;
         if (!document || !editor) {
             vscode.window.showErrorMessage('No DDS editor found.');
             return;

@@ -5,9 +5,9 @@
 */
 
 import * as vscode from 'vscode';
-import { DdsNode } from './dspf-edit.providers';
-import { getRecordSize, DdsRecord } from './dspf-edit.model';
-import { lastDdsDocument, lastDdsEditor } from './extension';
+import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
+import { getRecordSize } from '../dspf-edit.model/dspf-edit.model';
+import { ExtensionState } from '../dspf-edit.states/state';
 
 // POSITION CENTERING FUNCTIONALITY
 
@@ -42,8 +42,8 @@ async function handleCenterCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        const editor = lastDdsEditor;
-        const document = editor?.document ?? lastDdsDocument;
+        const editor = ExtensionState.lastDdsEditor;
+        const document = editor?.document ?? ExtensionState.lastDdsDocument;
         if (!document || !editor) {
             vscode.window.showErrorMessage('No DDS editor found.');
             return;

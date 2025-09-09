@@ -97,9 +97,9 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.6.0** - 2025-09-08
-- New: Sort elements function for sorting constants/fields in a record by row, column or row/column, ascending or descending.
-- Fixes: Now you can create a new record from the "File" node or from the "Records" node.
+**0.6.1** - 2025-09-09
+- Fixes: Internal fixes. Refactoring.
+- Fixes: The resizing function was not working correctly.
 
 ---
 

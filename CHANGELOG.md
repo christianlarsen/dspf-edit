@@ -95,3 +95,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - New feature: Sort elements function for sorting constants/fields in a record by row, column or row/column, ascending or descending.
 ## Fixes
 - You can add a new record from the "File" node, or from the "Records" node.
+
+## [0.6.1] - 2025-09-09
+## Fixes
+- Internal fixes. Refactoring.
+- The resizing function was not working correctly.

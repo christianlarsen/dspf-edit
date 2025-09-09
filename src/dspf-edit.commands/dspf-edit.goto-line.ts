@@ -5,12 +5,12 @@
 */
 
 import * as vscode from 'vscode';
-import { lastDdsDocument, lastDdsEditor } from './extension';
+import { ExtensionState } from '../dspf-edit.states/state';
 
 export function goToLineHandler(context: vscode.ExtensionContext): void {
   const disposable = vscode.commands.registerCommand('ddsEdit.goToLine', (lineNumber: number) => {
 
-    const editor = lastDdsEditor;
+    const editor = ExtensionState.lastDdsEditor;
 
     if (!editor) {
       vscode.window.showWarningMessage("No DDS editor available.");

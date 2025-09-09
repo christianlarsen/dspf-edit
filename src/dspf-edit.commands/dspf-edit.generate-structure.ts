@@ -4,14 +4,14 @@
 	dspf-edit.generate-structure.ts
 */
 
-import { DdsTreeProvider } from './dspf-edit.providers';
-import { isDdsFile } from './dspf-edit.helper';
-import { parseDocument } from './dspf-edit.parser';
-import { lastDdsDocument, lastDdsEditor } from './extension';
+import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
+import { isDdsFile } from '../dspf-edit.utils/dspf-edit.helper';
+import { parseDocument } from '../dspf-edit.parser/dspf-edit.parser';
+import { ExtensionState } from '../dspf-edit.states/state';
 
 export function generateStructure(treeProvider: DdsTreeProvider) {
-	const editor = lastDdsEditor;
-	const document = editor?.document ?? lastDdsDocument;
+	const editor = ExtensionState.lastDdsEditor;
+	const document = editor?.document ?? ExtensionState.lastDdsDocument;
 	if (!document || !editor) {
 		treeProvider.setElements([]);
 		treeProvider.refresh();

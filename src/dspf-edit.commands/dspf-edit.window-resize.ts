@@ -5,9 +5,9 @@
 */
 
 import * as vscode from 'vscode';
-import { DdsNode } from './dspf-edit.providers';
-import { fileSizeAttributes, fieldsPerRecords } from './dspf-edit.model';
-import { lastDdsDocument, lastDdsEditor } from './extension';
+import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
+import { fileSizeAttributes, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
+import { ExtensionState } from '../dspf-edit.states/state';
 
 // INTERFACES AND TYPES
 
@@ -89,8 +89,8 @@ async function handleWindowResizeCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        const editor = lastDdsEditor;
-        const document = editor?.document ?? lastDdsDocument;
+        const editor = ExtensionState.lastDdsEditor;
+        const document = editor?.document ?? ExtensionState.lastDdsDocument;
         if (!document || !editor) {
             vscode.window.showErrorMessage('No DDS editor found.');
             return;
@@ -274,25 +274,27 @@ async function collectWindowPosition(): Promise<WindowPosition | null> {
  * @returns Current window dimensions or null if not found
  */
 function findCurrentWindowDimensions(editor: vscode.TextEditor, element: any): CurrentWindowDimensions | null {
-    const startLine = element.lineIndex;
+    const currentRecord = fieldsPerRecords.find(record => 
+        element.lineIndex >= record.startIndex && element.lineIndex <= record.endIndex
+    );
+    
+    if (!currentRecord?.attributes) {
+        return null;
+    }
 
-    // Search for WINDOW keyword in record and its attribute lines
-    for (let i = startLine; i < editor.document.lineCount; i++) {
-        const lineText = editor.document.lineAt(i).text;
+    const windowAttribute = currentRecord.attributes.find(attr => 
+        attr.value.startsWith('WINDOW(')
+    );
 
-        // Stop searching when we reach the next record or non-attribute line
-        if (i > startLine && (!lineText.trim().startsWith('A ') || isNextRecord(lineText))) {
-            break;
-        };
-
-        // Look for WINDOW keyword
-        const windowMatch = lineText.match(/WINDOW\((\d+)\s+(\d+)\s+(\d+)\s+(\d+)\)/);
-        if (windowMatch) {
+    if (windowAttribute) {
+        // WINDOW(startRow startCol numRows numCols)
+        const match = windowAttribute.value.match(/WINDOW\((\d+)\s+(\d+)\s+(\d+)\s+(\d+)\)/);
+        if (match) {
             return {
-                startRow: parseInt(windowMatch[1]),
-                startCol: parseInt(windowMatch[2]),
-                numRows: parseInt(windowMatch[3]),
-                numCols: parseInt(windowMatch[4])
+                startRow: parseInt(match[1]),
+                startCol: parseInt(match[2]),
+                numRows: parseInt(match[3]),
+                numCols: parseInt(match[4])
             };
         };
     };
