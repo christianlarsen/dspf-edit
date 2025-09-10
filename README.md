@@ -97,9 +97,8 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.6.1** - 2025-09-09
-- Fixes: Internal fixes. Refactoring.
-- Fixes: The resizing function was not working correctly.
+**0.6.2** - 2025-09-10
+- Fixes: Fixing resizing again.
 
 ---
 

@@ -29,6 +29,7 @@ interface CurrentWindowDimensions {
     startCol: number;
     numRows: number;
     numCols: number;
+    windowLine : number;
 };
 
 /**
@@ -105,7 +106,8 @@ async function handleWindowResizeCommand(node: DdsNode): Promise<void> {
 
         // Show current window information
         const currentInfo = `Current: ${currentWindow.numRows}x${currentWindow.numCols} at (${currentWindow.startRow},${currentWindow.startCol})`;
-        
+        const windowLine = currentWindow.windowLine;
+
         // Collect resize configuration from user
         const resizeConfig = await collectWindowResizeConfiguration(currentInfo, element);
         if (!resizeConfig) {
@@ -121,7 +123,7 @@ async function handleWindowResizeCommand(node: DdsNode): Promise<void> {
         };
 
         // Apply the window resize
-        await applyWindowResize(editor, element, currentWindow, newDimensions);
+        await applyWindowResize(editor, element, windowLine, newDimensions);
 
         // Show success message
         const operationLabel = resizeConfig.operation === 'CHANGE_SIZE' ? 'resized' : 'auto-adjusted';
@@ -288,13 +290,14 @@ function findCurrentWindowDimensions(editor: vscode.TextEditor, element: any): C
 
     if (windowAttribute) {
         // WINDOW(startRow startCol numRows numCols)
-        const match = windowAttribute.value.match(/WINDOW\((\d+)\s+(\d+)\s+(\d+)\s+(\d+)\)/);
+        const match = windowAttribute.value.match(/WINDOW\((\d+) (\d+) (\d+) (\d+)\)/);
         if (match) {
             return {
                 startRow: parseInt(match[1]),
                 startCol: parseInt(match[2]),
                 numRows: parseInt(match[3]),
-                numCols: parseInt(match[4])
+                numCols: parseInt(match[4]),
+                windowLine : windowAttribute.lineIndex
             };
         };
     };
@@ -321,45 +324,47 @@ function isNextRecord(lineText: string): boolean {
 function analyzeRecordContent(editor: vscode.TextEditor, element: any): { numRows: number; numCols: number } {
     const positions: FieldPosition[] = [];
     
-    // Get field positions from the model
+    // Get field and constant positions from the model
     const recordInfo = fieldsPerRecords.find(r => r.record === element.name);
-    if (recordInfo) {
-        recordInfo.fields.forEach(field => {
-            if (field.row && field.col && field.length) {
-                positions.push({
-                    name: field.name,
-                    row: field.row,
-                    col: field.col,
-                    length: field.length,
-                    isConstant: false
-                });
-            };
-        });
+    if (!recordInfo) {
+        // If no record info found, return minimum dimensions
+        return {
+            numRows: Math.min(5, (fileSizeAttributes.maxRow1 || 24) - 2),
+            numCols: Math.min(20, (fileSizeAttributes.maxCol1 || 80) - 2)
+        };
     };
 
-    // Analyze constants from the DDS lines
-    const startLine = element.lineIndex;
-    for (let i = startLine; i < editor.document.lineCount; i++) {
-        const lineText = editor.document.lineAt(i).text;
-
-        // Stop when we reach the next record
-        if (i > startLine && (!lineText.trim().startsWith('A ') || isNextRecord(lineText))) {
-            break;
-        };
-
-        // Look for constants (text in quotes)
-        const constantMatch = lineText.match(/(\d+)\s+(\d+)\s*'([^']*)'$/);
-        if (constantMatch) {
-            const row = parseInt(constantMatch[1]);
-            const col = parseInt(constantMatch[2]);
-            const text = constantMatch[3];
-            
+    // Process fields from the model
+    recordInfo.fields.forEach(field => {
+        if (field.row && field.col && field.length) {
             positions.push({
-                row: row,
-                col: col,
-                length: text.length,
+                name: field.name,
+                row: field.row,
+                col: field.col,
+                length: field.length,
+                isConstant: false
+            });
+        };
+    });
+
+    // Process constants from the model (this was missing!)
+    recordInfo.constants.forEach(constant => {
+        if (constant.row && constant.col && constant.length) {
+            positions.push({
+                name: constant.name,
+                row: constant.row,
+                col: constant.col,
+                length: constant.length,
                 isConstant: true
             });
+        };
+    });
+
+    // If no positions found, return minimum dimensions
+    if (positions.length === 0) {
+        return {
+            numRows: Math.min(5, (fileSizeAttributes.maxRow1 || 24) - 2),
+            numCols: Math.min(20, (fileSizeAttributes.maxCol1 || 80) - 2)
         };
     };
 
@@ -372,9 +377,9 @@ function analyzeRecordContent(editor: vscode.TextEditor, element: any): { numRow
         maxCol = Math.max(maxCol, pos.col + pos.length - 1);
     });
 
-    // Add padding for usability (only in Cols)
-    const numRows = Math.max(5, maxRow) + 1;        // Minimum 5 rows
-    const numCols = Math.max(20, maxCol + 4);   // Minimum 20 columns
+    // Add padding for usability
+    const numRows = Math.max(5, maxRow) + 1;        // Minimum 5 rows, +1 for padding
+    const numCols = Math.max(20, maxCol + 4);       // Minimum 20 columns, +4 for padding
 
     // Ensure we don't exceed screen limits
     const maxRows = fileSizeAttributes.maxRow1 || 24;
@@ -471,7 +476,8 @@ function calculateWindowPosition(
         startRow,
         startCol,
         numRows: size.numRows,
-        numCols: size.numCols
+        numCols: size.numCols,
+        windowLine : 0
     };
 };
 
@@ -481,20 +487,21 @@ function calculateWindowPosition(
  * Applies the window resize by updating the WINDOW keyword line.
  * @param editor - The text editor
  * @param element - The record element
- * @param currentWindow - Current window dimensions
+ * @param windowLine - Window line
  * @param newDimensions - New window dimensions
  */
 async function applyWindowResize(
     editor: vscode.TextEditor,
     element: any,
-    currentWindow: CurrentWindowDimensions,
+    windowLine : number,
     newDimensions: CurrentWindowDimensions
 ): Promise<void> {
-    const windowLine = findWindowKeywordLine(editor, element);
+
+/*    const windowLine = findWindowKeywordLine(editor, element);
     if (windowLine === -1) {
         throw new Error('Could not find WINDOW keyword line to update');
     };
-
+*/
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
     const line = editor.document.lineAt(windowLine);
