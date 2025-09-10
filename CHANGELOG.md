@@ -100,3 +100,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## Fixes
 - Internal fixes. Refactoring.
 - The resizing function was not working correctly.
+
+## [0.6.2] - 2025-09-10
+## Fixes
+- Fixing resizing again.
