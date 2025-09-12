@@ -97,8 +97,9 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.6.2** - 2025-09-10
-- Fixes: Fixing resizing again.
+**0.7.0** - 2025-09-12
+- Added: Ability to copy a Field/Constant to a different record or to a different position within the same record.  
+  If copying a field, you must provide a new name if one with the same name already exists in the destination record.
 
 ---
 
