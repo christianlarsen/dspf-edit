@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { ExtensionState } from '../dspf-edit.states/state';
+import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
@@ -49,10 +49,9 @@ export function addIndicators(context: vscode.ExtensionContext): void {
  */
 async function handleAddIndicatorsCommand(node: DdsNode): Promise<void> {
     try {
-        const editor = ExtensionState.lastDdsEditor;
-        const document = editor?.document ?? ExtensionState.lastDdsDocument;
+        // Check for editor and document
+        const { editor, document } = checkForEditorAndDocument();
         if (!document || !editor) {
-            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 
@@ -583,19 +582,4 @@ function parseIndicatorsFromLine(lineText: string): IndicatorAssignment[] {
     };
 
     return indicators;
-};
-
-// HELPER FUNCTIONS
-
-/**
- * Checks if a DDS line has available space for indicator conditioning.
- * @param lineText - The DDS line text
- * @returns True if there's space for indicators
- */
-function hasAvailableIndicatorSpace(lineText: string): boolean {
-    if (lineText.length < 17) return true;
-    
-    // Check if positions 7-16 are empty or contain only spaces (0-based: 6-15)
-    const conditionArea = lineText.substring(6, 16);
-    return conditionArea.trim() === '';
 };

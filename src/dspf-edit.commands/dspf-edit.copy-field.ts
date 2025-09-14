@@ -6,8 +6,8 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { fieldsPerRecords, FieldInfo, FieldsPerRecord, DdsField } from '../dspf-edit.model/dspf-edit.model';
-import { ExtensionState } from '../dspf-edit.states/state';
+import { fieldsPerRecords, FieldInfo, DdsField } from '../dspf-edit.model/dspf-edit.model';
+import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
 
 /**
  * Interface for field copy configuration
@@ -100,18 +100,16 @@ export function copyField(context: vscode.ExtensionContext): void {
  */
 async function handleCopyFieldCommand(node: DdsNode): Promise<void> {
     try {
+        // Check for editor and document
+        const { editor, document } = checkForEditorAndDocument();
+        if (!document || !editor) {
+            return;
+        };
+
         // Validate the selected node
         const validationResult = validateNodeForCopy(node);
         if (!validationResult.isValid) {
             vscode.window.showWarningMessage(validationResult.errorMessage!);
-            return;
-        };
-
-        // Get the active editor and document
-        const editor = ExtensionState.lastDdsEditor;
-        const document = editor?.document ?? ExtensionState.lastDdsDocument;
-        if (!document || !editor) {
-            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 

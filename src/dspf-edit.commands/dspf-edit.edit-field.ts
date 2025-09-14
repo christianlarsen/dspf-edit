@@ -7,8 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fileSizeAttributes, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
-import { parseSize } from '../dspf-edit.utils/dspf-edit.helper';
-import { ExtensionState } from '../dspf-edit.states/state';
+import { checkForEditorAndDocument, parseSize } from '../dspf-edit.utils/dspf-edit.helper';
 
 /**
  * Interface defining the structure of a field's size properties
@@ -180,17 +179,16 @@ export function editField(context: vscode.ExtensionContext): void {
  */
 async function handleEditFieldCommand(node: DdsNode): Promise<void> {
     try {
+        // Check for editor and document
+        const { editor, document } = checkForEditorAndDocument();
+        if (!document || !editor) {
+            return;
+        };
+
         // Validate the selected node
         const validationResult = validateNodeForEdit(node);
         if (!validationResult.isValid) {
             vscode.window.showWarningMessage(validationResult.errorMessage!);
-            return;
-        };
-
-        const editor = ExtensionState.lastDdsEditor;
-        const document = editor?.document ?? ExtensionState.lastDdsDocument;
-        if (!document || !editor) {
-            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 
@@ -234,17 +232,16 @@ async function handleEditFieldCommand(node: DdsNode): Promise<void> {
  */
 async function handleAddFieldCommand(node: DdsNode): Promise<void> {
     try {
+        // Check for editor and document
+        const { editor, document } = checkForEditorAndDocument();
+        if (!document || !editor) {
+            return;
+        };
+
         // Validate the selected node
         const validationResult = validateNodeForAdd(node);
         if (!validationResult.isValid) {
             vscode.window.showWarningMessage(validationResult.errorMessage!);
-            return;
-        };
-
-        const editor = ExtensionState.lastDdsEditor;
-        const document = editor?.document ?? ExtensionState.lastDdsDocument;
-        if (!document || !editor) {
-            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 

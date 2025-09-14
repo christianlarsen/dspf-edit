@@ -5,13 +5,15 @@
 */
 
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
-import { isDdsFile } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, isDdsFile } from '../dspf-edit.utils/dspf-edit.helper';
 import { parseDocument } from '../dspf-edit.parser/dspf-edit.parser';
-import { ExtensionState } from '../dspf-edit.states/state';
 
 export function generateStructure(treeProvider: DdsTreeProvider) {
-	const editor = ExtensionState.lastDdsEditor;
-	const document = editor?.document ?? ExtensionState.lastDdsDocument;
+    // Check for editor and document
+    const { editor, document } = checkForEditorAndDocument();
+    if (!document || !editor) {
+        return;
+    };
 	if (!document || !editor) {
 		treeProvider.setElements([]);
 		treeProvider.refresh();

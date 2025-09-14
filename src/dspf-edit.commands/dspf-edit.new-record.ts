@@ -7,9 +7,9 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { recordExists, DspsizConfig,
-    checkIfDspsizNeeded, collectDspsizConfiguration, generateDspsizLines } from '../dspf-edit.utils/dspf-edit.helper';
+    checkIfDspsizNeeded, collectDspsizConfiguration, generateDspsizLines, 
+    checkForEditorAndDocument} from '../dspf-edit.utils/dspf-edit.helper';
 import { fileSizeAttributes } from '../dspf-edit.model/dspf-edit.model';
-import { ExtensionState } from '../dspf-edit.states/state';
 
 // INTERFACES AND TYPES
 
@@ -93,15 +93,12 @@ export function newRecord(context: vscode.ExtensionContext): void {
  */
 async function handleNewRecordCommand(node: DdsNode): Promise<void> {
     try {
-        const element = node.ddsElement;
-
-        const editor = ExtensionState.lastDdsEditor;
-        const document = editor?.document ?? ExtensionState.lastDdsDocument;
+        // Check for editor and document
+        const { editor, document } = checkForEditorAndDocument();
         if (!document || !editor) {
-            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
-
+        
         // Check if DSPSIZ needs to be defined
         const needsDspsiz = await checkIfDspsizNeeded(editor);
 

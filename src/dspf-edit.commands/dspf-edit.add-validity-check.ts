@@ -7,8 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
-import { isAttributeLine, findElementInsertionPoint } from '../dspf-edit.utils/dspf-edit.helper';
-import { ExtensionState } from '../dspf-edit.states/state';
+import { isAttributeLine, findElementInsertionPoint, checkForEditorAndDocument, groupConsecutiveLines } from '../dspf-edit.utils/dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
@@ -46,10 +45,9 @@ export function addValidityCheck(context: vscode.ExtensionContext): void {
  */
 async function handleAddValidityCheckCommand(node: DdsNode): Promise<void> {
     try {
-        const editor = ExtensionState.lastDdsEditor;
-        const document = editor?.document ?? ExtensionState.lastDdsDocument;
+        // Check for editor and document
+        const { editor, document } = checkForEditorAndDocument();
         if (!document || !editor) {
-            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 
@@ -503,39 +501,6 @@ function calculateValidityCheckDeletionRanges(
     };
     
     return ranges;
-};
-
-/**
- * Groups consecutive line numbers together for more efficient batch deletion.
- * @param lines - Array of line indices (should be sorted)
- * @returns Array of arrays, where each sub-array contains consecutive line numbers
- */
-function groupConsecutiveLines(lines: number[]): number[][] {
-    if (lines.length === 0) return [];
-    
-    // Ensure lines are sorted
-    const sortedLines = [...lines].sort((a, b) => a - b);
-    const groups: number[][] = [];
-    let currentGroup: number[] = [sortedLines[0]];
-    
-    for (let i = 1; i < sortedLines.length; i++) {
-        const currentLine = sortedLines[i];
-        const previousLine = sortedLines[i - 1];
-        
-        if (currentLine === previousLine + 1) {
-            // Consecutive line - add to current group
-            currentGroup.push(currentLine);
-        } else {
-            // Non-consecutive line - start new group
-            groups.push(currentGroup);
-            currentGroup = [currentLine];
-        };
-    };
-    
-    // Don't forget the last group
-    groups.push(currentGroup);
-    
-    return groups;
 };
 
 // LINE CREATION AND DETECTION FUNCTIONS

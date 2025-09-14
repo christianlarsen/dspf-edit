@@ -7,8 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
-import { isAttributeLine, findElementInsertionPointRecordFirstLine } from '../dspf-edit.utils/dspf-edit.helper';
-import { ExtensionState } from '../dspf-edit.states/state';
+import { isAttributeLine, findElementInsertionPointRecordFirstLine, checkForEditorAndDocument, groupConsecutiveLines } from '../dspf-edit.utils/dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
@@ -43,10 +42,9 @@ export function addErrorMessage(context: vscode.ExtensionContext): void {
  */
 async function handleAddErrorMessageCommand(node: DdsNode): Promise<void> {
     try {
-        const editor = ExtensionState.lastDdsEditor;
-        const document = editor?.document ?? ExtensionState.lastDdsDocument;
+        // Check for editor and document
+        const { editor, document } = checkForEditorAndDocument();
         if (!document || !editor) {
-            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 
@@ -577,32 +575,4 @@ function calculateErrorMessageDeletionRanges(
     };
 
     return ranges;
-};
-
-/**
- * Groups consecutive line numbers for efficient batch deletion.
- * @param lines - Array of line indices (should be sorted)
- * @returns Array of arrays containing consecutive line numbers
- */
-function groupConsecutiveLines(lines: number[]): number[][] {
-    if (lines.length === 0) return [];
-
-    const sortedLines = [...lines].sort((a, b) => a - b);
-    const groups: number[][] = [];
-    let currentGroup: number[] = [sortedLines[0]];
-
-    for (let i = 1; i < sortedLines.length; i++) {
-        const currentLine = sortedLines[i];
-        const previousLine = sortedLines[i - 1];
-
-        if (currentLine === previousLine + 1) {
-            currentGroup.push(currentLine);
-        } else {
-            groups.push(currentGroup);
-            currentGroup = [currentLine];
-        };
-    };
-
-    groups.push(currentGroup);
-    return groups;
 };
