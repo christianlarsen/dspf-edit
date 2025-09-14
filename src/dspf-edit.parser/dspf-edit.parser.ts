@@ -535,7 +535,7 @@ function linkAttributesToParents(ddsElements: DdsElement[]): void {
  */
 function linkFieldsAndConstantsToRecords(ddsElements: DdsElement[]): void {
     for (const element of ddsElements) {
-        if ((element.kind === 'field' && element.hidden !== true) || element.kind === 'constant') {
+        if ((element.kind === 'field') || element.kind === 'constant') {
             // Find parent record for this field/constant
             const parentRecord = [...ddsElements]
                 .reverse()

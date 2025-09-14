@@ -8,7 +8,7 @@
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
@@ -148,6 +148,14 @@
       {
         "command": "dspf-edit.sort-elements",
         "title": "Sort Elements"
+      },
+      {
+        "command": "dspf-edit.copy-field",
+        "title": "Copy Field"
+      },
+      {
+        "command": "dspf-edit.copy-constant",
+        "title": "Copy Constant"
       }
     ],
     "menus": {
@@ -261,6 +269,16 @@
           "command": "dspf-edit.fill-constant",
           "when": "view == dspf-edit.schema-view && viewItem == constant",
           "group": "fields_constants_navigation4@0"
+        },
+        {
+          "command": "dspf-edit.copy-field",
+          "when": "view == dspf-edit.schema-view && viewItem == field",
+          "group": "fields_constants_navigation1@2"
+        },
+        {
+          "command": "dspf-edit.copy-constant",
+          "when": "view == dspf-edit.schema-view && viewItem == constant",
+          "group": "fields_constants_navigation1@2"
         }
       ]
     }

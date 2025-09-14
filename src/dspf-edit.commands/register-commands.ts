@@ -27,12 +27,8 @@ import { addIndicators } from './dspf-edit.add-indicators';
 import { fillConstant } from './dspf-edit.fill-constant';
 import { windowResize } from './dspf-edit.window-resize';
 import { sortElements } from './dspf-edit.sort-elements';
-
-interface CommandConfig {
-    name: string;
-    handler: Function;
-    needsTreeProvider: boolean;
-};
+import { copyField } from './dspf-edit.copy-field';
+import { copyConstant } from './dspf-edit.copy-constant';
 
 export const commands = [
   { name: 'viewStructure', handler: viewStructure, needsTreeProvider: true },
@@ -55,7 +51,9 @@ export const commands = [
   { name: 'addIndicators', handler: addIndicators, needsTreeProvider: false },
   { name: 'fillConstant', handler: fillConstant, needsTreeProvider: false },
   { name: 'windowResize', handler: windowResize, needsTreeProvider: false },
-  { name: 'sortElements', handler: sortElements, needsTreeProvider: false }
+  { name: 'sortElements', handler: sortElements, needsTreeProvider: false },
+  { name: 'copyField', handler: copyField, needsTreeProvider: false },
+  { name: 'copyConstant', handler: copyConstant, needsTreeProvider: false }
 ];
 
 /**
