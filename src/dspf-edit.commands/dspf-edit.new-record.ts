@@ -186,7 +186,7 @@ async function collectRecordName(): Promise<string | null> {
     const stepNumber = '1/4'; // Will be adjusted based on whether DSPSIZ is needed
     const recordName = await vscode.window.showInputBox({
         title: `Create New Record - Step ${stepNumber}`,
-        prompt: 'Enter the new record name',
+        prompt: 'Enter the new record name (In case of subfile, this is the subfile detail record name)',
         placeHolder: 'RECORD',
         validateInput: validateRecordName
     });
@@ -457,7 +457,7 @@ function validateWindowTitle(value: string, maxLength: number): string | null {
 async function collectSubfileConfiguration(): Promise<SubfileConfig | null> {
     const controlRecordName = await vscode.window.showInputBox({
         title: 'Subfile Configuration - Control Record',
-        prompt: 'Enter the subfile control record name',
+        prompt: 'Enter the subfile control record name (This is the subfile header record name)',
         placeHolder: 'SFLCTL',
         validateInput: validateRecordName
     });
@@ -546,6 +546,9 @@ function generateRecordLines(config: NewRecordConfig): string[] {
         case 'SFL':
             if (config.subfileConfig) {
                 lines.push(generateSubfileControlLine(config.name, config.subfileConfig));
+                lines.push(generateSubfileSizeLine(config.subfileConfig.size));
+                lines.push(generateSubfilePageLine(config.subfileConfig.page));
+                lines.push(...generateSubfileOtherLines());
             }
             break;
 
@@ -693,6 +696,7 @@ function generateSubfilePageLine(page: number): string {
 function generateSubfileOtherLines(): string[] {
     let lines : string[] = [];
     const lineStart = ' '.repeat(5) + 'A' + ' '.repeat(38);
+    const lineStartField = ' '.repeat(5) + 'A' + ' '.repeat(12);
 
     // Define lines
     lines[0] = lineStart + 'OVERLAY';
@@ -707,6 +711,12 @@ function generateSubfileOtherLines(): string[] {
     lines[4] = lines[4].substring(0, 7) + 'N80' + lines[4].substring(10);
     lines[6] = lines[6].substring(0, 7) + 'N80' + lines[6].substring(10);
     lines[5] = lines[5].substring(0, 8) + '80' + lines[5].substring(10);
+    // Add lines with hidden fields
+    lines[7] = lineStartField + 'NRR' + ' '.repeat(12) + '4S 0H';
+    lines[8] = lineStartField + 'NBR' + ' '.repeat(12) + '4S 0H';
+    lines[9] = lineStartField + 'WSRECNAM' + ' '.repeat(6) + '10A  H';
+    lines[10] = lineStartField + 'WSFLDNAM' + ' '.repeat(6) + '10A  H';
+    lines[11] = lineStartField + 'WSFLRRN' + ' '.repeat(8) + '5S 0 H';
 
     return lines;
 };
