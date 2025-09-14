@@ -559,6 +559,7 @@ function generateRecordLines(config: NewRecordConfig): string[] {
                 lines.push(...generateWindowBorderLines());
                 lines.push(generateSubfileSizeLine(config.subfileConfig.size));
                 lines.push(generateSubfilePageLine(config.subfileConfig.page));
+                lines.push(...generateSubfileOtherLines());
             }
             break;
     };
@@ -651,10 +652,9 @@ function generateWindowTitleLines(title: string): string[] {
  * @returns Array of formatted window border lines
  */
 function generateWindowBorderLines(): string[] {
-    return [
-        '     A                                      WDWBORDER((*COLOR BLU) (*DSPATR RI)-',
-        "     A                                       (*CHAR '        ')) "
-    ];
+    const baseLine = ' '.repeat(5) + 'A' + ' '.repeat(38) + 'WDWBORDER((*COLOR BLU) (*DSPATR RI)-';
+    const continuationLine = ' '.repeat(5) + 'A' + ' '.repeat(39) + "(*CHAR '" + ' '.repeat(8) + "')) ";
+    return [baseLine, continuationLine];
 };
 
 /**
@@ -684,6 +684,31 @@ function generateSubfileSizeLine(size: number): string {
  */
 function generateSubfilePageLine(page: number): string {
     return ' '.repeat(5) + 'A' + ' '.repeat(38) + 'SFLPAG(' + String(page).padStart(4, '0') + ')';
+};
+
+/**
+ * Generates rest of subfile control lines.
+ * @returns Formatted lines with RTVCSRLOC, OVERLAY, SFLCSRRRN, SFLDSP, SFLDSPCTL, SFLCLR, SLFEND(*MORE)
+ */
+function generateSubfileOtherLines(): string[] {
+    let lines : string[] = [];
+    const lineStart = ' '.repeat(5) + 'A' + ' '.repeat(38);
+
+    // Define lines
+    lines[0] = lineStart + 'OVERLAY';
+    lines[1] = lineStart + 'RTNCSRLOC(&WSRECNAM &WSFLDNAM)';
+    lines[2] = lineStart + 'SFLCSRRRN(&WSFLRRN)';
+    lines[3] = lineStart + 'SFLDSP';
+    lines[4] = lineStart + 'SFLDSPCTL';
+    lines[5] = lineStart + 'SFLCLR';
+    lines[6] = lineStart + 'SFLEND(*MORE)';
+    // Add indicators to SFLDSP, SFLDSPCTL, SFLCLR, SFLEND
+    lines[3] = lines[3].substring(0, 7) + 'N80' + lines[3].substring(10);
+    lines[4] = lines[4].substring(0, 7) + 'N80' + lines[4].substring(10);
+    lines[6] = lines[6].substring(0, 7) + 'N80' + lines[6].substring(10);
+    lines[5] = lines[5].substring(0, 8) + '80' + lines[5].substring(10);
+
+    return lines;
 };
 
 // DOCUMENT INSERTION FUNCTIONS

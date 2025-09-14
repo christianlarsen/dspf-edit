@@ -111,3 +111,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   If copying a field, you must provide a new name if one with the same name already exists in the destination record.
 ## Fixed
 - Fixed an issue when sorting items in a record that had hidden fields. These fields now appear first in the sort order.
+
+### [0.7.1] - 2025-09-14
+## Refactored
+- Internal refactoring and code cleanup.
+## Fixed
+- Improved subfile record creation.
