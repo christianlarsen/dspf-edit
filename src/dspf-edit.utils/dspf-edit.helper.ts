@@ -250,7 +250,7 @@ export function isAttributeLine(line: string): boolean {
     };
     // If there is a field, returns false    
     const fieldName = line.substring(18, 27).trim();
-    if (fieldName != '') {
+    if (fieldName !== '') {
         return false;
     };
 

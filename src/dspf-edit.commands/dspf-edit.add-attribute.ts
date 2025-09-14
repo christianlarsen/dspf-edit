@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from './../dspf-edit.providers/dspf-edit.providers';
-import { isAttributeLine, findElementInsertionPoint, checkForEditorAndDocument, parseIndicatorsFromLine, groupConsecutiveLines } from './../dspf-edit.utils/dspf-edit.helper'
+import { isAttributeLine, findElementInsertionPoint, checkForEditorAndDocument, parseIndicatorsFromLine, groupConsecutiveLines } from './../dspf-edit.utils/dspf-edit.helper';
 import { fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
  
 // INTERFACES AND TYPES

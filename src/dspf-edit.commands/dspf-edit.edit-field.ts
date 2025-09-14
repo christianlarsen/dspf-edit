@@ -1269,7 +1269,7 @@ function buildUpdatedLine(originalLine: string, newName: string, newSize: FieldS
     const typeCharacter = line.substring(FIELD_CONSTANTS.TYPE_COLUMN, FIELD_CONSTANTS.TYPE_COLUMN + 1);
     const isNumericField = FIELD_CONSTANTS.NUMERIC_TYPES.includes(typeCharacter as any);
     
-    if (isNumericField && newSize.decimals != undefined) {
+    if (isNumericField && newSize.decimals !== undefined) {
         const decimalString = newSize.decimals.toString().padStart(2, ' ').substring(0, 2);
         line = line.substring(0, FIELD_CONSTANTS.DECIMAL_COLUMN_START) + 
                decimalString + 
