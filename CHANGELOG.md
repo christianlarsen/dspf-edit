@@ -105,7 +105,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## Fixes
 - Fixing resizing again.
 
-### [0.7.0] - 2025-09-12
+### [0.7.0] - 2025-09-14
 ## Added
 - Ability to copy a Field/Constant to a different record or to a different position within the same record.  
   If copying a field, you must provide a new name if one with the same name already exists in the destination record.
+## Fixed
+- Fixed an issue when sorting items in a record that had hidden fields. These fields now appear first in the sort order.

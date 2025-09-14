@@ -152,6 +152,10 @@
       {
         "command": "dspf-edit.copy-field",
         "title": "Copy Field"
+      },
+      {
+        "command": "dspf-edit.copy-constant",
+        "title": "Copy Constant"
       }
     ],
     "menus": {
@@ -269,6 +273,11 @@
         {
           "command": "dspf-edit.copy-field",
           "when": "view == dspf-edit.schema-view && viewItem == field",
+          "group": "fields_constants_navigation1@2"
+        },
+        {
+          "command": "dspf-edit.copy-constant",
+          "when": "view == dspf-edit.schema-view && viewItem == constant",
           "group": "fields_constants_navigation1@2"
         }
       ]

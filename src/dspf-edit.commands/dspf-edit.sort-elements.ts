@@ -301,12 +301,22 @@ function getSortDescription(criteria: SortCriteria): string {
 
 /**
  * Sorts elements according to the specified criteria.
+ * Hidden elements (row <= 0 or column <= 0) are always placed first,
+ * then visible elements are sorted by the specified criteria.
  * @param elements - Array of elements to sort
  * @param criteria - Sort criteria
- * @returns Sorted array of elements
+ * @returns Sorted array of elements with hidden elements first
  */
 function sortElementsByCriteria(elements: ElementWithAttributes[], criteria: SortCriteria): ElementWithAttributes[] {
-    return [...elements].sort((a, b) => {
+    // Separate hidden and visible elements
+    const hiddenElements = elements.filter(element => element.row <= 0 || element.column <= 0);
+    const visibleElements = elements.filter(element => element.row > 0 && element.column > 0);
+    
+    // Sort hidden elements by their original order (document order)
+    hiddenElements.sort((a, b) => a.originalOrder - b.originalOrder);
+    
+    // Sort visible elements according to criteria
+    const sortedVisibleElements = visibleElements.sort((a, b) => {
         let comparison = 0;
         
         switch (criteria.sortBy) {
@@ -320,7 +330,7 @@ function sortElementsByCriteria(elements: ElementWithAttributes[], criteria: Sor
                 comparison = a.row - b.row;
                 if (comparison === 0) {
                     comparison = a.column - b.column;
-                }
+                };
                 break;
         };
         
@@ -332,6 +342,9 @@ function sortElementsByCriteria(elements: ElementWithAttributes[], criteria: Sor
         // Apply direction
         return criteria.direction === 'desc' ? -comparison : comparison;
     });
+    
+    // Return hidden elements first, then sorted visible elements
+    return [...hiddenElements, ...sortedVisibleElements];
 };
 
 // DOCUMENT MODIFICATION FUNCTIONS

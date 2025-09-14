@@ -39,6 +39,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
   - Show text, position (row/column), indicators, and attributes.
   - Right-click options:
     - Edit constant.
+    - Copy constant (to the same or different record).
     - Center constant on screen.
     - Change position (absolute position/relative to existing constant).
     - Apply colors/attributes.
@@ -50,6 +51,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
   - Indicators and attributes are expandable.
   - Right-click options:
     - Edit field.
+    - Copy field (to the same or different record).
     - Center field on screen.
     - Change position (absolute position/relative to existing constant/field).
     - Apply colors/attributes.
@@ -97,9 +99,10 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.7.0** - 2025-09-12
+**0.7.0** - 2025-09-14
 - Added: Ability to copy a Field/Constant to a different record or to a different position within the same record.  
   If copying a field, you must provide a new name if one with the same name already exists in the destination record.
+- Fixed: There were an issue when sorting items in a record that had hidden fields. These fields now appear first in the sort order.
 
 ---
 

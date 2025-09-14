@@ -11,17 +11,19 @@ import { ExtensionState } from '../dspf-edit.states/state';
 
 /**
  * Interface for field copy configuration
+ * Contains all necessary information to copy a field from source to target
  */
 interface CopyFieldConfig {
     sourceField: FieldInfo;
     sourceRecord: string;
     targetRecord: string;
     newName: string;
-    targetPosition: FieldPosition;
+    targetPosition: FieldPosition | null;
 };
 
 /**
  * Interface for field position on screen
+ * Represents row and column coordinates for field placement
  */
 interface FieldPosition {
     row: number;
@@ -30,6 +32,7 @@ interface FieldPosition {
 
 /**
  * Interface for existing element information (fields and constants)
+ * Used to track existing elements when positioning new fields
  */
 interface ExistingElementInfo {
     name: string;
@@ -43,6 +46,7 @@ interface ExistingElementInfo {
 
 /**
  * Interface for validation results
+ * Standard result structure for validation operations
  */
 interface ValidationResult {
     isValid: boolean;
@@ -51,6 +55,7 @@ interface ValidationResult {
 
 /**
  * Constants for field copying operations
+ * Defines column positions and limits for DDS field formatting
  */
 const COPY_CONSTANTS = {
     MAX_NAME_LENGTH: 10,
@@ -67,6 +72,9 @@ const COPY_CONSTANTS = {
 /**
  * Registers the copy field command for the VS Code extension
  * 
+ * This function sets up the command handler that will be called when users
+ * invoke the copy field command from the tree view context menu or command palette.
+ * 
  * @param context - The VS Code extension context for registering commands and subscriptions
  */
 export function copyField(context: vscode.ExtensionContext): void {
@@ -82,6 +90,12 @@ export function copyField(context: vscode.ExtensionContext): void {
 /**
  * Main command handler for copying DDS fields
  * 
+ * This function orchestrates the entire field copying process:
+ * 1. Validates the selected node
+ * 2. Collects configuration from the user
+ * 3. Generates the copied field lines
+ * 4. Inserts the field into the target record
+ * 
  * @param node - The selected DDS node from the tree view
  */
 async function handleCopyFieldCommand(node: DdsNode): Promise<void> {
@@ -93,6 +107,7 @@ async function handleCopyFieldCommand(node: DdsNode): Promise<void> {
             return;
         };
 
+        // Get the active editor and document
         const editor = ExtensionState.lastDdsEditor;
         const document = editor?.document ?? ExtensionState.lastDdsDocument;
         if (!document || !editor) {
@@ -100,35 +115,41 @@ async function handleCopyFieldCommand(node: DdsNode): Promise<void> {
             return;
         };
 
+        // Ensure we're working with a field
         if (node.ddsElement.kind !== "field") {
             vscode.window.showWarningMessage("Only fields can be copied.");
             return;
         };
         
+        // Convert the DDS element to internal FieldInfo format
         const sourceElement = toFieldInfo(node.ddsElement as DdsField);
                 
-        // Find the source record
+        // Find the record containing the source field
         const sourceRecord = findRecordContainingField(sourceElement.name, sourceElement.lineIndex);
         if (!sourceRecord) {
             vscode.window.showErrorMessage(`Could not determine source record for field '${sourceElement.name}'.`);
             return;
         };
 
+        // Check if the field is hidden (no screen position)
+        const isHidden = isFieldHidden(node.ddsElement as DdsField);
+
         // Collect copy configuration from user
-        const copyConfig = await collectCopyConfiguration(editor, sourceElement, sourceRecord);
+        const copyConfig = await collectCopyConfiguration(editor, sourceElement, sourceRecord, isHidden);
         if (!copyConfig) {
             return; // User cancelled
         };
 
         // Generate the copied field lines (including all attributes and indicators)
-        const copiedFieldLines = await generateCopiedFieldLines(editor, copyConfig);
+        const copiedFieldLines = await generateCopiedFieldLines(editor, copyConfig, isHidden);
 
         // Insert the copied field into the target record
         await insertCopiedField(editor, copyConfig.targetRecord, copiedFieldLines);
 
         // Show success message
+        const positionInfo = isHidden ? "(hidden field)" : `at position ${copyConfig.targetPosition!.row}, ${copyConfig.targetPosition!.column}`;
         vscode.window.showInformationMessage(
-            `Field '${copyConfig.sourceField.name}' successfully copied to '${copyConfig.newName}' in record '${copyConfig.targetRecord}'.`
+            `Field '${copyConfig.sourceField.name}' successfully copied to '${copyConfig.newName}' in record '${copyConfig.targetRecord}' ${positionInfo}.`
         );
 
     } catch (error) {
@@ -139,13 +160,14 @@ async function handleCopyFieldCommand(node: DdsNode): Promise<void> {
 };
 
 /**
- * Converts a parsed DDS field element into an internal FieldInfo structure.
+ * Converts a parsed DDS field element into an internal FieldInfo structure
  * 
  * This function maps the properties from the raw `DdsField` (produced by the DDS parser)
  * into the normalized `FieldInfo` format used internally by the extension.
+ * It handles optional properties and provides sensible defaults.
  * 
- * @param field - The DDS field element to convert.
- * @returns A `FieldInfo` object containing the mapped properties.
+ * @param field - The DDS field element to convert
+ * @returns A `FieldInfo` object containing the mapped properties
  */
 function toFieldInfo(field: DdsField): FieldInfo {
     return {
@@ -167,9 +189,32 @@ function toFieldInfo(field: DdsField): FieldInfo {
 };
 
 /**
- * Collects complete configuration for copying a field
+ * Checks if a field is hidden based on the DDS field definition
+ * 
+ * Hidden fields are those that don't appear on the screen but are used
+ * for data processing purposes.
+ * 
+ * @param field - The DDS field element to check
+ * @returns True if field is hidden, false if it's visible on screen
  */
-async function collectCopyConfiguration(editor: vscode.TextEditor, sourceField: FieldInfo, sourceRecord: string): Promise<CopyFieldConfig | null> {
+function isFieldHidden(field: DdsField): boolean {
+    return field.hidden === true;
+};
+
+/**
+ * Collects complete configuration for copying a field
+ * 
+ * This function guides the user through the process of configuring
+ * how the field should be copied, including target record, new name,
+ * and positioning (for visible fields).
+ * 
+ * @param editor - The VS Code text editor instance
+ * @param sourceField - Information about the source field
+ * @param sourceRecord - Name of the source record
+ * @param isHidden - Whether the field is hidden (no screen position)
+ * @returns Complete copy configuration or null if user cancelled
+ */
+async function collectCopyConfiguration(editor: vscode.TextEditor, sourceField: FieldInfo, sourceRecord: string, isHidden: boolean): Promise<CopyFieldConfig | null> {
     
     // Step 1: Ask for target record (default to same record)
     const targetRecord = await promptForTargetRecord(sourceRecord);
@@ -179,9 +224,13 @@ async function collectCopyConfiguration(editor: vscode.TextEditor, sourceField: 
     const newName = await promptForCopiedFieldName(sourceField, targetRecord);
     if (!newName) return null;
 
-    // Step 3: Get target position
-    const targetPosition = await collectTargetPosition(editor, sourceField, targetRecord, newName);
-    if (!targetPosition) return null;
+    // Step 3: Get target position (only if field is not hidden)
+    let targetPosition : FieldPosition | null = null;
+
+    if (!isHidden) {
+        targetPosition = await collectTargetPosition(editor, sourceField, targetRecord, newName);
+        if (!targetPosition) return null;
+    };
 
     return {
         sourceField,
@@ -194,9 +243,15 @@ async function collectCopyConfiguration(editor: vscode.TextEditor, sourceField: 
 
 /**
  * Prompts user to select target record
+ * 
+ * Presents a quick pick list of available records, with the source record
+ * shown first as the default option.
+ * 
+ * @param sourceRecord - Name of the source record (shown as default)
+ * @returns Selected target record name or null if cancelled
  */
 async function promptForTargetRecord(sourceRecord: string): Promise<string | null> {
-    // Get all available records
+    // Get all available records from the global state
     const availableRecords = fieldsPerRecords.map(r => r.record);
     
     if (availableRecords.length === 0) {
@@ -224,7 +279,7 @@ async function promptForTargetRecord(sourceRecord: string): Promise<string | nul
 
     const selection = await vscode.window.showQuickPick(recordOptions, {
         title: 'Select target record',
-        placeHolder: `Choose record to copy field to (default: ${sourceRecord})`,
+        placeHolder: `Choose record to copy field to.`,
         canPickMany: false,
         ignoreFocusOut: true
     });
@@ -234,6 +289,13 @@ async function promptForTargetRecord(sourceRecord: string): Promise<string | nul
 
 /**
  * Prompts for the name of the copied field
+ * 
+ * Shows an input box with a suggested default name and validates
+ * the input according to DDS field naming rules.
+ * 
+ * @param sourceField - Information about the source field
+ * @param targetRecord - Name of the target record
+ * @returns New field name or null if cancelled
  */
 async function promptForCopiedFieldName(sourceField: FieldInfo, targetRecord: string): Promise<string | null> {
     // Suggest a default name (original name + copy suffix or increment)
@@ -252,6 +314,16 @@ async function promptForCopiedFieldName(sourceField: FieldInfo, targetRecord: st
 
 /**
  * Generates a default name for the copied field
+ * 
+ * Tries to create a unique name by:
+ * 1. Using the original name if available
+ * 2. Adding numeric suffixes (01, 02, etc.)
+ * 3. Shortening the base name if needed
+ * 4. Falling back to 'NEWFIELD' as last resort
+ * 
+ * @param originalName - The original field name
+ * @param targetRecord - The target record name
+ * @returns A suggested unique field name
  */
 function generateDefaultCopyName(originalName: string, targetRecord: string): string {
     let baseName = originalName;
@@ -288,6 +360,18 @@ function generateDefaultCopyName(originalName: string, targetRecord: string): st
 
 /**
  * Validates the name for the copied field
+ * 
+ * Ensures the field name follows DDS naming conventions:
+ * - Not empty
+ * - Maximum 10 characters
+ * - No spaces
+ * - Cannot start with a number
+ * - Only valid characters (letters, numbers, @, #, $, _, -)
+ * - Must be unique in the target record
+ * 
+ * @param value - The field name to validate
+ * @param targetRecord - The target record name
+ * @returns Validation error message or null if valid
  */
 function validateCopiedFieldName(value: string, targetRecord: string): string | null {
     const trimmedValue = value.trim();
@@ -322,6 +406,17 @@ function validateCopiedFieldName(value: string, targetRecord: string): string | 
 
 /**
  * Collects target position for the copied field
+ * 
+ * Offers three positioning methods:
+ * 1. Same position as source
+ * 2. Absolute position (user enters row/column)
+ * 3. Relative to existing element
+ * 
+ * @param editor - The VS Code text editor instance
+ * @param sourceField - Information about the source field
+ * @param targetRecord - Name of the target record
+ * @param newName - New name for the copied field
+ * @returns Target position or null if cancelled
  */
 async function collectTargetPosition(editor: vscode.TextEditor, sourceField: FieldInfo, targetRecord: string, newName: string): Promise<FieldPosition | null> {
     // Ask for positioning method
@@ -374,6 +469,12 @@ async function collectTargetPosition(editor: vscode.TextEditor, sourceField: Fie
 
 /**
  * Gets absolute position from user input
+ * 
+ * Prompts the user for specific row and column coordinates
+ * and validates them against screen boundaries.
+ * 
+ * @param fieldName - Name of the field being positioned
+ * @returns Absolute position or null if cancelled
  */
 async function getAbsolutePosition(fieldName: string): Promise<FieldPosition | null> {
     // Get row position
@@ -402,6 +503,14 @@ async function getAbsolutePosition(fieldName: string): Promise<FieldPosition | n
 
 /**
  * Gets relative position based on existing elements
+ * 
+ * Allows the user to position the new field relative to an existing
+ * field or constant in the target record.
+ * 
+ * @param editor - The VS Code text editor instance
+ * @param targetRecord - Name of the target record
+ * @param fieldLength - Length of the field being positioned
+ * @returns Relative position or null if cancelled
  */
 async function getRelativePosition(editor: vscode.TextEditor, targetRecord: string, fieldLength: number): Promise<FieldPosition | null> {
     // Get existing elements in the target record
@@ -455,7 +564,7 @@ async function getRelativePosition(editor: vscode.TextEditor, targetRecord: stri
 
     if (!relativePosition) return null;
 
-    // Calculate new position
+    // Calculate new position based on reference element
     const referenceElement = selectedElement.element;
     let newRow: number;
     let newColumn: number;
@@ -471,7 +580,7 @@ async function getRelativePosition(editor: vscode.TextEditor, targetRecord: stri
             break;
         case "right":
             newRow = referenceElement.row;
-            newColumn = referenceElement.column + referenceElement.width + 1; // +1 for spacing
+            newColumn = referenceElement.column + referenceElement.width + 1;
             break;
         default:
             return null;
@@ -496,21 +605,33 @@ async function getRelativePosition(editor: vscode.TextEditor, targetRecord: stri
 
 /**
  * Generates the DDS lines for the copied field (including all attributes and indicators)
+ * 
+ * Creates all the DDS source lines needed for the copied field, including:
+ * - Main field definition line
+ * - Continuation lines for attributes
+ * - Indicator specifications
+ * 
+ * @param editor - The VS Code text editor instance
+ * @param config - Complete copy configuration
+ * @param isHidden - Whether the field is hidden (no screen position)
+ * @returns Array of DDS source lines for the copied field
  */
-async function generateCopiedFieldLines(editor: vscode.TextEditor, config: CopyFieldConfig): Promise<string[]> {
+async function generateCopiedFieldLines(editor: vscode.TextEditor, config: CopyFieldConfig, isHidden: boolean): Promise<string[]> {
     const document = editor.document;
     const lines: string[] = [];
 
     // Get all lines for the source field (main line + continuation lines)
     const startLine = config.sourceField.lineIndex;
     let endLine = config.sourceField.lastLineIndex;
-    // Add field attributes lines
+    
+    // Add field attributes lines to determine the full range
     for (let i = 0; i < config.sourceField.attributes.length; i++) {
         if (config.sourceField.attributes[i].lastLineIndex > endLine) {
             endLine = config.sourceField.attributes[i].lastLineIndex;
         };
     };
 
+    // Copy all lines from source field
     for (let lineIndex = startLine; lineIndex <= endLine; lineIndex++) {
         if (lineIndex >= document.lineCount) break;
 
@@ -519,7 +640,7 @@ async function generateCopiedFieldLines(editor: vscode.TextEditor, config: CopyF
 
         // For the first line, update name and position
         if (lineIndex === startLine) {
-            copiedLine = updateMainFieldLine(originalLine, config);
+            copiedLine = updateMainFieldLine(originalLine, config, isHidden);
         };
         // For continuation lines, just copy as-is (they contain attributes/indicators)
         
@@ -531,25 +652,48 @@ async function generateCopiedFieldLines(editor: vscode.TextEditor, config: CopyF
 
 /**
  * Updates the main field line with new name and position
+ * 
+ * Modifies the DDS source line to use the new field name and position
+ * while preserving all other field attributes.
+ * 
+ * @param originalLine - The original DDS source line
+ * @param config - Complete copy configuration
+ * @param isHidden - Whether the field is hidden (no screen position)
+ * @returns Updated DDS source line
  */
-function updateMainFieldLine(originalLine: string, config: CopyFieldConfig): string {
+function updateMainFieldLine(originalLine: string, config: CopyFieldConfig, isHidden: boolean): string {
     let line = originalLine.padEnd(80, ' ');
 
-    // Update field name (columns 19-28)
+    // Update field name (columns 19-28, 0-based: 18-27)
     const paddedName = config.newName.padEnd(10, ' ');
     line = replaceAt(line, COPY_CONSTANTS.NAME_COLUMN_START, paddedName);
 
-    // Update position (columns 40-41 for row, 43-44 for column)
-    const rowStr = config.targetPosition.row.toString().padStart(2, ' ');
-    const colStr = config.targetPosition.column.toString().padStart(2, ' ');
-    line = replaceAt(line, COPY_CONSTANTS.ROW_COLUMN_START, rowStr);
-    line = replaceAt(line, COPY_CONSTANTS.COLUMN_COLUMN_START, colStr);
+    // Update position only for visible fields
+    if (!isHidden && config.targetPosition) {
+        // Update position (columns 40-41 row, 43-44 col, 0-based: 39-40, 42-43)
+        const rowStr = config.targetPosition.row.toString().padStart(2, ' ');
+        const colStr = config.targetPosition.column.toString().padStart(2, ' ');
+        line = replaceAt(line, COPY_CONSTANTS.ROW_COLUMN_START, rowStr);
+        line = replaceAt(line, COPY_CONSTANTS.COLUMN_COLUMN_START, colStr);
+    } else if (isHidden) {
+        // For hidden fields, clear the position columns
+        line = replaceAt(line, COPY_CONSTANTS.ROW_COLUMN_START, '  ');
+        line = replaceAt(line, COPY_CONSTANTS.COLUMN_COLUMN_START, '  ');
+    };
 
     return line.trimEnd();
 };
 
 /**
  * Helper function to replace characters at specific position
+ * 
+ * Replaces a substring in a string starting at the specified index
+ * with the replacement text.
+ * 
+ * @param str - The original string
+ * @param index - Starting index for replacement (0-based)
+ * @param replacement - The replacement text
+ * @returns Modified string with replacement applied
  */
 function replaceAt(str: string, index: number, replacement: string): string {
     return str.substring(0, index) + replacement + str.substring(index + replacement.length);
@@ -557,6 +701,13 @@ function replaceAt(str: string, index: number, replacement: string): string {
 
 /**
  * Inserts the copied field into the target record
+ * 
+ * Uses VS Code's WorkspaceEdit API to insert all the generated
+ * DDS lines for the copied field at the appropriate location.
+ * 
+ * @param editor - The VS Code text editor instance
+ * @param targetRecord - Name of the target record
+ * @param fieldLines - Array of DDS source lines to insert
  */
 async function insertCopiedField(editor: vscode.TextEditor, targetRecord: string, fieldLines: string[]): Promise<void> {
     const workspaceEdit = new vscode.WorkspaceEdit();
@@ -565,8 +716,6 @@ async function insertCopiedField(editor: vscode.TextEditor, targetRecord: string
     // Find insertion point in target record
     const insertLineIndex = findFieldInsertionPoint(targetRecord);
     
-    // Insert all lines for the copied field
-
     // Build full block text with line breaks
     let blockText = fieldLines.join('\n');
 
@@ -577,6 +726,11 @@ async function insertCopiedField(editor: vscode.TextEditor, targetRecord: string
 
     // Create the insertion position
     const insertPosition = new vscode.Position(insertLineIndex, 0);
+
+    // Insert newline if we're at the end of the document
+    if (insertPosition.line >= editor.document.lineCount) {
+        workspaceEdit.insert(uri, insertPosition, '\n');
+    };
 
     // Insert the block at once
     workspaceEdit.insert(uri, insertPosition, blockText);
@@ -591,6 +745,12 @@ async function insertCopiedField(editor: vscode.TextEditor, targetRecord: string
 
 /**
  * Validates that the selected node is valid for copying
+ * 
+ * Checks if the provided node contains a valid DDS element
+ * and specifically if it's a field (the only copyable element type).
+ * 
+ * @param node - The DDS node to validate
+ * @returns Validation result with success status and optional error message
  */
 function validateNodeForCopy(node: DdsNode): ValidationResult {
     if (!node?.ddsElement) {
@@ -612,6 +772,13 @@ function validateNodeForCopy(node: DdsNode): ValidationResult {
 
 /**
  * Finds the record that contains a specific field
+ * 
+ * Searches through all records to find which one contains
+ * the field at the specified line index.
+ * 
+ * @param fieldName - Name of the field to find
+ * @param lineIndex - Line index where the field is defined
+ * @returns Record name or null if not found
  */
 function findRecordContainingField(fieldName: string, lineIndex: number): string | null {
     for (const record of fieldsPerRecords) {
@@ -624,6 +791,13 @@ function findRecordContainingField(fieldName: string, lineIndex: number): string
 
 /**
  * Checks if a field exists in a specific record
+ * 
+ * Searches the specified record to see if a field with
+ * the given name already exists.
+ * 
+ * @param fieldName - Name of the field to check
+ * @param recordName - Name of the record to search in
+ * @returns True if field exists, false otherwise
  */
 function fieldExistsInRecord(fieldName: string, recordName: string): boolean {
     const record = fieldsPerRecords.find(r => 
@@ -639,6 +813,16 @@ function fieldExistsInRecord(fieldName: string, recordName: string): boolean {
 
 /**
  * Checks if a position is available (not occupied by another element)
+ * 
+ * Verifies that the proposed position doesn't overlap with
+ * any existing fields or constants in the target record.
+ * 
+ * @param editor - The VS Code text editor instance
+ * @param recordName - Name of the record to check
+ * @param row - Row position to check
+ * @param col - Column position to check
+ * @param length - Length of the field to place
+ * @returns True if position is available, false if occupied
  */
 async function isPositionAvailable(editor: vscode.TextEditor, recordName: string, row: number, col: number, length: number): Promise<boolean> {
     const existingElements = await getExistingElementsInRecord(editor, recordName);
@@ -664,6 +848,13 @@ async function isPositionAvailable(editor: vscode.TextEditor, recordName: string
 
 /**
  * Gets existing elements in a record
+ * 
+ * Retrieves all fields and constants in the specified record,
+ * sorted by position for easy reference during positioning.
+ * 
+ * @param editor - The VS Code text editor instance
+ * @param recordName - Name of the record to analyze
+ * @returns Array of existing elements with position information
  */
 async function getExistingElementsInRecord(editor: vscode.TextEditor, recordName: string): Promise<ExistingElementInfo[]> {
     const record = fieldsPerRecords.find(r => r.record === recordName);
@@ -671,17 +862,19 @@ async function getExistingElementsInRecord(editor: vscode.TextEditor, recordName
 
     const elements: ExistingElementInfo[] = [];
 
-    // Add fields
+    // Add fields that have screen positions
     for (const field of record.fields) {
-        elements.push({
-            name: field.name,
-            text: field.name,
-            row: field.row,
-            column: field.col,
-            width: field.length,
-            lineIndex: field.lineIndex,
-            type: 'field'
-        });
+        if (field.row > 0 && field.col > 0) {
+            elements.push({
+                name: field.name,
+                text: field.name,
+                row: field.row,
+                column: field.col,
+                width: field.length,
+                lineIndex: field.lineIndex,
+                type: 'field'
+            });
+        };
     };
 
     // Add constants
@@ -697,7 +890,7 @@ async function getExistingElementsInRecord(editor: vscode.TextEditor, recordName
         });
     };
 
-    // Sort by row, then by column
+    // Sort by row first, then column
     elements.sort((a, b) => {
         if (a.row !== b.row) return a.row - b.row;
         return a.column - b.column;
@@ -708,16 +901,32 @@ async function getExistingElementsInRecord(editor: vscode.TextEditor, recordName
 
 /**
  * Finds the insertion point for a new field in a record
+ * 
+ * Determines the line index where a new field should be inserted
+ * within the target record (typically at the end of the record).
+ * 
+ * @param recordName - Name of the record where field will be inserted
+ * @returns Line index for insertion
  */
 function findFieldInsertionPoint(recordName: string): number {
     const record = fieldsPerRecords.find(r => r.record === recordName);
     if (!record) return 0;
     
+    // Insert at the end of the record
     return record.endIndex + 1;
 };
 
 /**
  * Validates numeric input within range
+ * 
+ * Ensures that user input is a valid number within the specified range.
+ * Used for validating row and column positions.
+ * 
+ * @param value - The input value to validate
+ * @param min - Minimum allowed value (inclusive)
+ * @param max - Maximum allowed value (inclusive)  
+ * @param fieldName - Name of the field being validated (for error messages)
+ * @returns Validation error message or null if valid
  */
 function validateNumericRange(value: string, min: number, max: number, fieldName: string): string | null {
     if (!value || value.trim() === '') {
