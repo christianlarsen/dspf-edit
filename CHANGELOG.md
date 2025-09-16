@@ -121,4 +121,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - The control record is created with: SFLSIZ, SFLPAG, OVERLAY, RTNCSRLOC, SFLCSRRRN, SFLDSP, SFLDSPCTL,
     SFLCLR and SFLEND. SFLDSP, SFLDSPCTL, SLFEND with N80 indicator, and SFLCLR with 80 indicator.
     Also some hidden fields are added: NRR, NBR, WSRECNAM, WSFLDNAM, and WSFLRRN.
-    (all this will be configurable in future versions). 
+    (all this will be configurable in future versions).
