@@ -157,7 +157,7 @@ function parseSingleDdsLine(
 function extractLineComponents(trimmedLine: string) {
     const indicators = parseDdsIndicators(trimmedLine.substring(2, 11));
     const fieldName = trimmedLine.substring(13, 23).trim();
-    const rowText = trimmedLine.substring(34, 37).trim();
+    const rowText = trimmedLine.substring(33, 36).trim();
     const colText = trimmedLine.substring(36, 39).trim();
     const row = rowText ? Number(rowText) : undefined;
     const col = colText ? Number(colText) : undefined;

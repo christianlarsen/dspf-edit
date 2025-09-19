@@ -6,21 +6,19 @@
 
 import * as vscode from 'vscode';
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
-import { isDdsFile } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, isDdsFile } from '../dspf-edit.utils/dspf-edit.helper';
 import { parseDocument } from '../dspf-edit.parser/dspf-edit.parser';
-import { ExtensionState } from '../dspf-edit.states/state';
 
 export function viewStructure(context: vscode.ExtensionContext, treeProvider: DdsTreeProvider) {
 
     context.subscriptions.push(
 		vscode.commands.registerCommand('dds-aid.view-structure', () => {
-			const editor = ExtensionState.lastDdsEditor;
-			const document = editor?.document ?? ExtensionState.lastDdsDocument;
+			// Check for editor and document
+			const { editor, document } = checkForEditorAndDocument();
 			if (!document || !editor) {
-				vscode.window.showErrorMessage('No DDS editor found.');
 				return;
-			};
-			
+			};		
+
 			if (editor && document && isDdsFile(document)) {
 				const text = editor.document.getText();
 				treeProvider.setElements(parseDocument(text));

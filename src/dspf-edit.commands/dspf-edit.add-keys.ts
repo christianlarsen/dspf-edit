@@ -9,9 +9,10 @@ import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { attributesFileLevel, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
 import {
     isAttributeLine, findElementInsertionPointRecordFirstLine, findElementInsertionPointFileFirstLine,
-    handleDspsizWorkflow, DspsizConfig
+    handleDspsizWorkflow, DspsizConfig,
+    checkForEditorAndDocument,
+    groupConsecutiveLines
 } from '../dspf-edit.utils/dspf-edit.helper';
-import { ExtensionState } from '../dspf-edit.states/state';
 
 // INTERFACES AND TYPES
 
@@ -46,10 +47,9 @@ export function addKeyCommand(context: vscode.ExtensionContext): void {
  */
 async function handleAddKeyCommandCommand(node: DdsNode): Promise<void> {
     try {
-        const editor = ExtensionState.lastDdsEditor;
-        const document = editor?.document ?? ExtensionState.lastDdsDocument;
+        // Check for editor and document
+        const { editor, document } = checkForEditorAndDocument();
         if (!document || !editor) {
-            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 
@@ -630,39 +630,6 @@ function calculateKeyCommandDeletionRanges(
     return ranges;
 };
 
-/**
- * Groups consecutive line numbers together for more efficient batch deletion.
- * @param lines - Array of line indices (should be sorted)
- * @returns Array of arrays, where each sub-array contains consecutive line numbers
- */
-function groupConsecutiveLines(lines: number[]): number[][] {
-    if (lines.length === 0) return [];
-
-    // Ensure lines are sorted
-    const sortedLines = [...lines].sort((a, b) => a - b);
-    const groups: number[][] = [];
-    let currentGroup: number[] = [sortedLines[0]];
-
-    for (let i = 1; i < sortedLines.length; i++) {
-        const currentLine = sortedLines[i];
-        const previousLine = sortedLines[i - 1];
-
-        if (currentLine === previousLine + 1) {
-            // Consecutive line - add to current group
-            currentGroup.push(currentLine);
-        } else {
-            // Non-consecutive line - start new group
-            groups.push(currentGroup);
-            currentGroup = [currentLine];
-        };
-    };
-
-    // Don't forget the last group
-    groups.push(currentGroup);
-
-    return groups;
-};
-
 // LINE CREATION AND DETECTION FUNCTIONS
 
 /**
@@ -748,27 +715,4 @@ function findExistingKeyCommandLinesInFile(editor: vscode.TextEditor): number[] 
     };
 
     return keyCommandLines;
-};
-
-/**
- * Parses indicators from a DDS line at positions 7-9, 10-12, 13-15.
- * @param lineText - The DDS line text
- * @returns Array of indicator codes found
- */
-function parseIndicatorsFromLine(lineText: string): string[] {
-    const indicators: string[] = [];
-
-    // Check positions 7-9, 10-12, 13-15 (0-based: 6-8, 9-11, 12-14)
-    const positions = [6, 9, 12];
-
-    for (const pos of positions) {
-        if (lineText.length > pos + 2) {
-            const indicator = lineText.substring(pos, pos + 3).trim();
-            if (indicator && /^N?[0-9]{1,2}$/.test(indicator)) {
-                indicators.push(indicator);
-            };
-        };
-    };
-
-    return indicators;
 };

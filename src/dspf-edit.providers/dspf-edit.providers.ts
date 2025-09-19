@@ -507,7 +507,7 @@ export class DdsNode extends vscode.TreeItem {
 		this.description = this.getDescription(ddsElement);
 		
 		if (label === '📂 Records') {
-			this.contextValue = 'group:records' 
+			this.contextValue = 'group:records'; 
 		} else {
 			this.contextValue = ddsElement.kind;
 		};

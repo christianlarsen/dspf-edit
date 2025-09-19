@@ -8,7 +8,7 @@ import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { DdsConstant } from '../dspf-edit.model/dspf-edit.model';
 import { updateExistingConstant } from './dspf-edit.edit-constant';
-import { ExtensionState } from '../dspf-edit.states/state';
+import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
@@ -48,10 +48,9 @@ export function fillConstant(context: vscode.ExtensionContext): void {
  */
 async function handleFillConstantCommand(node: DdsNode): Promise<void> {
     try {
-        const editor = ExtensionState.lastDdsEditor;
-        const document = editor?.document ?? ExtensionState.lastDdsDocument;
+        // Check for editor and document
+        const { editor, document } = checkForEditorAndDocument();
         if (!document || !editor) {
-            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 

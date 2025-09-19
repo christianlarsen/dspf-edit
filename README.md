@@ -99,11 +99,16 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.7.0** - 2025-09-14
-- Added: Ability to copy a Field/Constant to a different record or to a different position within the same record.  
-  If copying a field, you must provide a new name if one with the same name already exists in the destination record.
-- Fixed: There were an issue when sorting items in a record that had hidden fields. These fields now appear first in the sort order.
-
+**0.7.1** - 2025-09-19
+- Refactored: Internal refactoring and code cleanup.
+- Fixed: 3-digit rows/columns were not being parsed correctly.
+- Changed: Improved subfile record creation (both regular and window subfiles):
+  - Every subfile is created with a control record (header), and the subfile record (detail).
+  - The control record is created with: SFLSIZ, SFLPAG, OVERLAY, RTNCSRLOC, SFLCSRRRN, SFLDSP, SFLDSPCTL,
+    SFLCLR and SFLEND. SFLDSP, SFLDSPCTL, SLFEND with N80 indicator, and SFLCLR with 80 indicator.
+    Also some hidden fields are added: NRR, NBR, WSRECNAM, WSFLDNAM, and WSFLRRN.
+    (all this will be configurable in future versions).
+    
 ---
 
 💬 **Feedback is welcome!** Please leave a comment, open an issue, and enjoy using DSPF-edit.

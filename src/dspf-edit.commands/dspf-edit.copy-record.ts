@@ -6,8 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { recordExists } from '../dspf-edit.utils/dspf-edit.helper';
-import { ExtensionState } from '../dspf-edit.states/state';
+import { checkForEditorAndDocument, recordExists } from '../dspf-edit.utils/dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
@@ -54,6 +53,12 @@ export function copyRecord(context: vscode.ExtensionContext): void {
  */
 async function handleCopyRecordCommand(node: DdsNode): Promise<void> {
     try {
+        // Check for editor and document
+        const { editor, document } = checkForEditorAndDocument();
+        if (!document || !editor) {
+            return;
+        };
+
         const element = node.ddsElement;
 
         // Validate element type
@@ -62,13 +67,6 @@ async function handleCopyRecordCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        const editor = ExtensionState.lastDdsEditor;
-        const document = editor?.document ?? ExtensionState.lastDdsDocument;
-        if (!document || !editor) {
-            vscode.window.showErrorMessage('No DDS editor found.');
-            return;
-        };
-        
         // Detect record boundaries
         const recordBoundary = detectRecordBoundaries(editor, element);
         if (recordBoundary.totalLines === 0) {

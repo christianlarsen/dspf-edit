@@ -7,7 +7,40 @@
 import * as vscode from 'vscode';
 import { DdsNode } from './../dspf-edit.providers/dspf-edit.providers';
 import { getRecordSize, fieldsPerRecords, DdsSize, getDefaultSize } from '../dspf-edit.model/dspf-edit.model';
-import { ExtensionState } from './../dspf-edit.states/state';
+import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
+
+// TYPE DEFINITIONS
+
+/**
+ * Represents a button definition with function key and label.
+ */
+interface ButtonDefinition {
+    key: string;    // Function key (e.g., "F1", "F12")
+    label: string;  // Button label text
+};
+
+/**
+ * Contains comprehensive information about a record needed for button placement.
+ */
+interface RecordInformation {
+    name: string;
+    size: any;              // Record size information
+    info: any;              // Additional record information
+    endLineIndex: number;   // Line index where the record ends
+    visibleStart: number;   // Starting row for visible area
+    maxColumns: number;     // Maximum columns available
+    isWindow : boolean;     // True is it is a window
+};
+
+/**
+ * Contains layout information for button placement.
+ */
+interface ButtonLayout {
+    startRow: number;       // Starting row for first button
+    startCol: number;       // Starting column for buttons
+    rowsNeeded: number;     // Total rows needed for all buttons
+    spacing: number;        // Space between buttons
+};
 
 // COMMAND REGISTRATION
 
@@ -33,10 +66,9 @@ export function addButtons(context: vscode.ExtensionContext): void {
  */
 async function handleAddButtonsCommand(node: DdsNode): Promise<void> {
     try {
-        const editor = ExtensionState.lastDdsEditor;
-        const document = editor?.document ?? ExtensionState.lastDdsDocument;
+        // Check for editor and document
+        const { editor, document } = checkForEditorAndDocument();
         if (!document || !editor) {
-            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
         
@@ -401,38 +433,5 @@ function sortButtonsByFKeyOrder(buttons: ButtonDefinition[]): ButtonDefinition[]
 export function findRecordInsertionPoint(recordName: string): number | null {
     const recordInfo = fieldsPerRecords.find(r => r.record === recordName);
     return recordInfo ? recordInfo.endIndex + 1 : null;
-};
-
-// TYPE DEFINITIONS
-
-/**
- * Represents a button definition with function key and label.
- */
-interface ButtonDefinition {
-    key: string;    // Function key (e.g., "F1", "F12")
-    label: string;  // Button label text
-};
-
-/**
- * Contains comprehensive information about a record needed for button placement.
- */
-interface RecordInformation {
-    name: string;
-    size: any;              // Record size information
-    info: any;              // Additional record information
-    endLineIndex: number;   // Line index where the record ends
-    visibleStart: number;   // Starting row for visible area
-    maxColumns: number;     // Maximum columns available
-    isWindow : boolean;     // True is it is a window
-};
-
-/**
- * Contains layout information for button placement.
- */
-interface ButtonLayout {
-    startRow: number;       // Starting row for first button
-    startCol: number;       // Starting column for buttons
-    rowsNeeded: number;     // Total rows needed for all buttons
-    spacing: number;        // Space between buttons
 };
 

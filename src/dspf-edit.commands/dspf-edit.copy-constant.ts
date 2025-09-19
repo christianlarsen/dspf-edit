@@ -6,8 +6,8 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { fieldsPerRecords, ConstantInfo, FieldsPerRecord, DdsConstant, AttributeWithIndicators } from '../dspf-edit.model/dspf-edit.model';
-import { ExtensionState } from '../dspf-edit.states/state';
+import { fieldsPerRecords, ConstantInfo, DdsConstant, AttributeWithIndicators } from '../dspf-edit.model/dspf-edit.model';
+import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
 
 /**
  * Interface for constant copy configuration
@@ -85,17 +85,16 @@ export function copyConstant(context: vscode.ExtensionContext): void {
  */
 async function handleCopyConstantCommand(node: DdsNode): Promise<void> {
     try {
+        // Check for editor and document
+        const { editor, document } = checkForEditorAndDocument();
+        if (!document || !editor) {
+            return;
+        };
+
         // Validate the selected node
         const validationResult = validateNodeForCopy(node);
         if (!validationResult.isValid) {
             vscode.window.showWarningMessage(validationResult.errorMessage!);
-            return;
-        };
-
-        const editor = ExtensionState.lastDdsEditor;
-        const document = editor?.document ?? ExtensionState.lastDdsDocument;
-        if (!document || !editor) {
-            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 

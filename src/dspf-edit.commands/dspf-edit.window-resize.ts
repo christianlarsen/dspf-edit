@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fileSizeAttributes, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
-import { ExtensionState } from '../dspf-edit.states/state';
+import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
@@ -82,18 +82,17 @@ export function windowResize(context: vscode.ExtensionContext): void {
  */
 async function handleWindowResizeCommand(node: DdsNode): Promise<void> {
     try {
+        // Check for editor and document
+        const { editor, document } = checkForEditorAndDocument();
+        if (!document || !editor) {
+            return;
+        };
+        
         const element = node.ddsElement;
 
         // Validate element type - only records can have windows
         if (element.kind !== "record") {
             vscode.window.showWarningMessage("Window resize can only be applied to record formats.");
-            return;
-        };
-
-        const editor = ExtensionState.lastDdsEditor;
-        const document = editor?.document ?? ExtensionState.lastDdsDocument;
-        if (!document || !editor) {
-            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 

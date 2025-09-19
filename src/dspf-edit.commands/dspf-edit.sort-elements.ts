@@ -6,8 +6,8 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { ExtensionState } from '../dspf-edit.states/state';
 import { fieldsPerRecords, FieldInfo, ConstantInfo, DdsRecord } from '../dspf-edit.model/dspf-edit.model';
+import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
@@ -52,10 +52,9 @@ export function sortElements(context: vscode.ExtensionContext): void {
  */
 async function handleSortElementsCommand(node: DdsNode): Promise<void> {
     try {
-        const editor = ExtensionState.lastDdsEditor;
-        const document = editor?.document ?? ExtensionState.lastDdsDocument;
+        // Check for editor and document
+        const { editor, document } = checkForEditorAndDocument();
         if (!document || !editor) {
-            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 

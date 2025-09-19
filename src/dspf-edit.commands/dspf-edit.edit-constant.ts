@@ -7,8 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fileSizeAttributes, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
-import { findEndLineIndex } from '../dspf-edit.utils/dspf-edit.helper';
-import { ExtensionState } from '../dspf-edit.states/state';
+import { checkForEditorAndDocument, findEndLineIndex } from '../dspf-edit.utils/dspf-edit.helper';
 
 // TYPE DEFINITIONS
 
@@ -77,18 +76,17 @@ export function addConstant(context: vscode.ExtensionContext): void {
  */
 async function handleEditConstantCommand(node: DdsNode): Promise<void> {
     try {
+        // Check for editor and document
+        const { editor, document } = checkForEditorAndDocument();
+        if (!document || !editor) {
+            return;
+        };
+
         const element = node.ddsElement;
 
         // Validate that the element is a constant
         if (element.kind !== "constant") {
             vscode.window.showWarningMessage("Only constants can be edited.");
-            return;
-        };
-
-        const editor = ExtensionState.lastDdsEditor;
-        const document = editor?.document ?? ExtensionState.lastDdsDocument;
-        if (!document || !editor) {
-            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 
@@ -119,10 +117,9 @@ async function handleEditConstantCommand(node: DdsNode): Promise<void> {
  */
 async function handleAddConstantCommand(node?: DdsNode): Promise<void> {
     try {
-        const editor = ExtensionState.lastDdsEditor;
-        const document = editor?.document ?? ExtensionState.lastDdsDocument;
+        // Check for editor and document
+        const { editor, document } = checkForEditorAndDocument();
         if (!document || !editor) {
-            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
 

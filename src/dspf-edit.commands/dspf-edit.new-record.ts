@@ -7,9 +7,9 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { recordExists, DspsizConfig,
-    checkIfDspsizNeeded, collectDspsizConfiguration, generateDspsizLines } from '../dspf-edit.utils/dspf-edit.helper';
+    checkIfDspsizNeeded, collectDspsizConfiguration, generateDspsizLines, 
+    checkForEditorAndDocument} from '../dspf-edit.utils/dspf-edit.helper';
 import { fileSizeAttributes } from '../dspf-edit.model/dspf-edit.model';
-import { ExtensionState } from '../dspf-edit.states/state';
 
 // INTERFACES AND TYPES
 
@@ -93,15 +93,12 @@ export function newRecord(context: vscode.ExtensionContext): void {
  */
 async function handleNewRecordCommand(node: DdsNode): Promise<void> {
     try {
-        const element = node.ddsElement;
-
-        const editor = ExtensionState.lastDdsEditor;
-        const document = editor?.document ?? ExtensionState.lastDdsDocument;
+        // Check for editor and document
+        const { editor, document } = checkForEditorAndDocument();
         if (!document || !editor) {
-            vscode.window.showErrorMessage('No DDS editor found.');
             return;
         };
-
+        
         // Check if DSPSIZ needs to be defined
         const needsDspsiz = await checkIfDspsizNeeded(editor);
 
@@ -189,7 +186,7 @@ async function collectRecordName(): Promise<string | null> {
     const stepNumber = '1/4'; // Will be adjusted based on whether DSPSIZ is needed
     const recordName = await vscode.window.showInputBox({
         title: `Create New Record - Step ${stepNumber}`,
-        prompt: 'Enter the new record name',
+        prompt: 'Enter the new record name (In case of subfile, this is the subfile detail record name)',
         placeHolder: 'RECORD',
         validateInput: validateRecordName
     });
@@ -460,7 +457,7 @@ function validateWindowTitle(value: string, maxLength: number): string | null {
 async function collectSubfileConfiguration(): Promise<SubfileConfig | null> {
     const controlRecordName = await vscode.window.showInputBox({
         title: 'Subfile Configuration - Control Record',
-        prompt: 'Enter the subfile control record name',
+        prompt: 'Enter the subfile control record name (This is the subfile header record name)',
         placeHolder: 'SFLCTL',
         validateInput: validateRecordName
     });
@@ -549,6 +546,9 @@ function generateRecordLines(config: NewRecordConfig): string[] {
         case 'SFL':
             if (config.subfileConfig) {
                 lines.push(generateSubfileControlLine(config.name, config.subfileConfig));
+                lines.push(generateSubfileSizeLine(config.subfileConfig.size));
+                lines.push(generateSubfilePageLine(config.subfileConfig.page));
+                lines.push(...generateSubfileOtherLines());
             }
             break;
 
@@ -562,6 +562,7 @@ function generateRecordLines(config: NewRecordConfig): string[] {
                 lines.push(...generateWindowBorderLines());
                 lines.push(generateSubfileSizeLine(config.subfileConfig.size));
                 lines.push(generateSubfilePageLine(config.subfileConfig.page));
+                lines.push(...generateSubfileOtherLines());
             }
             break;
     };
@@ -654,10 +655,9 @@ function generateWindowTitleLines(title: string): string[] {
  * @returns Array of formatted window border lines
  */
 function generateWindowBorderLines(): string[] {
-    return [
-        '     A                                      WDWBORDER((*COLOR BLU) (*DSPATR RI)-',
-        "     A                                       (*CHAR '        ')) "
-    ];
+    const baseLine = ' '.repeat(5) + 'A' + ' '.repeat(38) + 'WDWBORDER((*COLOR BLU) (*DSPATR RI)-';
+    const continuationLine = ' '.repeat(5) + 'A' + ' '.repeat(39) + "(*CHAR '" + ' '.repeat(8) + "')) ";
+    return [baseLine, continuationLine];
 };
 
 /**
@@ -687,6 +687,38 @@ function generateSubfileSizeLine(size: number): string {
  */
 function generateSubfilePageLine(page: number): string {
     return ' '.repeat(5) + 'A' + ' '.repeat(38) + 'SFLPAG(' + String(page).padStart(4, '0') + ')';
+};
+
+/**
+ * Generates rest of subfile control lines.
+ * @returns Formatted lines with RTVCSRLOC, OVERLAY, SFLCSRRRN, SFLDSP, SFLDSPCTL, SFLCLR, SLFEND(*MORE)
+ */
+function generateSubfileOtherLines(): string[] {
+    let lines : string[] = [];
+    const lineStart = ' '.repeat(5) + 'A' + ' '.repeat(38);
+    const lineStartField = ' '.repeat(5) + 'A' + ' '.repeat(12);
+
+    // Define lines
+    lines[0] = lineStart + 'OVERLAY';
+    lines[1] = lineStart + 'RTNCSRLOC(&WSRECNAM &WSFLDNAM)';
+    lines[2] = lineStart + 'SFLCSRRRN(&WSFLRRN)';
+    lines[3] = lineStart + 'SFLDSP';
+    lines[4] = lineStart + 'SFLDSPCTL';
+    lines[5] = lineStart + 'SFLCLR';
+    lines[6] = lineStart + 'SFLEND(*MORE)';
+    // Add indicators to SFLDSP, SFLDSPCTL, SFLCLR, SFLEND
+    lines[3] = lines[3].substring(0, 7) + 'N80' + lines[3].substring(10);
+    lines[4] = lines[4].substring(0, 7) + 'N80' + lines[4].substring(10);
+    lines[6] = lines[6].substring(0, 7) + 'N80' + lines[6].substring(10);
+    lines[5] = lines[5].substring(0, 8) + '80' + lines[5].substring(10);
+    // Add lines with hidden fields
+    lines[7] = lineStartField + 'NRR' + ' '.repeat(12) + '4S 0H';
+    lines[8] = lineStartField + 'NBR' + ' '.repeat(12) + '4S 0H';
+    lines[9] = lineStartField + 'WSRECNAM' + ' '.repeat(6) + '10A  H';
+    lines[10] = lineStartField + 'WSFLDNAM' + ' '.repeat(6) + '10A  H';
+    lines[11] = lineStartField + 'WSFLRRN' + ' '.repeat(8) + '5S 0 H';
+
+    return lines;
 };
 
 // DOCUMENT INSERTION FUNCTIONS
