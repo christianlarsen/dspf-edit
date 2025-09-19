@@ -112,10 +112,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## Fixed
 - Fixed an issue when sorting items in a record that had hidden fields. These fields now appear first in the sort order.
 
-### [0.7.1] - 2025-09-15
+### [0.7.1] - 2025-09-19
 ## Refactored
 - Internal refactoring and code cleanup.
 ## Fixed
+- 3-digit rows/columns were not being parsed correctly.
 - Improved subfile record creation (both regular and window subfiles):
   - Every subfile is created with a control record (header), and the subfile record (detail).
   - The control record is created with: SFLSIZ, SFLPAG, OVERLAY, RTNCSRLOC, SFLCSRRRN, SFLDSP, SFLDSPCTL,
