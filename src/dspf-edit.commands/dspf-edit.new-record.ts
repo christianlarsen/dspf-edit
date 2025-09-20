@@ -716,7 +716,7 @@ function generateSubfileOtherLines(): string[] {
     lines[8] = lineStartField + 'NBR' + ' '.repeat(12) + '4S 0H';
     lines[9] = lineStartField + 'WSRECNAM' + ' '.repeat(6) + '10A  H';
     lines[10] = lineStartField + 'WSFLDNAM' + ' '.repeat(6) + '10A  H';
-    lines[11] = lineStartField + 'WSFLRRN' + ' '.repeat(8) + '5S 0 H';
+    lines[11] = lineStartField + 'WSFLRRN' + ' '.repeat(8) + '5S 0H';
 
     return lines;
 };
