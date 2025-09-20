@@ -346,6 +346,7 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 						{
 							...attr,
 							kind: 'attribute',
+							lineIndex: attr.lineIndex ?? group.lineIndex
 						}
 					)
 				)
@@ -371,6 +372,7 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 						{
 							...attr,
 							kind: 'constantAttribute',
+							lineIndex: attr.lineIndex ?? group.lineIndex
 						}
 					)
 				)
@@ -396,6 +398,7 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 						{
 							...attr,
 							kind: 'fieldAttribute',
+							lineIndex: attr.lineIndex ?? group.lineIndex
 						}
 					)
 				)
@@ -532,7 +535,11 @@ export class DdsNode extends vscode.TreeItem {
 			ddsElement.lineIndex !== undefined &&
 			(ddsElement.kind === 'record' ||
 				ddsElement.kind === 'field' ||
-				ddsElement.kind === 'constant')
+				ddsElement.kind === 'constant' ||
+				ddsElement.kind === 'attribute' ||
+				ddsElement.kind === 'constantAttribute' ||
+				ddsElement.kind === 'fieldAttribute'			
+			)
 		);
 	};
 

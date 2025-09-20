@@ -99,9 +99,8 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.7.2** - 2025-09-20
-- Fixed: Issue inserting keyword WSFLRRN in subfile records.
-- Fixed: "Buttons" cannot be inserted in records with SFL keyword.
+**0.7.3** - 2025-09-20
+- Fixed: Corrected navigation when clicking on the attributes.
     
 ---
 
