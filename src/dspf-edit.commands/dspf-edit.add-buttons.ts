@@ -78,6 +78,12 @@ async function handleAddButtonsCommand(node: DdsNode): Promise<void> {
             return;
         };
 
+        // You cannot add buttons to a SFL record
+        if (node.ddsElement.attributes?.some(attr => attr.value.toUpperCase() === 'SFL')) {
+            vscode.window.showWarningMessage('Buttons cannot be added to a SFL record.');
+            return;        
+        };
+
         // Collect button definitions from user
         const buttons = await collectButtonDefinitions();
         if (buttons.length === 0) {

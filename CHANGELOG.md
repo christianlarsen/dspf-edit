@@ -112,14 +112,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## Fixed
 - Fixed an issue when sorting items in a record that had hidden fields. These fields now appear first in the sort order.
 
-### [0.7.1] - 2025-09-19
-## Refactored
-- Internal refactoring and code cleanup.
+### [0.7.2] - 2025-09-20
 ## Fixed
-- 3-digit rows/columns were not being parsed correctly.
-- Improved subfile record creation (both regular and window subfiles):
-  - Every subfile is created with a control record (header), and the subfile record (detail).
-  - The control record is created with: SFLSIZ, SFLPAG, OVERLAY, RTNCSRLOC, SFLCSRRRN, SFLDSP, SFLDSPCTL,
-    SFLCLR and SFLEND. SFLDSP, SFLDSPCTL, SLFEND with N80 indicator, and SFLCLR with 80 indicator.
-    Also some hidden fields are added: NRR, NBR, WSRECNAM, WSFLDNAM, and WSFLRRN.
-    (all this will be configurable in future versions).
+- Issue inserting keyword WSFLRRN in subfile records.
+- "Buttons" cannot be inserted in records with SFL keyword.
