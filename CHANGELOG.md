@@ -133,3 +133,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### [0.7.3] - 2025-09-20
 ## Fixed
 - Corrected navigation when clicking on the attributes.
+
+### [0.8.0] - 2025-09-21
+## Added
+- Ability to remove a constant or a field from the DDS.
