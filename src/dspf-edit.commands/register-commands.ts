@@ -29,6 +29,7 @@ import { windowResize } from './dspf-edit.window-resize';
 import { sortElements } from './dspf-edit.sort-elements';
 import { copyField } from './dspf-edit.copy-field';
 import { copyConstant } from './dspf-edit.copy-constant';
+import { removeElement } from './dspf-edit.remove-element';
 
 export const commands = [
   { name: 'viewStructure', handler: viewStructure, needsTreeProvider: true },
@@ -53,7 +54,8 @@ export const commands = [
   { name: 'windowResize', handler: windowResize, needsTreeProvider: false },
   { name: 'sortElements', handler: sortElements, needsTreeProvider: false },
   { name: 'copyField', handler: copyField, needsTreeProvider: false },
-  { name: 'copyConstant', handler: copyConstant, needsTreeProvider: false }
+  { name: 'copyConstant', handler: copyConstant, needsTreeProvider: false },
+  { name: 'removeElement', handler: removeElement, needsTreeProvider: false }
 ];
 
 /**

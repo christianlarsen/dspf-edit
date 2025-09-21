@@ -28,6 +28,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
   - Right-click options on a record:
     - Add constant.
     - Add field.
+    - Remove field.
     - Copy/Delete record.
     - Add "buttons" (constants for record commands).
     - Assign command keys.
@@ -40,6 +41,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
   - Right-click options:
     - Edit constant.
     - Copy constant (to the same or different record).
+    - Remove constant.
     - Center constant on screen.
     - Change position (absolute position/relative to existing constant).
     - Apply colors/attributes.
@@ -99,9 +101,9 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.7.3** - 2025-09-20
-- Fixed: Corrected navigation when clicking on the attributes.
-    
+**0.8.0** - 2025-09-21
+- Added: Ability to remove an element from the tree (constant/field/attribute).
+
 ---
 
 💬 **Feedback is welcome!** Please leave a comment, open an issue, and enjoy using DSPF-edit.
