@@ -159,7 +159,8 @@
       },
       {
         "command": "dspf-edit.remove-element",
-        "title": "Delete"
+        "title": "Delete",
+        "icon": "$(trash)"
       }
     ],
     "menus": {
@@ -293,6 +294,11 @@
           "command": "dspf-edit.remove-element",
           "when": "view == dspf-edit.schema-view && viewItem == field",
           "group": "fields_constants_navigation1@3"
+        },
+        {
+          "command" : "dspf-edit.remove-element",
+          "when" : "view == dspf-edit.schema-view && (viewItem == constant || viewItem == field)",
+          "group" : "inline"
         }
       ]
     }
