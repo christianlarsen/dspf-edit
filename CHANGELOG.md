@@ -136,4 +136,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### [0.8.0] - 2025-09-21
 ## Added
-- Ability to remove an element from the tree (constant/field/attribute).
+- Ability to remove a constant or a field from the DDS.
