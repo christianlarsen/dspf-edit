@@ -101,6 +101,7 @@ export interface DdsField {
 export interface DdsFieldAttribute {
   kind: 'fieldAttribute';
   lineIndex: number;
+  lastLineIndex: number;
   value: string;
   attribute?: string;
   indicators?: DdsIndicator[];
@@ -126,6 +127,7 @@ export interface DdsConstant {
 export interface DdsConstantAttribute {
   kind: 'constantAttribute';
   lineIndex: number;
+  lastLineIndex: number;
   value: string;
   attribute?: string;
   indicators?: DdsIndicator[];

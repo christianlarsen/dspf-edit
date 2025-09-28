@@ -372,7 +372,8 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 						{
 							...attr,
 							kind: 'constantAttribute',
-							lineIndex: attr.lineIndex ?? group.lineIndex
+							lineIndex: attr.lineIndex ?? group.lineIndex,
+							lastLineIndex: attr.lastLineIndex ?? group.lineIndex
 						}
 					)
 				)
@@ -398,7 +399,8 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 						{
 							...attr,
 							kind: 'fieldAttribute',
-							lineIndex: attr.lineIndex ?? group.lineIndex
+							lineIndex: attr.lineIndex ?? group.lineIndex,
+							lastLineIndex: attr.lastLineIndex ?? group.lineIndex
 						}
 					)
 				)

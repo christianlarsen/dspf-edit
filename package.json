@@ -8,7 +8,7 @@
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
@@ -161,6 +161,11 @@
         "command": "dspf-edit.remove-element",
         "title": "Delete",
         "icon": "$(trash)"
+      },
+      {
+        "command": "dspf-edit.remove-attribute",
+        "title": "Delete",
+        "icon": "$(trash)"
       }
     ],
     "menus": {
@@ -296,8 +301,18 @@
           "group": "fields_constants_navigation1@3"
         },
         {
+          "command": "dspf-edit.remove-attribute",
+          "when": "view == dspf-edit.schema-view && (viewItem == constantAttribute || viewItem == fieldAttribute)",
+          "group": "fields_constants_navigation1@3"
+        },
+        {
           "command" : "dspf-edit.remove-element",
           "when" : "view == dspf-edit.schema-view && (viewItem == constant || viewItem == field)",
+          "group" : "inline"
+        },
+        {
+          "command" : "dspf-edit.remove-attribute",
+          "when" : "view == dspf-edit.schema-view && (viewItem == constantAttribute || viewItem == fieldAttribute)",
           "group" : "inline"
         }
       ]
