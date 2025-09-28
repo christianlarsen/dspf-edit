@@ -101,8 +101,8 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.8.0** - 2025-09-21
-- Added: Ability to remove a constant or a field from the DDS.
+**0.9.0** - 2025-09-28
+- Added: Ability to remove a constant or field attribute from the DDS.
 
 ---
 
