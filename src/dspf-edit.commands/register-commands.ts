@@ -31,6 +31,7 @@ import { copyField } from './dspf-edit.copy-field';
 import { copyConstant } from './dspf-edit.copy-constant';
 import { removeElement } from './dspf-edit.remove-element';
 import { removeAttribute } from './dspf-edit.remove-attribute';
+import { renameField, renameRecord } from './dspf-edit.rename';
 
 export const commands = [
   { name: 'viewStructure', handler: viewStructure, needsTreeProvider: true },
@@ -57,7 +58,9 @@ export const commands = [
   { name: 'copyField', handler: copyField, needsTreeProvider: false },
   { name: 'copyConstant', handler: copyConstant, needsTreeProvider: false },
   { name: 'removeElement', handler: removeElement, needsTreeProvider: false },
-  { name: 'removeAttribute', handler: removeAttribute, needsTreeProvider: false }
+  { name: 'removeAttribute', handler: removeAttribute, needsTreeProvider: false },
+  { name: 'renameField', handler: renameField, needsTreeProvider: false },
+  { name: 'renameRecord', handler: renameRecord, needsTreeProvider: false }
 ];
 
 /**
