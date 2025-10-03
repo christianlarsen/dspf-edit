@@ -54,6 +54,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
   - Right-click options:
     - Edit field.
     - Copy field (to the same or different record).
+    - Remove field.
     - Center field on screen.
     - Change position (absolute position/relative to existing constant/field).
     - Apply colors/attributes.
@@ -64,6 +65,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
 
 - **Attributes**
     - Add / Remove / Change indicators.
+    - Remove attribute.
 
 ---
 
@@ -101,8 +103,8 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.9.0** - 2025-09-28
-- Added: Ability to remove a constant or field attribute from the DDS.
+**0.9.1** - 2025-10-03
+- Fixed: The extension no longer validates whether a constant fits on the screen. Constants that don’t fit can now be viewed by resizing the window.
 
 ---
 
