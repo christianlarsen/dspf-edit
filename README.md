@@ -103,8 +103,8 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.9.1** - 2025-10-03
-- Fixed: The extension no longer validates whether a constant fits on the screen. Constants that don’t fit can now be viewed by resizing the window.
+**0.10.0** - 2025-10-04
+- Added: new rename option for fields and records (button and menu option).
 
 ---
 
