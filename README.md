@@ -103,8 +103,8 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.10.0** - 2025-10-03
-- Added: new rename option for fields and records (button and menu option).
+**0.10.1** - 2025-10-03
+- Fixed: record renaming was not working fine in all cases.
 
 ---
 

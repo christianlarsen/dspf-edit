@@ -92,15 +92,15 @@ async function handleRenameFieldCommand(node: DdsNode): Promise<void> {
         const lineIndex = element.lineIndex;
 
         // Prompt user for new name
-        const newName = await vscode.window.showInputBox({
+        const inputName = await vscode.window.showInputBox({
             prompt: `Enter new name for field "${oldName}"`,
             value: oldName,
             validateInput: (value) => validateFieldName(value, recordName, oldName)
         });
-
-        if (!newName || newName === oldName) {
-            return; // User cancelled or entered same name
+        if (!inputName) {
+            return;
         };
+        const newName = inputName.toUpperCase();
 
         // Create rename info
         const renameInfo: FieldRenameInfo = {
@@ -158,15 +158,15 @@ async function handleRenameRecordCommand(node: DdsNode): Promise<void> {
         };
 
         // Prompt user for new name
-        const newName = await vscode.window.showInputBox({
+        const inputName = await vscode.window.showInputBox({
             prompt: `Enter new name for record "${oldName}"`,
             value: oldName,
             validateInput: (value) => validateRecordName(value, oldName)
         });
-
-        if (!newName || newName === oldName) {
-            return; // User cancelled or entered same name
+        if (!inputName) {
+            return;
         };
+        const newName = inputName.toUpperCase();
 
         // Create rename info
         const renameInfo: RecordRenameInfo = {
@@ -397,27 +397,25 @@ async function executeRecordRename(
     const document = editor.document;
 
     const recordNamePadded = renameInfo.newName.padEnd(10, ' ');
-
-    // Process record line
-
+    
     const line = document.lineAt(renameInfo.startIndex);
     const lineText = line.text;
 
-    // Check if this line has the record name
     const recordNameStart = 18;
     const recordNameEnd = 28;
 
-    if (lineText.length >= recordNameEnd) {
-        const currentRecordInLine = lineText.substring(recordNameStart, recordNameEnd).trim();
+    const paddedLine = lineText.padEnd(recordNameEnd, ' ');
+        
+    const currentRecordInLine = paddedLine.substring(recordNameStart, recordNameEnd).trim();
 
-        // If this line contains the record name, replace it
-        if (currentRecordInLine.toUpperCase() === renameInfo.oldName.toUpperCase()) {
-            const before = lineText.substring(0, recordNameStart);
-            const after = lineText.substring(recordNameEnd);
-            const newLine = before + recordNamePadded + after;
+    // If this line contains the record name (or we're at the start of the range), replace it
+    if (currentRecordInLine.toUpperCase() === renameInfo.oldName.toUpperCase() || 
+        currentRecordInLine === '') {
+        const before = paddedLine.substring(0, recordNameStart);
+        const after = paddedLine.length > recordNameEnd ? paddedLine.substring(recordNameEnd) : '';
+        const newLine = before + recordNamePadded + after;
 
-            workspaceEdit.replace(uri, line.range, newLine);
-        };
+        workspaceEdit.replace(uri, line.range, newLine);
     };
 
     // Apply all edits
