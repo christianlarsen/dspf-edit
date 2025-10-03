@@ -153,7 +153,7 @@ async function getConstantTextFromUser(
     const newText = await vscode.window.showInputBox({
         title: title,
         value: defaultValue,
-        validateInput: value => validateConstantText(value, column)
+        validateInput: value => validateConstantText(value)
     });
 
     return newText || null;
@@ -470,16 +470,9 @@ function parseConstantFromLine(lineText: string, lineIndex: number): ExistingCon
  * @param column - Optional column position for length validation
  * @returns Error message or null if valid
  */
-function validateConstantText(value: string, column?: number): string | null {
+function validateConstantText(value: string): string | null {
     if (value === '') {
         return "The constant text cannot be empty.";
-    };
-
-    if (column) {
-        const totalLength = value.length + 2; // +2 for quotes
-        if (column + totalLength - 1 > fileSizeAttributes.maxCol1) {
-            return "Text too long for the specified position.";
-        };
     };
 
     return null;
