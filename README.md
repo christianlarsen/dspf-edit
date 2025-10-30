@@ -103,8 +103,8 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.10.1** - 2025-10-03
-- Fixed: record renaming was not working fine in all cases.
+**0.10.2** - 2025-10-30
+- Fixed: Bad DSPSIZ parsing.
 
 ---
 

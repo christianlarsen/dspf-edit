@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [0.10.2] - 2025-10-30
+### Fixed
+- Bad DSPSIZ parsing.
+
 ## [0.10.1] - 2025-10-03
 ### Fixed
 - Record renaming was not working fine in all cases.

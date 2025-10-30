@@ -646,45 +646,105 @@ function processFileAttributes(file: DdsFile, ddsElements: DdsElement[]): void {
 };
 
 /**
+ * Parses DSPSIZ content to extract screen size definitions
+ * Handles both explicit sizes: DSPSIZ(24 80 *DS3 27 132 *DS4)
+ * And predefined sizes: DSPSIZ(*DS3 *DS4)
+ * @param dspsizContent - Content within DSPSIZ parentheses
+ * @returns Array of parsed screen size objects
+ */
+function parseDspsizSizes(dspsizContent: string): Array<{ row: number; col: number; name: string }> {
+    const sizes: Array<{ row: number; col: number; name: string }> = [];
+    
+    // Map of predefined display sizes
+    const predefinedSizes: Record<string, { row: number; col: number }> = {
+        '*DS3': { row: 24, col: 80 },
+        '*DS4': { row: 27, col: 132 }
+    };
+
+    // Split by whitespace and process tokens
+    const tokens = dspsizContent.trim().split(/\s+/);
+    
+    let i = 0;
+    while (i < tokens.length) {
+        const token = tokens[i];
+        
+        // Check if it's a predefined size (starts with *)
+        if (token.startsWith('*')) {
+            const predefined = predefinedSizes[token.toUpperCase()];
+            if (predefined) {
+                sizes.push({
+                    row: predefined.row,
+                    col: predefined.col,
+                    name: token.toUpperCase()
+                });
+            };
+            i++;
+        }
+        // Check if it's a numeric size definition
+        else if (/^\d+$/.test(token)) {
+            const row = parseInt(token, 10);
+            
+            // Need at least column value
+            if (i + 1 < tokens.length && /^\d+$/.test(tokens[i + 1])) {
+                const col = parseInt(tokens[i + 1], 10);
+                
+                // Check for optional name parameter
+                let name = '';
+                if (i + 2 < tokens.length && !(/^\d+$/.test(tokens[i + 2]))) {
+                    name = tokens[i + 2];
+                    i += 3;
+                } else {
+                    i += 2;
+                };
+                
+                sizes.push({ row, col, name });
+            } else {
+                // Invalid format, skip this token
+                i++;
+            };
+        }
+        else {
+            // Unrecognized token, skip
+            i++;
+        };
+    };
+
+    return sizes;
+};
+
+/**
  * Extracts screen size information from DSPSIZ file attribute
  * @param attributes - File attributes to search
  */
 function processDspsizAttribute(attributes: DdsAttribute[]): void {
     const dspsizAttribute = attributes.find(attr =>
-        attr.value.includes("DSPSIZ(")
+        attr.value.toUpperCase().includes("DSPSIZ(")
     );
 
-    if (!dspsizAttribute) return;
+    if (!dspsizAttribute) {
+        // No DSPSIZ found, set default 27x132
+        setDefaultScreenSize();
+        return;
+    };
 
     const dspsizMatch = dspsizAttribute.value.match(/DSPSIZ\s*\(([^)]+)\)/i);
-    if (!dspsizMatch) return;
+    if (!dspsizMatch) {
+        // DSPSIZ found but malformed, set default 27x132
+        setDefaultScreenSize();
+        return;
+    };
 
     const dspsizContent = dspsizMatch[1].trim();
     const screenSizes = parseDspsizSizes(dspsizContent);
 
-    // Update global file size attributes
-    updateFileSizeAttributes(screenSizes);
-};
-
-/**
- * Parses DSPSIZ content to extract screen size definitions
- * @param dspsizContent - Content within DSPSIZ parentheses
- * @returns Array of parsed screen size objects
- */
-function parseDspsizSizes(dspsizContent: string): Array<{ row: number; col: number; name: string }> {
-    const sizeRegex = /(\d+)\s+(\d+)(?:\s+([^\s)]+))?/g;
-    const sizes: Array<{ row: number; col: number; name: string }> = [];
-
-    let match;
-    while ((match = sizeRegex.exec(dspsizContent)) !== null) {
-        sizes.push({
-            row: parseInt(match[1], 10),
-            col: parseInt(match[2], 10),
-            name: match[3] || ''
-        });
+    // If parsing failed or returned empty, set default 27x132
+    if (screenSizes.length === 0) {
+        setDefaultScreenSize();
+        return;
     };
 
-    return sizes;
+    // Update global file size attributes
+    updateFileSizeAttributes(screenSizes);
 };
 
 /**
@@ -705,7 +765,20 @@ function updateFileSizeAttributes(sizes: Array<{ row: number; col: number; name:
         fileSizeAttributes.maxCol2 = sizes[1].col;
         fileSizeAttributes.nameDsply2 = sizes[1].name;
     };
+};
 
+/**
+ * Sets default screen size to 24x80 when DSPSIZ is not found or malformed
+ */
+function setDefaultScreenSize(): void {
+    fileSizeAttributes.numDsply = 1;
+    fileSizeAttributes.maxRow1 = 24;
+    fileSizeAttributes.maxCol1 = 80;
+    fileSizeAttributes.nameDsply1 = '*DS3';
+    // Clear second display size
+    fileSizeAttributes.maxRow2 = 0;
+    fileSizeAttributes.maxCol2 = 0;
+    fileSizeAttributes.nameDsply2 = '';
 };
 
 /**
