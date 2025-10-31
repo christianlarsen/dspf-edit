@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [0.10.3] - 2025-10-31
+### Fixed
+- Problems adding new field on column > 80 position.
+
 ## [0.10.2] - 2025-10-30
 ### Fixed
 - Bad DSPSIZ parsing.

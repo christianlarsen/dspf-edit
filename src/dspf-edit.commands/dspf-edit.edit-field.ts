@@ -142,6 +142,26 @@ const FIELD_CONSTANTS = {
 } as const;
 
 /**
+ * Gets the maximum rows value from fileSizeAttributes
+ */
+function getMaxRows(): number {
+    const maxRow1 = fileSizeAttributes.maxRow1 || 0;
+    const maxRow2 = fileSizeAttributes.maxRow2 || 0;
+    const maxRow = Math.max(maxRow1, maxRow2);
+    return maxRow > 0 ? maxRow : 27;
+}
+
+/**
+ * Gets the maximum columns value from fileSizeAttributes
+ */
+function getMaxCols(): number {
+    const maxCol1 = fileSizeAttributes.maxCol1 || 0;
+    const maxCol2 = fileSizeAttributes.maxCol2 || 0;
+    const maxCol = Math.max(maxCol1, maxCol2);
+    return maxCol > 0 ? maxCol : 132;
+}
+
+/**
  * Registers both field editing and adding commands for the VS Code extension
  * 
  * @param context - The VS Code extension context for registering commands and subscriptions
@@ -714,8 +734,8 @@ async function getRelativeFieldPosition(editor: vscode.TextEditor, recordElement
     };
 
     // Validate the new position
-    const maxRows = fileSizeAttributes.maxRow1 || 24;
-    const maxCols = fileSizeAttributes.maxCol1 || 80;
+    const maxRows = getMaxRows();
+    const maxCols = getMaxCols();
 
     if (newRow < 1 || newRow > maxRows) {
         vscode.window.showErrorMessage(`Cannot position field at row ${newRow}. Row must be between 1 and ${maxRows}.`);
@@ -743,8 +763,8 @@ async function getRelativeFieldPosition(editor: vscode.TextEditor, recordElement
  * Gets absolute position information for a field
  */
 async function getAbsoluteFieldPosition(fieldName: string): Promise<FieldPosition | null> {
-    const maxRows = fileSizeAttributes.maxRow1 || 24;
-    const maxCols = fileSizeAttributes.maxCol1 || 80;
+    const maxRows = getMaxRows();
+    const maxCols = getMaxCols();
 
     // Get row position
     const row = await vscode.window.showInputBox({

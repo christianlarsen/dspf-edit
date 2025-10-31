@@ -103,8 +103,8 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.10.2** - 2025-10-30
-- Fixed: Bad DSPSIZ parsing.
+**0.10.3** - 2025-10-31
+- Fixed: Problems adding fields in position > 80.
 
 ---
 

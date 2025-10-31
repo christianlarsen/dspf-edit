@@ -40,6 +40,26 @@ interface ExistingConstantInfo {
     lineIndex: number;
 };
 
+/**
+ * Gets the maximum rows value from fileSizeAttributes
+ */
+function getMaxRows(): number {
+    const maxRow1 = fileSizeAttributes.maxRow1 || 0;
+    const maxRow2 = fileSizeAttributes.maxRow2 || 0;
+    const maxRow = Math.max(maxRow1, maxRow2);
+    return maxRow > 0 ? maxRow : 27;
+};
+
+/**
+ * Gets the maximum columns value from fileSizeAttributes
+ */
+function getMaxCols(): number {
+    const maxCol1 = fileSizeAttributes.maxCol1 || 0;
+    const maxCol2 = fileSizeAttributes.maxCol2 || 0;
+    const maxCol = Math.max(maxCol1, maxCol2);
+    return maxCol > 0 ? maxCol : 132;
+};
+
 // COMMAND REGISTRATION FUNCTIONS
 
 /**
@@ -294,11 +314,11 @@ async function getRelativePosition(editor: vscode.TextEditor, recordElement: any
         : referenceConstant.row + 1;
 
     // Validate the new row position
-    if (newRow < 1 || newRow > 99) {
-        vscode.window.showErrorMessage(`Cannot position constant at row ${newRow}. Row must be between 1 and 99.`);
+    const maxRows = getMaxRows();
+    if (newRow < 1 || newRow > maxRows) {
+        vscode.window.showErrorMessage(`Cannot position constant at row ${newRow}. Row must be between 1 and ${maxRows}.`);
         return null;
     };
-
 
     // Use the same column as the reference constant
     return {
@@ -484,9 +504,10 @@ function validateConstantText(value: string): string | null {
  * @returns Error message or null if valid
  */
 function validateRowInput(value: string): string | null {
+    const maxRows = getMaxRows();
     const num = parseInt(value, 10);
-    if (isNaN(num) || num < 1 || num > 99) {
-        return "Row must be a number between 1 and 99.";
+    if (isNaN(num) || num < 1 || num > maxRows) {
+        return `Row must be a number between 1 and ${maxRows}.`;
     }
     return null;
 };
@@ -497,9 +518,10 @@ function validateRowInput(value: string): string | null {
  * @returns Error message or null if valid
  */
 function validateColumnInput(value: string): string | null {
+    const maxCols = getMaxCols();
     const num = parseInt(value, 10);
-    if (isNaN(num) || num < 1 || num > fileSizeAttributes.maxCol1) {
-        return `Column must be a number between 1 and ${fileSizeAttributes.maxCol1}.`;
+    if (isNaN(num) || num < 1 || num > maxCols) {
+        return `Column must be a number between 1 and ${maxCols}.`;
     }
     return null;
 };
