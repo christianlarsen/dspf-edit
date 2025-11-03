@@ -984,7 +984,7 @@ function generateNewFieldLine(config: NewFieldConfig): string {
         const rowStr = config.position.row.toString().padStart(2, ' ');
         const colStr = config.position.column.toString().padStart(2, ' ');
         line = replaceAt(line, 39, rowStr);
-        line = replaceAt(line, 42, colStr);
+        line = replaceAt(line, 41, colStr);
     };
 
     return line.trimEnd();

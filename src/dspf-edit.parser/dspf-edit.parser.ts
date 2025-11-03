@@ -654,57 +654,41 @@ function processFileAttributes(file: DdsFile, ddsElements: DdsElement[]): void {
  */
 function parseDspsizSizes(dspsizContent: string): Array<{ row: number; col: number; name: string }> {
     const sizes: Array<{ row: number; col: number; name: string }> = [];
-    
+
     // Map of predefined display sizes
     const predefinedSizes: Record<string, { row: number; col: number }> = {
         '*DS3': { row: 24, col: 80 },
         '*DS4': { row: 27, col: 132 }
     };
 
-    // Split by whitespace and process tokens
     const tokens = dspsizContent.trim().split(/\s+/);
-    
-    let i = 0;
-    while (i < tokens.length) {
-        const token = tokens[i];
-        
-        // Check if it's a predefined size (starts with *)
+
+    for (let i = 0; i < tokens.length; ) {
+        const token = tokens[i].toUpperCase();
+
+        // Case 1: predefined name only (*DS3 or *DS4)
         if (token.startsWith('*')) {
-            const predefined = predefinedSizes[token.toUpperCase()];
+            const predefined = predefinedSizes[token];
             if (predefined) {
-                sizes.push({
-                    row: predefined.row,
-                    col: predefined.col,
-                    name: token.toUpperCase()
-                });
+                sizes.push({ ...predefined, name: token });
             };
             i++;
         }
-        // Check if it's a numeric size definition
+        // Case 2: numeric definition (24 80 [*DS3])
         else if (/^\d+$/.test(token)) {
             const row = parseInt(token, 10);
-            
-            // Need at least column value
-            if (i + 1 < tokens.length && /^\d+$/.test(tokens[i + 1])) {
-                const col = parseInt(tokens[i + 1], 10);
-                
-                // Check for optional name parameter
-                let name = '';
-                if (i + 2 < tokens.length && !(/^\d+$/.test(tokens[i + 2]))) {
-                    name = tokens[i + 2];
-                    i += 3;
-                } else {
-                    i += 2;
-                };
-                
+            const col = parseInt(tokens[i + 1], 10);
+            const next = tokens[i + 2]?.toUpperCase();
+            const name = next?.startsWith('*') ? next : '';
+
+            if (!isNaN(row) && !isNaN(col)) {
                 sizes.push({ row, col, name });
+                i += name ? 3 : 2;
             } else {
-                // Invalid format, skip this token
                 i++;
             };
         }
         else {
-            // Unrecognized token, skip
             i++;
         };
     };
