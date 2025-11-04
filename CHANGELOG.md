@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [0.10.5] - 2025-11-04
+### Fixed
+- The parser wasn't reading the first line of the document.
+
 ## [0.10.4] - 2025-11-03
 ### Fixed
 - Problems adding new field on column > 80 position.
