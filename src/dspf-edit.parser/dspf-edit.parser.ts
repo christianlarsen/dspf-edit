@@ -509,22 +509,46 @@ function extractAttributes(
  * @param ddsElements - Array of all parsed DDS elements
  */
 function linkAttributesToParents(ddsElements: DdsElement[]): void {
-    for (const element of ddsElements) {
-        if (element.kind === 'attribute') {
-            // Find the most recent parent element before this attribute
-            const parent = [...ddsElements]
-                .reverse()
-                .find(p =>
-                    p.lineIndex < element.lineIndex &&
-                    (p.kind === 'field' || p.kind === 'constant' || p.kind === 'record' || p.kind === 'file')
-                );
+    let currentFile: DdsElement | undefined;
+    let currentRecord: DdsElement | undefined;
+    let lastField: DdsElement | undefined;
 
-            if (parent) {
-                parent.attributes = [
-                    ...(parent.attributes || []),
-                    ...(element.attributes || [])
-                ];
-            };
+    for (const element of ddsElements) {
+        switch (element.kind) {
+            case 'file':
+                currentFile = element;
+                currentRecord = undefined;
+                lastField = undefined;
+                break;
+
+            case 'record':
+                currentRecord = element;
+                lastField = undefined;
+                break;
+
+            case 'field':
+            case 'constant':
+                lastField = element;
+                break;
+
+            case 'attribute':
+                if (lastField) {
+                    lastField.attributes = [
+                        ...(lastField.attributes || []),
+                        ...(element.attributes || [])
+                    ];
+                } else if (currentRecord) {
+                    currentRecord.attributes = [
+                        ...(currentRecord.attributes || []),
+                        ...(element.attributes || [])
+                    ];
+                } else if (currentFile) {
+                    currentFile.attributes = [
+                        ...(currentFile.attributes || []),
+                        ...(element.attributes || [])
+                    ];
+                };
+                break;
         };
     };
 };
