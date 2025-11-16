@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [0.11.0] - 2025-11-15
+### Added
+- Now you can filter the records you want to work with using the filter button. Also you can select if you want to see the constants or fields, or both.
+
 ## [0.10.5] - 2025-11-04
 ### Fixed
 - The parser wasn't reading the first line of the document.

@@ -103,8 +103,8 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.10.5** - 2025-11-04
-- Fixed: The parser wasn't reading the first line of the document.
+**0.11.0** - 2025-11-15
+- New feature: Now, you can filter the records you want to work with, using the icon. Also you can select if you want to see only constants or fields, in those records.
 
 ---
 

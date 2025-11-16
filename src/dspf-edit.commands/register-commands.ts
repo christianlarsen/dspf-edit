@@ -1,7 +1,7 @@
 /*
-	Christian Larsen, 2025
-	"RPG structure"
-	commands/register-commands.ts
+    Christian Larsen, 2025
+    "RPG structure"
+    commands/register-commands.ts
 */
 
 import * as vscode from 'vscode';
@@ -34,33 +34,33 @@ import { removeAttribute } from './dspf-edit.remove-attribute';
 import { renameField, renameRecord } from './dspf-edit.rename';
 
 export const commands = [
-  { name: 'viewStructure', handler: viewStructure, needsTreeProvider: true },
-  { name: 'addConstant', handler: addConstant, needsTreeProvider: false },
-  { name: 'editConstant', handler: editConstant, needsTreeProvider: false },
-  { name: 'registerFieldCommands', handler: registerFieldCommands, needsTreeProvider: false },
-  { name: 'changePosition', handler: changePosition, needsTreeProvider: false },
-  { name: 'centerPosition', handler: centerPosition, needsTreeProvider: false },
-  { name: 'copyRecord', handler: copyRecord, needsTreeProvider: false },
-  { name: 'deleteRecord', handler: deleteRecord, needsTreeProvider: false },
-  { name: 'newRecord', handler: newRecord, needsTreeProvider: false },
-  { name: 'goToLine', handler: goToLineHandler, needsTreeProvider: false },
-  { name: 'addButtons', handler: addButtons, needsTreeProvider: false },
-  { name: 'addColor', handler: addColor, needsTreeProvider: false },
-  { name: 'addAttribute', handler: addAttribute, needsTreeProvider: false },
-  { name: 'addKey', handler: addKeyCommand, needsTreeProvider: false },
-  { name: 'addValidityCheck', handler: addValidityCheck, needsTreeProvider: false },
-  { name: 'addEditingKeywords', handler: editingKeywords, needsTreeProvider: false },
-  { name: 'addErrorMessage', handler: addErrorMessage, needsTreeProvider: false },
-  { name: 'addIndicators', handler: addIndicators, needsTreeProvider: false },
-  { name: 'fillConstant', handler: fillConstant, needsTreeProvider: false },
-  { name: 'windowResize', handler: windowResize, needsTreeProvider: false },
-  { name: 'sortElements', handler: sortElements, needsTreeProvider: false },
-  { name: 'copyField', handler: copyField, needsTreeProvider: false },
-  { name: 'copyConstant', handler: copyConstant, needsTreeProvider: false },
-  { name: 'removeElement', handler: removeElement, needsTreeProvider: false },
-  { name: 'removeAttribute', handler: removeAttribute, needsTreeProvider: false },
-  { name: 'renameField', handler: renameField, needsTreeProvider: false },
-  { name: 'renameRecord', handler: renameRecord, needsTreeProvider: false }
+    { name: 'viewStructure', handler: viewStructure, needsTreeProvider: true },
+    { name: 'addConstant', handler: addConstant, needsTreeProvider: false },
+    { name: 'editConstant', handler: editConstant, needsTreeProvider: false },
+    { name: 'registerFieldCommands', handler: registerFieldCommands, needsTreeProvider: false },
+    { name: 'changePosition', handler: changePosition, needsTreeProvider: false },
+    { name: 'centerPosition', handler: centerPosition, needsTreeProvider: false },
+    { name: 'copyRecord', handler: copyRecord, needsTreeProvider: false },
+    { name: 'deleteRecord', handler: deleteRecord, needsTreeProvider: false },
+    { name: 'newRecord', handler: newRecord, needsTreeProvider: false },
+    { name: 'goToLine', handler: goToLineHandler, needsTreeProvider: false },
+    { name: 'addButtons', handler: addButtons, needsTreeProvider: false },
+    { name: 'addColor', handler: addColor, needsTreeProvider: false },
+    { name: 'addAttribute', handler: addAttribute, needsTreeProvider: false },
+    { name: 'addKey', handler: addKeyCommand, needsTreeProvider: false },
+    { name: 'addValidityCheck', handler: addValidityCheck, needsTreeProvider: false },
+    { name: 'addEditingKeywords', handler: editingKeywords, needsTreeProvider: false },
+    { name: 'addErrorMessage', handler: addErrorMessage, needsTreeProvider: false },
+    { name: 'addIndicators', handler: addIndicators, needsTreeProvider: false },
+    { name: 'fillConstant', handler: fillConstant, needsTreeProvider: false },
+    { name: 'windowResize', handler: windowResize, needsTreeProvider: false },
+    { name: 'sortElements', handler: sortElements, needsTreeProvider: false },
+    { name: 'copyField', handler: copyField, needsTreeProvider: false },
+    { name: 'copyConstant', handler: copyConstant, needsTreeProvider: false },
+    { name: 'removeElement', handler: removeElement, needsTreeProvider: false },
+    { name: 'removeAttribute', handler: removeAttribute, needsTreeProvider: false },
+    { name: 'renameField', handler: renameField, needsTreeProvider: false },
+    { name: 'renameRecord', handler: renameRecord, needsTreeProvider: false }
 ];
 
 /**
@@ -80,5 +80,37 @@ export function registerCommands(
             (cmd.handler as (ctx: vscode.ExtensionContext) => void)(context);
         };
     });
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('ddsEdit.filterTreeView', () => {
+            treeProvider.showFilterMenu();
+        }),
+
+        vscode.commands.registerCommand('ddsEdit.showAllElements', () => {
+            treeProvider.showAll();
+        }),
+
+        vscode.commands.registerCommand('ddsEdit.hideAllElements', () => {
+            treeProvider.hideAll();
+        }),
+
+        vscode.commands.registerCommand('ddsEdit.toggleFields', () => {
+            treeProvider.toggleVisibility('field');
+        }),
+
+        vscode.commands.registerCommand('ddsEdit.toggleConstants', () => {
+            treeProvider.toggleVisibility('constant');
+        }),
+
+        vscode.commands.registerCommand('ddsEdit.expandAll', () => {
+            treeProvider.expandAll();
+        }),
+
+        vscode.commands.registerCommand('ddsEdit.collapseAll', () => {
+            treeProvider.collapseAll();
+        })
+
+    );
+
 };
 
