@@ -8,7 +8,7 @@
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "0.10.5",
+  "version": "0.11.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
@@ -176,9 +176,31 @@
         "command": "dspf-edit.rename-record",
         "title": "Rename",
         "icon": "$(edit)"
+      },
+      {
+        "command": "ddsEdit.filterTreeView",
+        "title": "Filter Elements",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "ddsEdit.showAllElements",
+        "title": "Show All Elements",
+        "icon": "$(eye)"
       }
     ],
     "menus": {
+      "view/title": [
+        {
+          "command": "ddsEdit.filterTreeView",
+          "when": "view == dspf-edit.schema-view",
+          "group": "navigation@1"
+        },
+        {
+          "command": "ddsEdit.showAllElements",
+          "when": "view == dspf-edit.schema-view",
+          "group": "navigation@2"
+        }
+      ],
       "view/item/context": [
         {
           "command": "dspf-edit.edit-constant",
