@@ -8,7 +8,7 @@
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
@@ -178,25 +178,65 @@
         "icon": "$(edit)"
       },
       {
-        "command": "ddsEdit.filterTreeView",
+        "command": "dspf-edit.filterTreeView",
         "title": "Filter Elements",
         "icon": "$(filter)"
       },
       {
-        "command": "ddsEdit.showAllElements",
+        "command": "dspf-edit.showAllElements",
         "title": "Show All Elements",
         "icon": "$(eye)"
+      },
+      {
+        "command": "dspf-edit.moveConstantLeft1",
+        "title": "Move Constant Left(1)",
+        "icon": "$(arrow-left)"
+      },
+      {
+        "command": "dspf-edit.moveConstantRight1",
+        "title": "Move Constant Right(1)",
+        "icon": "$(arrow-right)"
+      },
+      {
+        "command": "dspf-edit.moveConstantLeft5",
+        "title": "Move Constant Left(5)",
+        "icon": "$(chevron-left)"
+      },
+      {
+        "command": "dspf-edit.moveConstantRight5",
+        "title": "Move Constant Right(5)",
+        "icon": "$(chevron-right)"
+      },
+      {
+        "command": "dspf-edit.moveFieldLeft1",
+        "title": "Move Field Left(1)",
+        "icon": "$(arrow-left)"
+      },
+      {
+        "command": "dspf-edit.moveFieldRight1",
+        "title": "Move Field Right(1)",
+        "icon": "$(arrow-right)"
+      },
+      {
+        "command": "dspf-edit.moveFieldLeft5",
+        "title": "Move Field Left(5)",
+        "icon": "$(chevron-left)"
+      },
+      {
+        "command": "dspf-edit.moveFieldRight5",
+        "title": "Move Field Right(5)",
+        "icon": "$(chevron-right)"
       }
     ],
     "menus": {
       "view/title": [
         {
-          "command": "ddsEdit.filterTreeView",
+          "command": "dspf-edit.filterTreeView",
           "when": "view == dspf-edit.schema-view",
           "group": "navigation@1"
         },
         {
-          "command": "ddsEdit.showAllElements",
+          "command": "dspf-edit.showAllElements",
           "when": "view == dspf-edit.schema-view",
           "group": "navigation@2"
         }
@@ -345,22 +385,63 @@
         {
           "command" : "dspf-edit.remove-element",
           "when" : "view == dspf-edit.schema-view && (viewItem == constant || viewItem == field)",
-          "group" : "inline"
+          "group" : "inline@99"
         },
         {
           "command" : "dspf-edit.remove-attribute",
           "when" : "view == dspf-edit.schema-view && (viewItem == constantAttribute || viewItem == fieldAttribute)",
-          "group" : "inline"
+          "group" : "inline@99"
         },
         {
           "command" : "dspf-edit.rename-record",
           "when" : "view == dspf-edit.schema-view && viewItem == record",
-          "group" : "inline"
+          "group" : "inline@99"
         },
         {
           "command" : "dspf-edit.rename-field",
           "when" : "view == dspf-edit.schema-view && viewItem == field",
-          "group" : "inline"
+          "group" : "inline@99"
+        },
+        {
+          "command": "dspf-edit.moveConstantLeft5",
+          "when": "view == dspf-edit.schema-view && viewItem == constant",
+          "group": "inline@1"
+        },
+        {
+          "command": "dspf-edit.moveConstantLeft1",
+          "when": "view == dspf-edit.schema-view && viewItem == constant",
+          "group": "inline@2"
+        },
+        {
+          "command": "dspf-edit.moveConstantRight1",
+          "when": "view == dspf-edit.schema-view && viewItem == constant",
+          "group": "inline@3"
+        },
+        {
+          "command": "dspf-edit.moveConstantRight5",
+          "when": "view == dspf-edit.schema-view && viewItem == constant",
+          "group": "inline@4"
+        },
+
+        {
+          "command": "dspf-edit.moveFieldLeft5",
+          "when": "view == dspf-edit.schema-view && viewItem == field",
+          "group": "inline@1"
+        },
+        {
+          "command": "dspf-edit.moveFieldLeft1",
+          "when": "view == dspf-edit.schema-view && viewItem == field",
+          "group": "inline@2"
+        },
+        {
+          "command": "dspf-edit.moveFieldRight1",
+          "when": "view == dspf-edit.schema-view && viewItem == field",
+          "group": "inline@3"
+        },
+        {
+          "command": "dspf-edit.moveFieldRight5",
+          "when": "view == dspf-edit.schema-view && viewItem == field",
+          "group": "inline@4"
         }
       ]
     }

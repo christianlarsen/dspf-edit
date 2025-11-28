@@ -11,9 +11,17 @@ import { describeDdsField, describeDdsConstant, describeDdsRecord, describeDdsFi
 import { ExtensionState } from '../dspf-edit.states/state';
 
 /**
+ * Estructura para guardar los filtros de un documento específico
+ */
+interface DocumentFilter {
+	visibilityFilter: Set<'field' | 'constant'>;
+	recordFilter: Set<string>;
+}
+
+/**
  * DDS TREE PROVIDER CLASS
- * Provides the TreeDataProvider for DDS elements, supporting filters, visibility toggles,
- * and a status bar item indicating active filters.
+ * Provides the TreeDataProvider for DDS elements, supporting filters per document,
+ * visibility toggles, and a status bar item indicating active filters.
  */
 export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 	private _onDidChangeTreeData: vscode.EventEmitter<DdsNode | undefined | void> = new vscode.EventEmitter<DdsNode | undefined | void>();
@@ -21,24 +29,46 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 
 	private elements: DdsElement[] = [];
 
-	// Visibility filters: which types of elements and which records to show
-	private visibilityFilter: Set<'field' | 'constant'> = new Set(['field', 'constant']);
-	private recordFilter: Set<string> = new Set();
+	// Mapa de filtros por documento (URI del documento como clave)
+	private documentFilters: Map<string, DocumentFilter> = new Map();
+
+	// Filtro por defecto para nuevos documentos
+	private defaultFilter: DocumentFilter = {
+		visibilityFilter: new Set(['field', 'constant']),
+		recordFilter: new Set()
+	};
 
 	// TreeView instance for expand/collapse operations
 	private treeView?: vscode.TreeView<DdsNode>;
 
-	// Refresh the tree view
-	refresh(): void { this._onDidChangeTreeData.fire(); };
+	// Status bar item to show active filters
+	private statusBarItem: vscode.StatusBarItem | undefined;
 
-	// Set all DDS elements, initialize record filter if empty
+	// Refresh the tree view
+	refresh(): void { 
+		this._onDidChangeTreeData.fire(); 
+	}
+
+	// Set all DDS elements, initialize record filter if empty for current document
 	setElements(elements: DdsElement[]) {
 		this.elements = elements;
 
-		if (this.recordFilter.size === 0) {
-			this.elements.filter(e => e.kind === 'record').forEach(r => this.recordFilter.add(r.name));
+		const filter = this.getCurrentFilter();
+		const recordNames = this.elements.filter(e => e.kind === 'record').map(r => r.name);
+		
+		// Si el filtro está vacío o tiene registros que ya no existen, reinicializar con todos
+		const hasInvalidRecords = filter.recordFilter.size > 0 && 
+		                          [...filter.recordFilter].some(name => !recordNames.includes(name));
+		
+		if (filter.recordFilter.size === 0 || hasInvalidRecords) {
+			filter.recordFilter = new Set(recordNames);
+			this.setCurrentFilter(filter);
 		}
-	};
+		
+		// Actualizar el status bar después de establecer los elementos
+		// con un pequeño delay para evitar parpadeos
+		setTimeout(() => this.updateStatusBar(), 50);
+	}
 
 	/**
 	 * Set the TreeView instance (call this when creating the TreeView)
@@ -47,8 +77,53 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 		this.treeView = treeView;
 	}
 
-	// Status bar item to show active filters
-	private statusBarItem: vscode.StatusBarItem | undefined;
+	/**
+	 * Gets the current document URI as a string.
+	 * @returns The URI string of the current document or undefined
+	 */
+	private getCurrentDocumentUri(): string | undefined {
+		return ExtensionState.lastDdsDocument?.uri.toString();
+	}
+
+	/**
+	 * Gets the filter for the current document.
+	 * @returns The filter for the current document
+	 */
+	private getCurrentFilter(): DocumentFilter {
+		const uri = this.getCurrentDocumentUri();
+		if (!uri) {
+			return { ...this.defaultFilter };
+		}
+
+		if (!this.documentFilters.has(uri)) {
+			// Crear una copia del filtro por defecto para este documento
+			this.documentFilters.set(uri, {
+				visibilityFilter: new Set(this.defaultFilter.visibilityFilter),
+				recordFilter: new Set(this.defaultFilter.recordFilter)
+			});
+		}
+
+		return this.documentFilters.get(uri)!;
+	}
+
+	/**
+	 * Sets the filter for the current document.
+	 * @param filter - The new filter
+	 */
+	private setCurrentFilter(filter: DocumentFilter): void {
+		const uri = this.getCurrentDocumentUri();
+		if (uri) {
+			this.documentFilters.set(uri, filter);
+		}
+	}
+
+	/**
+	 * Cleans up the filter for a closed document.
+	 * @param documentUri - The URI of the closed document
+	 */
+	cleanupDocumentFilter(documentUri: string): void {
+		this.documentFilters.delete(documentUri);
+	}
 
 	/**
 	 * Initializes the StatusBarItem if it hasn't been created yet.
@@ -61,45 +136,67 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 	}
 
 	/**
-	 * Updates the StatusBarItem to reflect the currently active filters.
+	 * Updates the StatusBarItem to reflect the currently active filters for current document.
 	 * If all elements are visible, the status bar is hidden.
 	 */
 	private updateStatusBar() {
 		if (!this.statusBarItem) this.initStatusBar();
-
 		if (!this.statusBarItem) return;
 
+		const filter = this.getCurrentFilter();
 		const allRecords = this.elements.filter(e => e.kind === 'record').map(r => r.name);
 		const allTypes: ('field' | 'constant')[] = ['field', 'constant'];
 
-		const recordsFiltered = this.recordFilter.size > 0 && this.recordFilter.size !== allRecords.length;
-		const typesFiltered = this.visibilityFilter.size > 0 && this.visibilityFilter.size !== allTypes.length;
+		// Solo está filtrado si hay registros seleccionados pero no todos
+		const recordsFiltered = filter.recordFilter.size > 0 && 
+		                        filter.recordFilter.size < allRecords.length;
+		
+		// Solo está filtrado si hay tipos seleccionados pero no todos
+		const typesFiltered = filter.visibilityFilter.size > 0 && 
+		                      filter.visibilityFilter.size < allTypes.length;
 
 		if (!recordsFiltered && !typesFiltered) {
 			this.statusBarItem.hide();
 			return;
 		}
 
-		let statusText = '';
-		if (recordsFiltered) statusText += `Records: ${[...this.recordFilter].join(', ')} `;
-		if (typesFiltered) statusText += `Types: ${[...this.visibilityFilter].join(', ')}`;
+		const docName = ExtensionState.lastDdsDocument ? 
+			path.basename(ExtensionState.lastDdsDocument.uri.fsPath) : '';
+
+		let statusText = docName ? `${docName} ` : '';
+		if (recordsFiltered) statusText += `Records: ${[...filter.recordFilter].join(', ')} `;
+		if (typesFiltered) statusText += `Types: ${[...filter.visibilityFilter].join(', ')}`;
 
 		this.statusBarItem.text = `$(filter) ${statusText}`;
 		this.statusBarItem.show();
 	}
 
 	/**
-	 * Show the QuickPick menu to filter records and element types.
+	 * Public method to update the status bar for the current document.
+	 * Call this when switching documents.
+	 */
+	updateStatusBarForCurrentDocument() {
+		this.updateStatusBar();
+	}
+
+	/**
+	 * Show the QuickPick menu to filter records and element types for current document.
 	 * Updates the tree view and status bar after selection.
 	 */
 	async showFilterMenu() {
 		// Initialize status bar if not created yet
 		this.initStatusBar();
 
+		const filter = this.getCurrentFilter();
+
 		// Select which records to show
 		const recordItems = this.elements
 			.filter(e => e.kind === 'record')
-			.map(e => ({ label: `📄 ${e.name}`, name: e.name }));
+			.map(e => ({ 
+				label: `📄 ${e.name}`, 
+				name: e.name,
+				picked: filter.recordFilter.has(e.name) || filter.recordFilter.size === 0
+			}));
 
 		const selectedRecords = await vscode.window.showQuickPick(recordItems, {
 			canPickMany: true,
@@ -107,15 +204,19 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 		});
 
 		if (selectedRecords !== undefined) {
-			this.recordFilter = new Set(selectedRecords.map(r => r.name));
+			filter.recordFilter = new Set(selectedRecords.map(r => r.name));
+			if (filter.recordFilter.size === 0) {
+				// Si no se selecciona ninguno, mostrar todos
+				filter.recordFilter = new Set(this.elements.filter(e => e.kind === 'record').map(r => r.name));
+			}
 		}
 
-		// Select which element types to show, default all selected
+		// Select which element types to show
 		const allElementTypes: ('field' | 'constant')[] = ['field', 'constant'];
 		const elementItems = allElementTypes.map(type => ({
 			label: type === 'field' ? '🔤 Fields' : '💡 Constants',
 			type: type,
-			picked: this.visibilityFilter.has(type) || this.visibilityFilter.size === 0
+			picked: filter.visibilityFilter.has(type) || filter.visibilityFilter.size === 0
 		}));
 
 		const selectedElements = await vscode.window.showQuickPick(elementItems, {
@@ -124,51 +225,79 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 		});
 
 		if (selectedElements !== undefined) {
-			this.visibilityFilter = new Set(selectedElements.map(e => e.type as 'field' | 'constant'));
-			if (this.visibilityFilter.size === 0) {
+			filter.visibilityFilter = new Set(selectedElements.map(e => e.type as 'field' | 'constant'));
+			if (filter.visibilityFilter.size === 0) {
 				// If none selected, restore all types
-				this.visibilityFilter = new Set(allElementTypes);
+				filter.visibilityFilter = new Set(allElementTypes);
 			}
 		}
+
+		// Guardar filtro actualizado
+		this.setCurrentFilter(filter);
 
 		// Refresh tree and update status bar
 		this.refresh();
 		this.updateStatusBar();
-	};
+	}
 
 	/**
-	 * Toggle visibility of a specific element type (field or constant)
+	 * Toggle visibility of a specific element type (field or constant) for current document
 	 */
 	toggleVisibility(kind: 'field' | 'constant') {
-		if (this.visibilityFilter.has(kind)) this.visibilityFilter.delete(kind);
-		else this.visibilityFilter.add(kind);
-		this.refresh();
-	};
-
-	/**
-	 * Show all records and element types
-	 */
-	showAll() {
-		this.visibilityFilter = new Set(['field', 'constant']);
-		this.recordFilter.clear(); // show all records
+		const filter = this.getCurrentFilter();
+		if (filter.visibilityFilter.has(kind)) {
+			filter.visibilityFilter.delete(kind);
+		} else {
+			filter.visibilityFilter.add(kind);
+		}
+		this.setCurrentFilter(filter);
 		this.refresh();
 		this.updateStatusBar();
-		vscode.window.showInformationMessage('Showing all element types and records');
-	};
+	}
 
 	/**
-	 * Hide all records and element types
+	 * Show all records and element types for current document
+	 */
+	showAll() {
+		const filter = this.getCurrentFilter();
+		filter.visibilityFilter = new Set(['field', 'constant']);
+		filter.recordFilter = new Set(this.elements.filter(e => e.kind === 'record').map(r => r.name));
+		this.setCurrentFilter(filter);
+		
+		this.refresh();
+		this.updateStatusBar();
+		
+		const docName = ExtensionState.lastDdsDocument ? 
+			path.basename(ExtensionState.lastDdsDocument.uri.fsPath) : 'this document';
+		vscode.window.showInformationMessage(`Showing all elements in ${docName}`);
+	}
+
+	/**
+	 * Hide all records and element types for current document
 	 */
 	hideAll() {
-		this.visibilityFilter.clear();
-		this.recordFilter.clear();
+		const filter = this.getCurrentFilter();
+		filter.visibilityFilter.clear();
+		filter.recordFilter.clear();
+		this.setCurrentFilter(filter);
+		
 		this.refresh();
-		vscode.window.showInformationMessage('All element types and records hidden');
-	};
+		this.updateStatusBar();
+		
+		const docName = ExtensionState.lastDdsDocument ? 
+			path.basename(ExtensionState.lastDdsDocument.uri.fsPath) : 'this document';
+		vscode.window.showInformationMessage(`All elements hidden in ${docName}`);
+	}
 
-	// Helper methods to check if an element or record is visible
-	private isVisibleKind(kind: 'field' | 'constant'): boolean { return this.visibilityFilter.has(kind); }
-	private isVisibleRecord(name: string): boolean { return this.recordFilter.size === 0 || this.recordFilter.has(name); }
+	// Helper methods to check if an element or record is visible in current document
+	private isVisibleKind(kind: 'field' | 'constant'): boolean { 
+		return this.getCurrentFilter().visibilityFilter.has(kind); 
+	}
+	
+	private isVisibleRecord(name: string): boolean { 
+		const filter = this.getCurrentFilter();
+		return filter.recordFilter.size === 0 || filter.recordFilter.has(name); 
+	}
 
 	// TreeDataProvider required methods
 	getTreeItem(element: DdsNode): vscode.TreeItem { return element; }
@@ -304,7 +433,7 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 	}
 
 	/**
-	 * Root level children: file and records
+	 * Root level children: file and records (filtered by current document filter)
 	 */
 	private getRootChildren(elements: DdsElement[]): Thenable<DdsNode[]> {
 		const file = elements.find(e => e.kind === 'file');
@@ -338,7 +467,7 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 	}
 
 	/**
-	 * Return children for a record node, including fields and constants
+	 * Return children for a record node, including fields and constants (filtered by current document)
 	 */
 	private getRecordChildren(element: DdsNode): Thenable<DdsNode[]> {
 		const children: DdsNode[] = [];

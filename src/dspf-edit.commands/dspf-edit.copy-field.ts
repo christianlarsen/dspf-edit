@@ -143,6 +143,8 @@ async function handleCopyFieldCommand(node: DdsNode): Promise<void> {
 
         // Insert the copied field into the target record
         await insertCopiedField(editor, copyConfig.targetRecord, copiedFieldLines);
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
 
         // Show success message
         const positionInfo = isHidden ? "(hidden field)" : `at position ${copyConfig.targetPosition!.row}, ${copyConfig.targetPosition!.column}`;

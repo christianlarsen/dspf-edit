@@ -114,6 +114,8 @@ async function handleNewRecordCommand(node: DdsNode): Promise<void> {
 
         // Insert the new record into the document
         await insertNewRecord(editor, recordLines);
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
 
         // Show success message
         const recordTypeLabel = getRecordTypeLabel(recordConfig.type);

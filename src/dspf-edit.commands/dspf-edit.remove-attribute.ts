@@ -109,6 +109,8 @@ async function handleRemoveAttributeCommand(node: DdsNode): Promise<void> {
 
         // Execute the deletion
         await executeElementDeletion(editor, deletionPlan);
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
 
         vscode.window.showInformationMessage(`Attribute deleted successfully.`);
 

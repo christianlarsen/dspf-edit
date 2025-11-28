@@ -34,13 +34,14 @@ export function initializeDocumentListeners(
     context.subscriptions.push(
         vscode.window.onDidChangeActiveTextEditor(editor => {
             generateIfDds(treeProvider, editor?.document, vscode.window.activeTextEditor);
+            
         })
     );
-
     context.subscriptions.push(
         vscode.workspace.onDidCloseTextDocument(document => {
             if (ExtensionState.lastDdsDocument && document === ExtensionState.lastDdsDocument) {
                 ExtensionState.clearTimeout();
+                treeProvider.cleanupDocumentFilter(document.uri.toString());
                 ExtensionState.lastDdsDocument = undefined;
                 ExtensionState.lastDdsEditor = undefined;
                 treeProvider.setElements([]);

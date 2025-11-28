@@ -11,7 +11,6 @@ import { ExtensionState } from './dspf-edit.states/state';
 import { initializeDocumentListeners } from './dspf-edit.listeners/listeners';
 
 // Activate extension
-// Activate extension
 export function activate(context: vscode.ExtensionContext) {
 
 	// Create the tree data provider

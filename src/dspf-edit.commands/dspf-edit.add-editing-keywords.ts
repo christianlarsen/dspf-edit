@@ -174,6 +174,9 @@ async function handleEditingKeywordsCommand(node: DdsNode): Promise<void> {
 
         // Apply the selected editing to the field
         await addEditingToField(editor, node.ddsElement, selectedEditing);
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
+        
 
         const editingSummary = selectedEditing.map(edit =>
             `${edit.type}(${edit.value}${edit.modifier ? ' ' + edit.modifier : ''})`
@@ -755,6 +758,8 @@ async function removeEditingFromField(editor: vscode.TextEditor, element: any): 
     };
 
     await vscode.workspace.applyEdit(workspaceEdit);
+    await vscode.commands.executeCommand('cursorRight');
+    await vscode.commands.executeCommand('cursorLeft');
 
     vscode.window.showInformationMessage(`Removed field editing from ${element.name}.`);
 };

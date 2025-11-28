@@ -123,6 +123,8 @@ async function handleCopyConstantCommand(node: DdsNode): Promise<void> {
 
         // Insert the copied constant into the target record
         await insertCopiedConstant(editor, copyConfig.targetRecord, copiedConstantLines);
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
 
         // Show success message
         vscode.window.showInformationMessage(

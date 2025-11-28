@@ -88,6 +88,8 @@ async function handleChangePositionCommand(node: DdsNode): Promise<void> {
 
         // Update the element position in the document
         await updateElementPosition(editor, element, newPosition);
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
 
         // Show success message
         vscode.window.showInformationMessage(

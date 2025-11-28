@@ -99,6 +99,8 @@ async function handleAddAttributeCommand(node: DdsNode): Promise<void> {
 
         // Apply the selected attributes to the element
         await addAttributesToElement(editor, node.ddsElement, selectedAttributes);
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
 
         const attributesSummary = selectedAttributes.map(a =>
             `${a.attribute}${a.indicators.length > 0 ? `(${a.indicators.join(',')})` : ''}`

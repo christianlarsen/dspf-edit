@@ -66,7 +66,9 @@ async function handleCenterCommand(node: DdsNode): Promise<void> {
 
         // Apply the position change
         await applyPositionChange(editor, element, newPosition);
-
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
+        
         // Show success message
         vscode.window.showInformationMessage(
             `${element.name} centered in ${windowSize.cols} columns`

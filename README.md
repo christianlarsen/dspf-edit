@@ -103,8 +103,9 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.11.0** - 2025-11-15
-- New feature: Now, you can filter the records you want to work with, using the icon. Also you can select if you want to see only constants or fields, in those records.
+**0.12.0** - 2025-11-28
+- New feature: Now you can move a constant or field, one or five positions to the right or left using a button directly from the schema view.
+- Fixed: Changes to the filter button. It now maintains the filter by file (you can have a different filter applied to another file while they remain open).
 
 ---
 

@@ -118,6 +118,8 @@ async function handleRenameFieldCommand(node: DdsNode): Promise<void> {
 
         // Execute the rename
         await executeFieldRename(editor, renameInfo);
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
 
         vscode.window.showInformationMessage(`Field "${oldName}" renamed to "${newName}" successfully.`);
 

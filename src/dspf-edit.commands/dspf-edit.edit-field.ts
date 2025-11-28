@@ -228,6 +228,8 @@ async function handleEditFieldCommand(node: DdsNode): Promise<void> {
 
         // Apply the changes to the document
         await applyFieldChanges(editor, element, newName, newSize);
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
         
         if ('name' in element) {
             vscode.window.showInformationMessage(
