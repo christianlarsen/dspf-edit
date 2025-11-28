@@ -111,6 +111,8 @@ async function handleAddValidityCheckCommand(node: DdsNode): Promise<void> {
 
         // Apply the selected validity checks to the field
         await addValidityChecksToField(editor, node.ddsElement, selectedValidityChecks);
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
 
         const checksSummary = selectedValidityChecks.map(vc =>
             `${vc.type}(${vc.parameters.join(' ')})`

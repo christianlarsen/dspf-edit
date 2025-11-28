@@ -63,6 +63,8 @@ async function handleDeleteRecordCommand(node: DdsNode): Promise<void> {
 
         // Perform the deletion
         await deleteRecordLines(editor, recordBoundaries);
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
         
         vscode.window.showInformationMessage(
             `Record '${element.name}' has been successfully deleted.`

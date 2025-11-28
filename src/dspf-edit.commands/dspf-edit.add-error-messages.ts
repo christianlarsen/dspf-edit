@@ -85,6 +85,9 @@ async function handleAddErrorMessageCommand(node: DdsNode): Promise<void> {
 
             if (action === 'Remove all error messages') {
                 await removeErrorMessagesFromField(editor, field);
+                await vscode.commands.executeCommand('cursorRight');
+                await vscode.commands.executeCommand('cursorLeft');
+                
                 vscode.window.showInformationMessage(`Removed all error messages from field '${field.name}'.`);
                 return;
             };
@@ -105,6 +108,8 @@ async function handleAddErrorMessageCommand(node: DdsNode): Promise<void> {
 
         // Apply the selected error messages to the field
         await addErrorMessagesToField(editor, field, selectedErrorMessages);
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
 
         const messagesSummary = selectedErrorMessages.map(msg =>
             `${msg.indicator}: "${msg.messageText}"`

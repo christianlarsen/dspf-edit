@@ -91,6 +91,9 @@ async function handleAddIndicatorsCommand(node: DdsNode): Promise<void> {
 
             if (action === 'Remove all indicators') {
                 await removeIndicatorsFromElement(editor, node.ddsElement);
+                await vscode.commands.executeCommand('cursorRight');
+                await vscode.commands.executeCommand('cursorLeft');
+                
                 (node.ddsElement.kind === 'constant' || node.ddsElement.kind === 'field') ?
                 vscode.window.showInformationMessage(`Removed all indicators from ${node.ddsElement.name}.`) :
                 vscode.window.showInformationMessage(`Removed all indicators from attribute.`);
@@ -99,11 +102,17 @@ async function handleAddIndicatorsCommand(node: DdsNode): Promise<void> {
 
             if (action === 'Replace all indicators') {
                 await removeIndicatorsFromElement(editor, node.ddsElement);
+                await vscode.commands.executeCommand('cursorRight');
+                await vscode.commands.executeCommand('cursorLeft');
+                
                 // Continue to add new indicators
             };
 
             if (action === 'Modify existing indicators') {
                 await modifyExistingIndicators(editor, node.ddsElement, currentIndicators);
+                await vscode.commands.executeCommand('cursorRight');
+                await vscode.commands.executeCommand('cursorLeft');
+                
                 return;
             };
 
@@ -127,6 +136,8 @@ async function handleAddIndicatorsCommand(node: DdsNode): Promise<void> {
 
         // Apply the selected indicators to the element
         await setIndicatorsForElement(editor, node.ddsElement, allIndicators);
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
 
         const indicatorsSummary = formatIndicatorsSummary(allIndicators);
         const actionText = action === 'Add more indicators' ? 'Added' : 'Set';

@@ -99,6 +99,9 @@ async function handleAddColorCommand(node: DdsNode): Promise<void> {
 
         // Apply the selected colors to the element
         await addColorsToElement(editor, node.ddsElement, selectedColors);
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
+        
         
         const colorsSummary = selectedColors.map(c => 
             `${c.color}${c.indicators.length > 0 ? `(${c.indicators.join(',')})` : ''}`

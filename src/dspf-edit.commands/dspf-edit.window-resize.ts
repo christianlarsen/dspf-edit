@@ -123,6 +123,8 @@ async function handleWindowResizeCommand(node: DdsNode): Promise<void> {
 
         // Apply the window resize
         await applyWindowResize(editor, element, windowLine, newDimensions);
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
 
         // Show success message
         const operationLabel = resizeConfig.operation === 'CHANGE_SIZE' ? 'resized' : 'auto-adjusted';

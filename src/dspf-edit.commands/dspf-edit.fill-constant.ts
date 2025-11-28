@@ -70,6 +70,8 @@ async function handleFillConstantCommand(node: DdsNode): Promise<void> {
 
         // Fill the constant with the collected information 
         await fillElement(editor, node.ddsElement, fillInformation);
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
 
         vscode.window.showInformationMessage(
             `${node.ddsElement.name} filled.`

@@ -32,6 +32,8 @@ import { copyConstant } from './dspf-edit.copy-constant';
 import { removeElement } from './dspf-edit.remove-element';
 import { removeAttribute } from './dspf-edit.remove-attribute';
 import { renameField, renameRecord } from './dspf-edit.rename';
+import { moveConstantLeft1, moveConstantLeft5, moveConstantRight1, moveConstantRight5 } from './dspf-edit.move-constants';
+import { moveFieldLeft1, moveFieldLeft5, moveFieldRight1, moveFieldRight5 } from './dspf-edit.move-fields';
 
 export const commands = [
     { name: 'viewStructure', handler: viewStructure, needsTreeProvider: true },
@@ -60,7 +62,16 @@ export const commands = [
     { name: 'removeElement', handler: removeElement, needsTreeProvider: false },
     { name: 'removeAttribute', handler: removeAttribute, needsTreeProvider: false },
     { name: 'renameField', handler: renameField, needsTreeProvider: false },
-    { name: 'renameRecord', handler: renameRecord, needsTreeProvider: false }
+    { name: 'renameRecord', handler: renameRecord, needsTreeProvider: false },
+    { name: 'moveConstantLeft1', handler: moveConstantLeft1, needsTreeProvider: false },
+    { name: 'moveConstantLeft5', handler: moveConstantLeft5, needsTreeProvider: false },
+    { name: 'moveConstantRight1', handler: moveConstantRight1, needsTreeProvider: false },
+    { name: 'moveConstantRight5', handler: moveConstantRight5, needsTreeProvider: false },
+    { name: 'moveFieldLeft1', handler: moveFieldLeft1, needsTreeProvider: false },
+    { name: 'moveFieldLeft5', handler: moveFieldLeft5, needsTreeProvider: false },
+    { name: 'moveFieldRight1', handler: moveFieldRight1, needsTreeProvider: false },
+    { name: 'moveFieldRight5', handler: moveFieldRight5, needsTreeProvider: false }
+
 ];
 
 /**
@@ -82,34 +93,26 @@ export function registerCommands(
     });
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('ddsEdit.filterTreeView', () => {
+        vscode.commands.registerCommand('dspf-edit.filterTreeView', () => {
             treeProvider.showFilterMenu();
         }),
 
-        vscode.commands.registerCommand('ddsEdit.showAllElements', () => {
+        vscode.commands.registerCommand('dspf-edit.showAllElements', () => {
             treeProvider.showAll();
         }),
 
-        vscode.commands.registerCommand('ddsEdit.hideAllElements', () => {
+        vscode.commands.registerCommand('dspf-edit.hideAllElements', () => {
             treeProvider.hideAll();
         }),
 
-        vscode.commands.registerCommand('ddsEdit.toggleFields', () => {
+        vscode.commands.registerCommand('dspf-edit.toggleFields', () => {
             treeProvider.toggleVisibility('field');
         }),
 
-        vscode.commands.registerCommand('ddsEdit.toggleConstants', () => {
+        vscode.commands.registerCommand('dspf-edit.toggleConstants', () => {
             treeProvider.toggleVisibility('constant');
-        }),
-
-        vscode.commands.registerCommand('ddsEdit.expandAll', () => {
-            treeProvider.expandAll();
-        }),
-
-        vscode.commands.registerCommand('ddsEdit.collapseAll', () => {
-            treeProvider.collapseAll();
         })
-
+        
     );
 
 };

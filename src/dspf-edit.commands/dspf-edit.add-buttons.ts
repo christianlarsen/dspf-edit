@@ -391,6 +391,9 @@ async function applyButtonsToRecord(
     };
 
     await vscode.workspace.applyEdit(edit);
+    await vscode.commands.executeCommand('cursorRight');
+    await vscode.commands.executeCommand('cursorLeft');
+    
     vscode.window.showInformationMessage(`Added ${buttons.length} buttons to record ${recordInfo.name}.`);
 };
 

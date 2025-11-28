@@ -148,6 +148,8 @@ async function handleAddKeyCommandCommand(node: DdsNode): Promise<void> {
                 await addKeyCommandsToFile(editor, selectedKeyCommands);
                 break;
         };
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
 
         const commandsSummary = selectedKeyCommands.map(k =>
             `${k.type}${k.keyNumber}${k.indicators.length > 0 ? `(${k.indicators.join(',')})` : ''}`

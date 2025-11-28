@@ -95,6 +95,8 @@ async function handleCopyRecordCommand(node: DdsNode): Promise<void> {
 
         // Insert the copied record into the document
         await insertCopiedRecord(editor, modifiedLines);
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
 
         // Show success message
         vscode.window.showInformationMessage(

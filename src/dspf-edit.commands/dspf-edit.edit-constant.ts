@@ -582,6 +582,9 @@ async function insertNewConstant(editor: vscode.TextEditor, constantInfo: NewCon
     };
 
     await vscode.workspace.applyEdit(workspaceEdit);
+    await vscode.commands.executeCommand('cursorRight');
+    await vscode.commands.executeCommand('cursorLeft');
+    
     vscode.window.showInformationMessage(`Constant added successfully.`);
 };
 

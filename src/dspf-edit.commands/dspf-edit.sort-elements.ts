@@ -86,6 +86,8 @@ async function handleSortElementsCommand(node: DdsNode): Promise<void> {
 
         // Apply the sort to the document
         await applySortToDocument(editor, sortedElements);
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
 
         const sortDescription = getSortDescription(sortCriteria);
         vscode.window.showInformationMessage(
