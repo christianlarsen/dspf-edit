@@ -133,7 +133,7 @@ async function handleMoveConstantCommand(node: DdsNode, offset: number): Promise
         }
 
         // Apply the constant update with new position
-        await moveConstantToNewPosition(editor, element, newPosition, isSflRecord);
+        await moveConstantToNewPosition(editor, element, newPosition);
 
         // Set focus on the editor and position cursor on the constant
         await vscode.window.showTextDocument(editor.document, {
@@ -170,21 +170,17 @@ async function handleMoveConstantCommand(node: DdsNode, offset: number): Promise
 async function moveConstantToNewPosition(
     editor: vscode.TextEditor,
     element: any,
-    newPosition: number,
-    isSubfileRecord: boolean
+    newPosition: number
 ): Promise<void> {
     const uri = editor.document.uri;
     const workspaceEdit = new vscode.WorkspaceEdit();
-    const endLineIndex = findEndLineIndex(editor.document, element.lineIndex);
 
     // Format the new position value (3 characters, right-aligned)
     const formattedPos = String(newPosition).padStart(3, ' ');
 
     // Determine which field to update based on record type
-    // Subfile records: Column field at characters 42-44 (0-indexed: 41-43)
-    // Normal records: Row field at characters 39-41 (0-indexed: 38-40)
-    const startCol = isSubfileRecord ? 41 : 38;
-    const endCol = isSubfileRecord ? 44 : 41;
+    const startCol = 41;
+    const endCol = 44;
     
     // Replace characters at the appropriate positions with new value
     const range = new vscode.Range(

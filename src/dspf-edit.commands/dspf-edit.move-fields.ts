@@ -133,7 +133,7 @@ async function handleMoveFieldCommand(node: DdsNode, offset: number): Promise<vo
         }
 
         // Apply the field update with new position
-        await moveFieldToNewPosition(editor, element, newPosition, isSflRecord);
+        await moveFieldToNewPosition(editor, element, newPosition);
 
         // Set focus on the editor and position cursor on the field
         await vscode.window.showTextDocument(editor.document, {
@@ -170,19 +170,17 @@ async function handleMoveFieldCommand(node: DdsNode, offset: number): Promise<vo
 async function moveFieldToNewPosition(
     editor: vscode.TextEditor,
     element: any,
-    newPosition: number,
-    isSubfileRecord: boolean
+    newPosition: number
 ): Promise<void> {
     const uri = editor.document.uri;
     const workspaceEdit = new vscode.WorkspaceEdit();
-    const endLineIndex = findEndLineIndex(editor.document, element.lineIndex);
 
     // Format the new position value (3 characters, right-aligned)
     const formattedPos = String(newPosition).padStart(3, ' ');
 
     // Determine which field to update based on record type
-    const startCol = isSubfileRecord ? 41 : 38;
-    const endCol = isSubfileRecord ? 44 : 41;
+    const startCol = 41;
+    const endCol = 44;
     
     // Replace characters at the appropriate positions with new value
     const range = new vscode.Range(
