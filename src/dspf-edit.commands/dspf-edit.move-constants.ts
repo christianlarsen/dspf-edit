@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { fileSizeAttributes } from '../dspf-edit.model/dspf-edit.model';
+import { fileSizeAttributes, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, findEndLineIndex } from '../dspf-edit.utils/dspf-edit.helper';
 
 /**
@@ -17,6 +17,21 @@ function getMaxCols(): number {
     const maxCol2 = fileSizeAttributes.maxCol2 || 0;
     const maxCol = Math.max(maxCol1, maxCol2);
     return maxCol > 0 ? maxCol : 132;
+}
+
+/**
+ * Checks if a record is a subfile record by looking for the SFL attribute
+ * @param recordName - The name of the record to check
+ * @returns True if the record has the SFL attribute
+ */
+function isSubfileRecord(recordName: string): boolean {
+    const record = fieldsPerRecords.find(r => r.record === recordName);
+    
+    if (!record || !record.attributes) {
+        return false;
+    }
+    
+    return record.attributes.some(attr => attr.attribute === 'SFL');
 }
 
 // COMMAND REGISTRATION FUNCTIONS
@@ -92,23 +107,33 @@ async function handleMoveConstantCommand(node: DdsNode, offset: number): Promise
             return;
         }
 
-        // Calculate new column position
-        const newColumn = element.column + offset;
-        const maxCols = getMaxCols();
+        // Check if the record is a subfile (SFL) - in subfiles, constants use row instead of column
+        const isSflRecord = isSubfileRecord(element.recordname);
 
-        // Validate new position
-        if (newColumn < 1) {
-            vscode.window.showWarningMessage(`Cannot move constant. Minimum column is 1.`);
+        // Calculate new position based on whether it's a subfile or not
+        const currentPosition = isSflRecord ? element.row : element.column;
+        
+        if (!currentPosition) {
+            vscode.window.showWarningMessage(`Cannot move constant. No position information available.`);
             return;
         }
 
-        if (newColumn > maxCols) {
-            vscode.window.showWarningMessage(`Cannot move constant. Maximum column is ${maxCols}.`);
+        const newPosition = currentPosition + offset;
+        const maxCols = getMaxCols();
+
+        // Validate new position
+        if (newPosition < 1) {
+            vscode.window.showWarningMessage(`Cannot move constant. Minimum position is 1.`);
+            return;
+        }
+
+        if (newPosition > maxCols) {
+            vscode.window.showWarningMessage(`Cannot move constant. Maximum position is ${maxCols}.`);
             return;
         }
 
         // Apply the constant update with new position
-        await moveConstantToNewColumn(editor, element, newColumn);
+        await moveConstantToNewPosition(editor, element, newPosition, isSflRecord);
 
         // Set focus on the editor and position cursor on the constant
         await vscode.window.showTextDocument(editor.document, {
@@ -135,34 +160,39 @@ async function handleMoveConstantCommand(node: DdsNode, offset: number): Promise
 // CONSTANT MOVEMENT FUNCTIONS
 
 /**
- * Moves a constant to a new column position by updating only the column field.
+ * Moves a constant to a new position by updating either the column or row field.
+ * For subfile records, it updates the row position. For regular records, it updates the column position.
  * @param editor - The active text editor
  * @param element - The constant element to move
- * @param newColumn - The new column position
+ * @param newPosition - The new position value (column or row depending on record type)
+ * @param isSubfileRecord - Whether the constant belongs to a subfile record (SFL)
  */
-async function moveConstantToNewColumn(
+async function moveConstantToNewPosition(
     editor: vscode.TextEditor,
     element: any,
-    newColumn: number
+    newPosition: number,
+    isSubfileRecord: boolean
 ): Promise<void> {
     const uri = editor.document.uri;
     const workspaceEdit = new vscode.WorkspaceEdit();
     const endLineIndex = findEndLineIndex(editor.document, element.lineIndex);
 
-    // Format the new column value (3 characters, right-aligned)
-    const formattedCol = String(newColumn).padStart(3, ' ');
+    // Format the new position value (3 characters, right-aligned)
+    const formattedPos = String(newPosition).padStart(3, ' ');
 
-    // Update only the column positions (characters 42-44, 0-indexed: 41-43)
-    // We need to update all lines of the constant (first line only, as column is only on first line)
-    const firstLine = editor.document.lineAt(element.lineIndex);
+    // Determine which field to update based on record type
+    // Subfile records: Column field at characters 42-44 (0-indexed: 41-43)
+    // Normal records: Row field at characters 39-41 (0-indexed: 38-40)
+    const startCol = isSubfileRecord ? 41 : 38;
+    const endCol = isSubfileRecord ? 44 : 41;
     
-    // Replace characters at positions 41-43 (0-indexed) with new column value
+    // Replace characters at the appropriate positions with new value
     const range = new vscode.Range(
-        element.lineIndex, 41,  // Start at position 41 (column field start)
-        element.lineIndex, 44   // End at position 44 (column field end)
+        element.lineIndex, startCol,  // Start position
+        element.lineIndex, endCol     // End position
     );
 
-    workspaceEdit.replace(uri, range, formattedCol);
+    workspaceEdit.replace(uri, range, formattedPos);
 
     await vscode.workspace.applyEdit(workspaceEdit);
 }

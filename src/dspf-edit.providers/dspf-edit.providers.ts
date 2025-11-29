@@ -45,8 +45,8 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 	private statusBarItem: vscode.StatusBarItem | undefined;
 
 	// Refresh the tree view
-	refresh(): void { 
-		this._onDidChangeTreeData.fire(); 
+	refresh(): void {
+		this._onDidChangeTreeData.fire();
 	}
 
 	// Set all DDS elements, initialize record filter if empty for current document
@@ -55,16 +55,16 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 
 		const filter = this.getCurrentFilter();
 		const recordNames = this.elements.filter(e => e.kind === 'record').map(r => r.name);
-		
+
 		// Si el filtro está vacío o tiene registros que ya no existen, reinicializar con todos
-		const hasInvalidRecords = filter.recordFilter.size > 0 && 
-		                          [...filter.recordFilter].some(name => !recordNames.includes(name));
-		
+		const hasInvalidRecords = filter.recordFilter.size > 0 &&
+			[...filter.recordFilter].some(name => !recordNames.includes(name));
+
 		if (filter.recordFilter.size === 0 || hasInvalidRecords) {
 			filter.recordFilter = new Set(recordNames);
 			this.setCurrentFilter(filter);
 		}
-		
+
 		// Actualizar el status bar después de establecer los elementos
 		// con un pequeño delay para evitar parpadeos
 		setTimeout(() => this.updateStatusBar(), 50);
@@ -148,19 +148,19 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 		const allTypes: ('field' | 'constant')[] = ['field', 'constant'];
 
 		// Solo está filtrado si hay registros seleccionados pero no todos
-		const recordsFiltered = filter.recordFilter.size > 0 && 
-		                        filter.recordFilter.size < allRecords.length;
-		
+		const recordsFiltered = filter.recordFilter.size > 0 &&
+			filter.recordFilter.size < allRecords.length;
+
 		// Solo está filtrado si hay tipos seleccionados pero no todos
-		const typesFiltered = filter.visibilityFilter.size > 0 && 
-		                      filter.visibilityFilter.size < allTypes.length;
+		const typesFiltered = filter.visibilityFilter.size > 0 &&
+			filter.visibilityFilter.size < allTypes.length;
 
 		if (!recordsFiltered && !typesFiltered) {
 			this.statusBarItem.hide();
 			return;
 		}
 
-		const docName = ExtensionState.lastDdsDocument ? 
+		const docName = ExtensionState.lastDdsDocument ?
 			path.basename(ExtensionState.lastDdsDocument.uri.fsPath) : '';
 
 		let statusText = docName ? `${docName} ` : '';
@@ -192,10 +192,10 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 		// Select which records to show
 		const recordItems = this.elements
 			.filter(e => e.kind === 'record')
-			.map(e => ({ 
-				label: `📄 ${e.name}`, 
+			.map(e => ({
+				label: `📄 ${e.name}`,
 				name: e.name,
-				picked: filter.recordFilter.has(e.name) || filter.recordFilter.size === 0
+				picked: filter.recordFilter.size > 0 && filter.recordFilter.has(e.name)
 			}));
 
 		const selectedRecords = await vscode.window.showQuickPick(recordItems, {
@@ -239,7 +239,7 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 		this.refresh();
 		this.updateStatusBar();
 	}
-
+	
 	/**
 	 * Toggle visibility of a specific element type (field or constant) for current document
 	 */
@@ -263,11 +263,11 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 		filter.visibilityFilter = new Set(['field', 'constant']);
 		filter.recordFilter = new Set(this.elements.filter(e => e.kind === 'record').map(r => r.name));
 		this.setCurrentFilter(filter);
-		
+
 		this.refresh();
 		this.updateStatusBar();
-		
-		const docName = ExtensionState.lastDdsDocument ? 
+
+		const docName = ExtensionState.lastDdsDocument ?
 			path.basename(ExtensionState.lastDdsDocument.uri.fsPath) : 'this document';
 		vscode.window.showInformationMessage(`Showing all elements in ${docName}`);
 	}
@@ -280,23 +280,23 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 		filter.visibilityFilter.clear();
 		filter.recordFilter.clear();
 		this.setCurrentFilter(filter);
-		
+
 		this.refresh();
 		this.updateStatusBar();
-		
-		const docName = ExtensionState.lastDdsDocument ? 
+
+		const docName = ExtensionState.lastDdsDocument ?
 			path.basename(ExtensionState.lastDdsDocument.uri.fsPath) : 'this document';
 		vscode.window.showInformationMessage(`All elements hidden in ${docName}`);
 	}
 
 	// Helper methods to check if an element or record is visible in current document
-	private isVisibleKind(kind: 'field' | 'constant'): boolean { 
-		return this.getCurrentFilter().visibilityFilter.has(kind); 
+	private isVisibleKind(kind: 'field' | 'constant'): boolean {
+		return this.getCurrentFilter().visibilityFilter.has(kind);
 	}
-	
-	private isVisibleRecord(name: string): boolean { 
+
+	private isVisibleRecord(name: string): boolean {
 		const filter = this.getCurrentFilter();
-		return filter.recordFilter.size === 0 || filter.recordFilter.has(name); 
+		return filter.recordFilter.size === 0 || filter.recordFilter.has(name);
 	}
 
 	// TreeDataProvider required methods
@@ -314,17 +314,17 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 		// Handle group nodes
 		if (element.ddsElement.kind === 'group') {
 			const groupAttr = element.ddsElement.attribute ?? '';
-			
+
 			// "Records" group is at root level
 			if (groupAttr === '') {
 				return undefined;
 			}
-			
+
 			// Other groups belong to their parent element
-			const parentElement = this.elements.find(el => 
+			const parentElement = this.elements.find(el =>
 				el.lineIndex === element.ddsElement.lineIndex
 			);
-			
+
 			if (parentElement) {
 				return new DdsNode(
 					this.getElementLabel(parentElement),
@@ -337,15 +337,15 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 
 		// Handle attributes and indicators - they belong to a group
 		if (['attribute', 'constantAttribute', 'fieldAttribute', 'indicatornode'].includes(element.ddsElement.kind)) {
-			const parentElement = this.elements.find(el => 
+			const parentElement = this.elements.find(el =>
 				el.lineIndex === element.ddsElement.lineIndex
 			);
-			
+
 			if (parentElement) {
 				// Return the appropriate group node
 				let groupLabel = '';
 				let groupAttribute = '';
-				
+
 				if (element.ddsElement.kind === 'indicatornode') {
 					groupLabel = '📶 Indicators';
 					groupAttribute = 'Indicators';
@@ -359,7 +359,7 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 					groupLabel = '⚙️ Attributes';
 					groupAttribute = 'FieldAttributes';
 				}
-				
+
 				const groupNode: DdsGroup = {
 					kind: 'group',
 					attribute: groupAttribute,
@@ -368,7 +368,7 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 					attributes: parentElement.attributes ?? [],
 					indicators: parentElement.indicators ?? []
 				};
-				
+
 				return new DdsNode(groupLabel, vscode.TreeItemCollapsibleState.Collapsed, groupNode);
 			}
 			return undefined;
@@ -376,16 +376,16 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 
 		// Handle fields and constants - find their parent record
 		if (element.ddsElement.kind === 'field' || element.ddsElement.kind === 'constant') {
-			const parentRecord = this.elements.find(el => 
-				el.kind === 'record' && 
+			const parentRecord = this.elements.find(el =>
+				el.kind === 'record' &&
 				el.lineIndex < element.ddsElement.lineIndex &&
-				(!this.elements.find(nextRec => 
-					nextRec.kind === 'record' && 
-					nextRec.lineIndex > el.lineIndex && 
+				(!this.elements.find(nextRec =>
+					nextRec.kind === 'record' &&
+					nextRec.lineIndex > el.lineIndex &&
 					nextRec.lineIndex < element.ddsElement.lineIndex
 				))
 			);
-			
+
 			if (parentRecord) {
 				// Fields and constants are inside "Fields and Constants" group
 				const fieldsGroup: DdsGroup = {
@@ -396,7 +396,7 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 					attributes: [],
 					indicators: []
 				};
-				
+
 				return new DdsNode('🧾 Fields and Constants', vscode.TreeItemCollapsibleState.Collapsed, fieldsGroup);
 			}
 			return undefined;
@@ -412,7 +412,7 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 				attributes: [],
 				indicators: []
 			};
-			
+
 			return new DdsNode('📂 Records', vscode.TreeItemCollapsibleState.Expanded, recordsGroup);
 		}
 
@@ -591,20 +591,20 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 	}
 
 	/**
- 	 * Expands all nodes in the tree recursively
- 	 */
+	   * Expands all nodes in the tree recursively
+	   */
 	async expandAll() {
 		if (!this.treeView) {
 			vscode.window.showWarningMessage('TreeView not available');
 			return;
 		}
-		
+
 		// Get root nodes and expand them recursively
 		const rootNodes = await this.getChildren();
 		for (const rootNode of rootNodes) {
 			await this.expandNodeRecursively(rootNode);
 		}
-		
+
 		vscode.window.showInformationMessage('Tree expanded');
 	}
 
@@ -616,10 +616,10 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 			vscode.window.showWarningMessage('TreeView not available');
 			return;
 		}
-		
+
 		// Refresh the tree which will reset expansion state
 		this._onDidChangeTreeData.fire(undefined);
-		
+
 		vscode.window.showInformationMessage('Tree collapsed');
 	}
 
@@ -634,10 +634,10 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 
 		// Expand current node first
 		try {
-			await this.treeView?.reveal(node, { 
-				select: false, 
-				focus: false, 
-				expand: true 
+			await this.treeView?.reveal(node, {
+				select: false,
+				focus: false,
+				expand: true
 			});
 		} catch (error) {
 			// Silently ignore reveal errors (node might not be visible due to filters)
