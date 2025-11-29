@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [0.12.2] - 2025-11-29
+### Fixed
+- The movement of fields and constants in subfiles is corrected.
+- Changes in record filtering.
+
 ## [0.12.1] - 2025-11-29
 ### Fixed
 - The movement of fields and constants in subfiles is corrected.
