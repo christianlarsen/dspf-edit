@@ -983,9 +983,9 @@ function generateNewFieldLine(config: NewFieldConfig): string {
     // Position specification (columns 40-41 for row, 43-44 for column)
     // Only for fields that appear on display (not H, M, P)
     if (config.usage.type !== 'H' && config.usage.type !== 'M' && config.usage.type !== 'P') {
-        const rowStr = config.position.row.toString().padStart(2, ' ');
-        const colStr = config.position.column.toString().padStart(2, ' ');
-        line = replaceAt(line, 39, rowStr);
+        const rowStr = config.position.row.toString().padStart(3, ' ');
+        const colStr = config.position.column.toString().padStart(3, ' ');
+        line = replaceAt(line, 38, rowStr);
         line = replaceAt(line, 41, colStr);
     };
 

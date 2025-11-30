@@ -103,9 +103,8 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.12.2** - 2025-11-29
-- Fixed: The movement of fields and constants in subfiles is corrected.
-- Fixed: Changes in record filtering.
+**0.12.3** - 2025-11-30
+- Fixed: When creating a new field, the horizontal position was being saved incorrectly in the source.
 
 ---
 

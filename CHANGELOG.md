@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [0.12.3] - 2025-11-30
+### Fixed
+- When creating a new field, the horizontal position was being saved incorrectly in the source.
+
 ## [0.12.2] - 2025-11-29
 ### Fixed
 - The movement of fields and constants in subfiles is corrected.

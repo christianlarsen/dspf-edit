@@ -666,7 +666,7 @@ function processFileAttributes(file: DdsFile, ddsElements: DdsElement[]): void {
     attributesFileLevel.push(...file.attributes);
 
     // Process DSPSIZ attribute for screen size information
-    processDspsizAttribute(file.attributes);
+processDspsizAttribute(file.attributes);
 };
 
 /**
