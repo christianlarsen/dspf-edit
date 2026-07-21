@@ -603,6 +603,7 @@ function addFieldToRecord(field: any, recordEntry: any): void {
         recordEntry.fields.push({
             name: field.name,
             type: field.type,
+            usage: field.usage,
             row: field.row || 0,
             col: field.column || 0,
             length: field.length || 0,
@@ -640,6 +641,7 @@ function addConstantToRecord(constant: any, recordEntry: any): void {
             col: constant.column || 0,
             length: constantName.length,
             attributes: processedAttributes,
+            indicators: constant.indicators || [],
             lineIndex: constant.lineIndex,
             lastLineIndex: constant.lastLineIndex
         });
@@ -791,23 +793,49 @@ function setDefaultScreenSize(): void {
 
 /**
  * NEW: Processes record sizes after all elements have been parsed
- * Assigns default size or WINDOW-specific size to each record
+ * Assigns default size or WINDOW-specific size to each record.
+ * Handles both forms of the WINDOW() keyword: the direct
+ * WINDOW(startRow startCol numRows numCols), and the shared-window reference
+ * WINDOW(other-record-name) — commonly used by a subfile's SFLCTL record to reuse the same
+ * window as another record (e.g. one that carries the WDWTITLE and footer text). It also
+ * propagates a window's size across an SFL/SFLCTL pair when only one side of the pair declares it,
+ * since both halves occupy the exact same screen area.
  * @param ddsElements - Array of all parsed DDS elements
  */
 function processRecordSizes(ddsElements: DdsElement[]): void {
     const recordElements = ddsElements.filter(el => el.kind === 'record') as DdsRecord[];
 
-    for (const record of recordElements) {
-        // Check if record has WINDOW attribute
-        const windowSize = extractWindowSize(record.attributes);
+    const sizeByRecord = new Map<string, DdsSize>();
+    const referenceByRecord = new Map<string, string>();
 
-        if (windowSize) {
-            // Use WINDOW-specific size
-            record.size = windowSize;
-        } else {
-            // Use default size from file attributes
-            record.size = getDefaultSize();
+    for (const record of recordElements) {
+        const extracted = extractWindowSize(record.attributes);
+        if (extracted?.size) {
+            sizeByRecord.set(record.name, extracted.size);
+        } else if (extracted?.referenceName) {
+            referenceByRecord.set(record.name, extracted.referenceName);
         };
+    };
+
+    // Resolve WINDOW(other-record-name) references, following chains and guarding against cycles.
+    for (const [recordName, referenceName] of referenceByRecord) {
+        const visited = new Set<string>([recordName]);
+        let ownerName = referenceName;
+        while (referenceByRecord.has(ownerName) && !sizeByRecord.has(ownerName) && !visited.has(ownerName)) {
+            visited.add(ownerName);
+            ownerName = referenceByRecord.get(ownerName)!;
+        };
+
+        const ownerSize = sizeByRecord.get(ownerName);
+        if (ownerSize) {
+            sizeByRecord.set(recordName, { ...ownerSize, sharedFromRecord: ownerSize.sharedFromRecord ?? ownerName });
+        };
+    };
+
+    propagateSubfileWindowSizes(recordElements, sizeByRecord);
+
+    for (const record of recordElements) {
+        record.size = sizeByRecord.get(record.name) ?? getDefaultSize();
 
         // Also update the fieldsPerRecords structure for easy access
         const recordEntry = fieldsPerRecords.find(r => r.record === record.name);
@@ -818,11 +846,52 @@ function processRecordSizes(ddsElements: DdsElement[]): void {
 };
 
 /**
- * Extracts WINDOW size information from record attributes
- * @param attributes - Record attributes to search
- * @returns DdsSize object if WINDOW attribute found, undefined otherwise
+ * Shares a window's size across an SFL/SFLCTL pair when only one side declares WINDOW(): the
+ * subfile detail (SFL) record and its control (SFLCTL) record occupy the exact same screen area,
+ * but the WINDOW() keyword (direct or shared-reference) commonly sits on just one of them.
+ * @param recordElements - All parsed records
+ * @param sizeByRecord - Sizes resolved so far (direct + reference), mutated in place
  */
-function extractWindowSize(attributes?: DdsAttribute[]): DdsSize | undefined {
+function propagateSubfileWindowSizes(recordElements: DdsRecord[], sizeByRecord: Map<string, DdsSize>): void {
+    const findSflCtlPairName = (sflName: string): string | undefined => {
+        const ctlRecord = recordElements.find(r =>
+            r.attributes?.some(attr => {
+                const match = attr.value.match(/^SFLCTL\(\s*([A-Za-z0-9@#$]+)\s*\)$/i);
+                return Boolean(match && match[1].toUpperCase() === sflName.toUpperCase());
+            })
+        );
+        return ctlRecord?.name;
+    };
+
+    const findSflNameFromCtl = (ctlRecord: DdsRecord): string | undefined => {
+        const attr = ctlRecord.attributes?.find(a => a.value.toUpperCase().startsWith('SFLCTL('));
+        return attr?.value.match(/^SFLCTL\(\s*([A-Za-z0-9@#$]+)\s*\)$/i)?.[1];
+    };
+
+    for (const record of recordElements) {
+        if (sizeByRecord.has(record.name)) {
+            continue;
+        };
+
+        const pairName = isSubfileRecord(record.attributes)
+            ? findSflCtlPairName(record.name)
+            : findSflNameFromCtl(record);
+
+        const pairSize = pairName ? sizeByRecord.get(pairName) : undefined;
+        if (pairSize) {
+            sizeByRecord.set(record.name, pairSize);
+        };
+    };
+};
+
+/**
+ * Extracts WINDOW size information from record attributes. Supports both the direct form,
+ * WINDOW(startRow startCol numRows numCols), and the shared-window reference form,
+ * WINDOW(other-record-name), which is resolved later against the other record's own size.
+ * @param attributes - Record attributes to search
+ * @returns The resolved size (direct form), a reference name to resolve later (name form), or undefined
+ */
+function extractWindowSize(attributes?: DdsAttribute[]): { size?: DdsSize; referenceName?: string } | undefined {
     if (!attributes) return undefined;
 
     const windowAttribute = attributes.find(attr =>
@@ -834,21 +903,31 @@ function extractWindowSize(attributes?: DdsAttribute[]): DdsSize | undefined {
     const windowMatch = windowAttribute.value.match(
         /WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\)/i
     );
-    if (!windowMatch) return undefined;
+    if (windowMatch) {
+        const startRow = parseInt(windowMatch[1], 10);
+        const startCol = parseInt(windowMatch[2], 10);
+        const rows = parseInt(windowMatch[3], 10);
+        const cols = parseInt(windowMatch[4], 10);
 
-    const startRow = parseInt(windowMatch[1], 10);
-    const startCol = parseInt(windowMatch[2], 10);
-    const rows = parseInt(windowMatch[3], 10);
-    const cols = parseInt(windowMatch[4], 10);
-
-    return {
-        rows,
-        cols,
-        name: `WINDOW_${startRow}_${startCol}_${rows}_${cols}`,
-        source: 'window',
-        originRow: startRow,
-        originCol: startCol
+        return {
+            size: {
+                rows,
+                cols,
+                name: `WINDOW_${startRow}_${startCol}_${rows}_${cols}`,
+                source: 'window',
+                originRow: startRow,
+                originCol: startCol
+            }
+        };
     };
+
+    // WINDOW(other-record-name): reuses the window defined by another record.
+    const referenceMatch = windowAttribute.value.match(/WINDOW\s*\(\s*([A-Za-z0-9@#$]+)\s*\)/i);
+    if (referenceMatch) {
+        return { referenceName: referenceMatch[1] };
+    };
+
+    return undefined;
 };
 
 /**

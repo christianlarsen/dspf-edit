@@ -119,7 +119,10 @@ async function handleMoveFieldCommand(node: DdsNode, offset: number): Promise<vo
         }
 
         const newPosition = currentPosition + offset;
-        const maxCols = getMaxCols();
+        // This command only ever moves a field horizontally, so the bound is always the column
+        // limit — regardless of record type. For a subfile, currentPosition already came from
+        // element.row precisely because that's where the column value is stored for SFL records.
+        const maxPosition = getMaxCols();
 
         // Validate new position
         if (newPosition < 1) {
@@ -127,8 +130,8 @@ async function handleMoveFieldCommand(node: DdsNode, offset: number): Promise<vo
             return;
         }
 
-        if (newPosition > maxCols) {
-            vscode.window.showWarningMessage(`Cannot move field. Maximum position is ${maxCols}.`);
+        if (newPosition > maxPosition) {
+            vscode.window.showWarningMessage(`Cannot move field. Maximum position is ${maxPosition}.`);
             return;
         }
 
@@ -160,12 +163,15 @@ async function handleMoveFieldCommand(node: DdsNode, offset: number): Promise<vo
 // FIELD MOVEMENT FUNCTIONS
 
 /**
- * Moves a field to a new position by updating either the column or row field.
- * For subfile records, it updates the row position. For regular records, it updates the column position.
+ * Moves a field to a new column position by updating the column spec in the source line.
+ * The raw source columns 38-41 (line/row spec) and 41-44 (position/col spec) always keep that
+ * same meaning regardless of record type — a subfile only swaps which of those raw values ends up
+ * labeled element.row vs element.column internally (see isSubfileRecord's caller), the physical
+ * columns themselves never swap. Since this command always moves horizontally, it always writes
+ * the new value to the column spec (41-44).
  * @param editor - The active text editor
  * @param element - The field element to move
- * @param newPosition - The new position value (column or row depending on record type)
- * @param isSubfileRecord - Whether the field belongs to a subfile record (SFL)
+ * @param newPosition - The new column value
  */
 async function moveFieldToNewPosition(
     editor: vscode.TextEditor,
@@ -178,14 +184,10 @@ async function moveFieldToNewPosition(
     // Format the new position value (3 characters, right-aligned)
     const formattedPos = String(newPosition).padStart(3, ' ');
 
-    // Determine which field to update based on record type
-    const startCol = 41;
-    const endCol = 44;
-    
     // Replace characters at the appropriate positions with new value
     const range = new vscode.Range(
-        element.lineIndex, startCol,  // Start position
-        element.lineIndex, endCol     // End position
+        element.lineIndex, 41,  // Start position
+        element.lineIndex, 44   // End position
     );
 
     workspaceEdit.replace(uri, range, formattedPos);

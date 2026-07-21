@@ -405,15 +405,14 @@ async function applyButtonsToRecord(
  * @returns The formatted DDS line
  */
 function createButtonDdsLine(text: string, row: number, col: number): string {
-    const rowStr = String(row).padStart(2, ' ');
-    const colStr = String(col).padStart(2, ' ');
+    const rowStr = String(row).padStart(3, ' ');
+    const colStr = String(col).padStart(3, ' ');
 
     // Build DDS line with proper formatting
-    // Format: "     A          [row][col]'[text]'"
-    let ddsLine = ''.padEnd(45, ' ');
+    // Row occupies raw columns 38-41, column occupies raw columns 41-44
+    let ddsLine = ''.padEnd(44, ' ');
     ddsLine = ddsLine.substring(0, 5) + 'A' + ddsLine.substring(6);
-    ddsLine = ddsLine.substring(0, 39) + rowStr + ddsLine.substring(41);
-    ddsLine = ddsLine.substring(0, 42) + colStr + `'${text}'`;
+    ddsLine = ddsLine.substring(0, 38) + rowStr + colStr + `'${text}'`;
 
     return ddsLine;
 };

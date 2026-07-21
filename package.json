@@ -146,6 +146,10 @@
         "title": "Change Window Size"
       },
       {
+        "command": "dspf-edit.preview-record",
+        "title": "Preview Screen Layout"
+      },
+      {
         "command": "dspf-edit.sort-elements",
         "title": "Sort Elements"
       },
@@ -336,6 +340,11 @@
           "command": "dspf-edit.new-record",
           "when": "view == dspf-edit.schema-view && (viewItem == file || viewItem == group:records)",
           "group": "file_navigation1@1"
+        },
+        {
+          "command": "dspf-edit.preview-record",
+          "when": "view == dspf-edit.schema-view && viewItem == record",
+          "group": "records_navigation5@1"
         },
         {
           "command": "dspf-edit.add-constant",

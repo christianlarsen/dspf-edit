@@ -78,6 +78,37 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 	}
 
 	/**
+	 * Gets the TreeView instance, e.g. to listen for selection changes.
+	 */
+	getTreeView(): vscode.TreeView<DdsNode> | undefined {
+		return this.treeView;
+	}
+
+	/**
+	 * Finds the tree node for the field or constant at the given source line, by traversing the
+	 * tree via getChildren (mirroring how expandNodeRecursively walks it) so the returned node is
+	 * one TreeView.reveal() can actually locate. Used to sync the tree selection with a click in
+	 * the record preview. Returns undefined if the item is filtered out or no longer exists.
+	 * @param lineIndex - Zero-based source line index of the field/constant to find
+	 */
+	async findFieldOrConstantNode(lineIndex: number): Promise<DdsNode | undefined> {
+		const search = async (node?: DdsNode): Promise<DdsNode | undefined> => {
+			const children = await this.getChildren(node);
+			for (const child of children) {
+				if ((child.ddsElement.kind === 'field' || child.ddsElement.kind === 'constant') && child.ddsElement.lineIndex === lineIndex) {
+					return child;
+				}
+				const found = await search(child);
+				if (found) {
+					return found;
+				}
+			}
+			return undefined;
+		};
+		return search(undefined);
+	}
+
+	/**
 	 * Gets the current document URI as a string.
 	 * @returns The URI string of the current document or undefined
 	 */

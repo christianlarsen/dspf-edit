@@ -50,6 +50,13 @@ export interface DdsSize {
   source: 'default' | 'window';
   originRow : number;
   originCol : number;
+  /**
+   * Set when this size was inherited rather than defined locally: either because the record's own
+   * WINDOW() keyword names another record (WINDOW(other-record)) instead of giving row/col/rows/cols
+   * directly, or because it's an SFL/SFLCTL record that borrows its pair's window. Names the record
+   * that actually owns/defines the window (e.g. its WDWTITLE), so previews can show that owner too.
+   */
+  sharedFromRecord?: string;
 };
 
 // ELEMENT-SPECIFIC INTERFACES
@@ -196,6 +203,7 @@ export let fileSizeAttributes: DdsSizeAttributes = {
 export interface FieldInfo {
   name: string;
   type?: string;
+  usage?: string;
   row: number;
   col: number;
   length: number;
@@ -213,6 +221,7 @@ export interface ConstantInfo {
   col: number;
   length: number;
   attributes: AttributeWithIndicators[];
+  indicators?: DdsIndicator[];
   lineIndex: number;
   lastLineIndex: number;
 };

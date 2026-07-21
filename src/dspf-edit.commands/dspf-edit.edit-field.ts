@@ -846,18 +846,18 @@ function parseFieldFromLine(lineText: string, lineIndex: number): ExistingElemen
     const nameArea = lineText.substring(18, 28).trim();
     if (!nameArea) return null;
     
-    // Extract row and column (positions 40-41 and 43-44)
-    const rowStr = lineText.substring(39, 41).trim();
-    const colStr = lineText.substring(42, 44).trim();
-    
+    // Extract row and column (raw offsets 38-41 and 41-44)
+    const rowStr = lineText.substring(38, 41).trim();
+    const colStr = lineText.substring(41, 44).trim();
+
     if (!rowStr || !colStr) return null;
-    
+
     const row = parseInt(rowStr, 10);
     const column = parseInt(colStr, 10);
-    
+
     if (isNaN(row) || isNaN(column)) return null;
-    
-    const lengthStr = lineText.substring(32, 33).trim();
+
+    const lengthStr = lineText.substring(32, 34).trim();
     const length = parseInt(lengthStr, 10) || 10; // Default to 10 if can't parse
     
     return {

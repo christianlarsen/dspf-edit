@@ -705,7 +705,7 @@ function createMultiLineConstantFromBase(baseLine: string, value: string): strin
         const nextChunk = remainingText.substring(0, 35);
         remainingText = remainingText.substring(35);
         
-        const isLastChunk = remainingText.trim() === "'" || remainingText.length === 0;
+        const isLastChunk = remainingText.length === 0;
         const continuationChar = isLastChunk ? ' ' : '-';
         const contLine = '     A' + ' '.repeat(38) + nextChunk.padEnd(35, ' ') + continuationChar;
         lines.push(contLine);

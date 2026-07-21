@@ -292,6 +292,7 @@ export function findElementInsertionPoint(editor: vscode.TextEditor, element: an
 
         // Skip commented lines
         if (line.startsWith('     A*')) {
+            insertionPoint++;
             continue;
         };
         // If the line is a new record, breaks
@@ -337,8 +338,9 @@ export function findElementInsertionPointRecordFirstLine(editor: vscode.TextEdit
         if (line.trim().startsWith('A ')) {
             break;
         };
+        insertionPoint++;
     };
-    
+
     return insertionPoint;
 };
 
@@ -349,9 +351,9 @@ export function findElementInsertionPointRecordFirstLine(editor: vscode.TextEdit
  */
 export function findElementInsertionPointFileFirstLine(editor: vscode.TextEditor): number {
     const elementLineIndex = 0;
-    
+
     let insertionPoint = elementLineIndex;
-    
+
     // Skip existing attribute lines (lines that start with "     A" and have attributes)
     while (insertionPoint < editor.document.lineCount) {
         const line = editor.document.lineAt(insertionPoint).text;
@@ -362,8 +364,9 @@ export function findElementInsertionPointFileFirstLine(editor: vscode.TextEditor
         if (line.trim().startsWith('A ')) {
             break;
         };
+        insertionPoint++;
     };
-    
+
     return insertionPoint;
 };
 

@@ -34,9 +34,11 @@ import { removeAttribute } from './dspf-edit.remove-attribute';
 import { renameField, renameRecord } from './dspf-edit.rename';
 import { moveConstantLeft1, moveConstantLeft5, moveConstantRight1, moveConstantRight5 } from './dspf-edit.move-constants';
 import { moveFieldLeft1, moveFieldLeft5, moveFieldRight1, moveFieldRight5 } from './dspf-edit.move-fields';
+import { previewRecord } from './dspf-edit.preview-record';
 
 export const commands = [
     { name: 'viewStructure', handler: viewStructure, needsTreeProvider: true },
+    { name: 'previewRecord', handler: previewRecord, needsTreeProvider: true },
     { name: 'addConstant', handler: addConstant, needsTreeProvider: false },
     { name: 'editConstant', handler: editConstant, needsTreeProvider: false },
     { name: 'registerFieldCommands', handler: registerFieldCommands, needsTreeProvider: false },
