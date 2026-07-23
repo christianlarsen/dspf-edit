@@ -28,7 +28,7 @@ interface ValidationResult {
 /**
  * Interface for field position on screen
  */
-interface FieldPosition {
+export interface FieldPosition {
     row: number;
     column: number;
 };
@@ -292,6 +292,72 @@ async function handleAddFieldCommand(node: DdsNode): Promise<void> {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
         vscode.window.showErrorMessage(`Failed to add field: ${errorMessage}`);
         console.error('Error in addField command:', error);
+    };
+};
+
+/**
+ * Adds a new field to a record at an already-known screen position (used by the preview panel's
+ * "+ Field" placement mode, where the position comes from a canvas click instead of the
+ * absolute/relative positioning sub-flow). Collects the same name/usage/type-or-reference
+ * configuration as the tree's "Add field" command, just skipping the position-picking step.
+ * @param recordName - Name of the record to add the field to
+ * @param position - Row/column already determined (e.g. by a preview click); ignored for usage
+ * types that don't have a screen position (Hidden, Message, Program-to-system)
+ */
+export async function addFieldAtPosition(recordName: string, position: FieldPosition): Promise<void> {
+    try {
+        const { editor } = checkForEditorAndDocument();
+        if (!editor) {
+            return;
+        };
+
+        const recordElement = { name: recordName };
+
+        const fieldName = await promptForNewFieldName(recordElement);
+        if (!fieldName) return;
+
+        const usage = await collectFieldUsage(fieldName);
+        if (!usage) return;
+
+        const isReferenced = await promptForFieldReference();
+        if (isReferenced === null) return;
+
+        let reference: FieldReference | undefined;
+        let typeConfig: FieldTypeConfig | undefined;
+
+        if (isReferenced) {
+            const collectedReference = await collectFieldReference(fieldName);
+            if (!collectedReference) return;
+            reference = collectedReference;
+        } else {
+            const collectedTypeConfig = await collectFieldTypeConfiguration(fieldName);
+            if (!collectedTypeConfig) return;
+            typeConfig = collectedTypeConfig;
+        };
+
+        // These usage types don't have screen positions, same as the tree command's own flow.
+        const finalPosition: FieldPosition = (usage.type === 'H' || usage.type === 'M' || usage.type === 'P')
+            ? { row: 0, column: 0 }
+            : position;
+
+        const fieldConfig: NewFieldConfig = {
+            name: fieldName,
+            position: finalPosition,
+            usage,
+            isReferenced,
+            reference,
+            typeConfig
+        };
+
+        const newFieldLine = generateNewFieldLine(fieldConfig);
+        await insertNewField(editor, recordElement, newFieldLine);
+
+        vscode.window.showInformationMessage(`Field '${fieldName}' successfully added to record '${recordName}'.`);
+
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+        vscode.window.showErrorMessage(`Failed to add field: ${errorMessage}`);
+        console.error('Error in addFieldAtPosition:', error);
     };
 };
 
@@ -846,18 +912,18 @@ function parseFieldFromLine(lineText: string, lineIndex: number): ExistingElemen
     const nameArea = lineText.substring(18, 28).trim();
     if (!nameArea) return null;
     
-    // Extract row and column (positions 40-41 and 43-44)
-    const rowStr = lineText.substring(39, 41).trim();
-    const colStr = lineText.substring(42, 44).trim();
-    
+    // Extract row and column (raw offsets 38-41 and 41-44)
+    const rowStr = lineText.substring(38, 41).trim();
+    const colStr = lineText.substring(41, 44).trim();
+
     if (!rowStr || !colStr) return null;
-    
+
     const row = parseInt(rowStr, 10);
     const column = parseInt(colStr, 10);
-    
+
     if (isNaN(row) || isNaN(column)) return null;
-    
-    const lengthStr = lineText.substring(32, 33).trim();
+
+    const lengthStr = lineText.substring(32, 34).trim();
     const length = parseInt(lengthStr, 10) || 10; // Default to 10 if can't parse
     
     return {
@@ -1002,7 +1068,7 @@ function replaceAt(str: string, index: number, replacement: string): string {
 /**
  * Inserts the new field into the document
  */
-async function insertNewField(editor: vscode.TextEditor, recordElement: any, fieldLine: string): Promise<void> {
+export async function insertNewField(editor: vscode.TextEditor, recordElement: any, fieldLine: string): Promise<void> {
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
 

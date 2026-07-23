@@ -26,6 +26,7 @@ import { addErrorMessage } from './dspf-edit.add-error-messages';
 import { addIndicators } from './dspf-edit.add-indicators';
 import { fillConstant } from './dspf-edit.fill-constant';
 import { windowResize } from './dspf-edit.window-resize';
+import { windowTitle } from './dspf-edit.window-title';
 import { sortElements } from './dspf-edit.sort-elements';
 import { copyField } from './dspf-edit.copy-field';
 import { copyConstant } from './dspf-edit.copy-constant';
@@ -34,9 +35,11 @@ import { removeAttribute } from './dspf-edit.remove-attribute';
 import { renameField, renameRecord } from './dspf-edit.rename';
 import { moveConstantLeft1, moveConstantLeft5, moveConstantRight1, moveConstantRight5 } from './dspf-edit.move-constants';
 import { moveFieldLeft1, moveFieldLeft5, moveFieldRight1, moveFieldRight5 } from './dspf-edit.move-fields';
+import { previewRecord } from './dspf-edit.preview-record';
 
 export const commands = [
     { name: 'viewStructure', handler: viewStructure, needsTreeProvider: true },
+    { name: 'previewRecord', handler: previewRecord, needsTreeProvider: true },
     { name: 'addConstant', handler: addConstant, needsTreeProvider: false },
     { name: 'editConstant', handler: editConstant, needsTreeProvider: false },
     { name: 'registerFieldCommands', handler: registerFieldCommands, needsTreeProvider: false },
@@ -56,6 +59,7 @@ export const commands = [
     { name: 'addIndicators', handler: addIndicators, needsTreeProvider: false },
     { name: 'fillConstant', handler: fillConstant, needsTreeProvider: false },
     { name: 'windowResize', handler: windowResize, needsTreeProvider: false },
+    { name: 'windowTitle', handler: windowTitle, needsTreeProvider: false },
     { name: 'sortElements', handler: sortElements, needsTreeProvider: false },
     { name: 'copyField', handler: copyField, needsTreeProvider: false },
     { name: 'copyConstant', handler: copyConstant, needsTreeProvider: false },

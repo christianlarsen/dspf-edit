@@ -8,7 +8,7 @@
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "0.12.3",
+  "version": "0.13.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
@@ -144,6 +144,15 @@
       {
         "command": "dspf-edit.window-resize",
         "title": "Change Window Size"
+      },
+      {
+        "command": "dspf-edit.window-title",
+        "title": "Change Window Title"
+      },
+      {
+        "command": "dspf-edit.preview-record",
+        "title": "Preview Screen Layout",
+        "icon": "$(open-preview)"
       },
       {
         "command": "dspf-edit.sort-elements",
@@ -318,6 +327,11 @@
           "group": "records_navigation1@4"
         },
         {
+          "command": "dspf-edit.window-title",
+          "when": "view == dspf-edit.schema-view && viewItem == record",
+          "group": "records_navigation1@5"
+        },
+        {
           "command": "dspf-edit.add-buttons",
           "when": "view == dspf-edit.schema-view && viewItem == record",
           "group": "records_navigation2@1"
@@ -336,6 +350,11 @@
           "command": "dspf-edit.new-record",
           "when": "view == dspf-edit.schema-view && (viewItem == file || viewItem == group:records)",
           "group": "file_navigation1@1"
+        },
+        {
+          "command": "dspf-edit.preview-record",
+          "when": "view == dspf-edit.schema-view && viewItem == record",
+          "group": "records_navigation5@1"
         },
         {
           "command": "dspf-edit.add-constant",
@@ -396,6 +415,11 @@
           "command" : "dspf-edit.rename-record",
           "when" : "view == dspf-edit.schema-view && viewItem == record",
           "group" : "inline@99"
+        },
+        {
+          "command": "dspf-edit.preview-record",
+          "when": "view == dspf-edit.schema-view && viewItem == record",
+          "group": "inline@1"
         },
         {
           "command" : "dspf-edit.rename-field",

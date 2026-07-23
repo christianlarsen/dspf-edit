@@ -602,53 +602,48 @@ function generateWindowLine(dimensions: WindowDimensions): string {
 };
 
 /**
- * Generates window title lines, handling line wrapping if needed.
+ * Generates window title lines, handling line wrapping if needed. The whole keyword value (the
+ * quoted text plus the trailing *ALIGN/*BOTTOM) is treated as one continuous sequence and filled
+ * line by line up to column 80 — a continuation dash goes there whenever more content remains,
+ * splitting wherever that boundary happens to fall (including in the middle of *ALIGN/*BOTTOM),
+ * since DDS reconstructs a continued value by plain concatenation. Only the one separator space
+ * between the quoted text and *ALIGN is dropped when a wrap lands right on it, since it's just a
+ * token separator, not part of the title.
  * @param title - Window title text
+ * @param align - Horizontal alignment of the title within the window's top/bottom border
+ * @param position - Whether the title sits on the window's top or bottom border
  * @returns Array of formatted title lines
  */
-function generateWindowTitleLines(title: string): string[] {
+export function generateWindowTitleLines(
+    title: string,
+    align: 'LEFT' | 'CENTER' | 'RIGHT' = 'CENTER',
+    position: 'TOP' | 'BOTTOM' = 'TOP'
+): string[] {
     const maxLineLength = 80;
     const basePrefix = ' '.repeat(5) + 'A' + ' '.repeat(38);
-    
-    const keyword = "WDWTITLE((*TEXT '";
-    const suffix = "') *CENTER)";
-    
+    const contentWidth = maxLineLength - basePrefix.length; // Max chars on a line that needs no continuation dash.
+    const contentWidthWithDash = contentWidth - 1; // Max chars before the dash, on a continued line.
+
+    const textUnit = "WDWTITLE((*TEXT '" + title + "')";
+    const tail = position === 'BOTTOM' ? `*${align} *BOTTOM)` : `*${align})`;
+    const fullValue = textUnit + ' ' + tail;
+
     const lines: string[] = [];
-    let remaining = title;
-    let firstLine = true;
-    
-    while (remaining.length >= 0) {
-        if (firstLine) {
-            const available = maxLineLength - (basePrefix.length + keyword.length + suffix.length);
-            
-            if (remaining.length <= available) {
-                lines.push(basePrefix + keyword + remaining + suffix);
-                break;
-            } else {
-                // Para la primera línea con continuación, necesitamos espacio para el '-'
-                const availableWithDash = maxLineLength - (basePrefix.length + keyword.length + 1); // +1 para el '-'
-                const part = remaining.substring(0, availableWithDash);
-                lines.push(basePrefix + keyword + part + '-');
-                
-                remaining = remaining.substring(availableWithDash);
-                firstLine = false;
-            };
-        } else {
-            const available = maxLineLength - (basePrefix.length + suffix.length);
-            
-            if (remaining.length <= available) {
-                lines.push(basePrefix + remaining + suffix);
-                break;
-            } else {
-                // Para líneas intermedias con continuación, necesitamos espacio para el '-'
-                const availableWithDash = maxLineLength - (basePrefix.length + 1); // +1 para el '-'
-                const part = remaining.substring(0, availableWithDash);
-                lines.push(basePrefix + part + '-');
-                remaining = remaining.substring(availableWithDash);
-            };
+    let remaining = fullValue;
+    let consumed = 0;
+
+    while (remaining.length > contentWidth) {
+        const part = remaining.substring(0, contentWidthWithDash);
+        lines.push(basePrefix + part + '-');
+        consumed += contentWidthWithDash;
+        remaining = remaining.substring(contentWidthWithDash);
+
+        if (consumed >= textUnit.length && remaining.startsWith(' ')) {
+            remaining = remaining.slice(1);
         };
     };
-    
+
+    lines.push(basePrefix + remaining);
     return lines;
 };
 

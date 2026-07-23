@@ -27,12 +27,17 @@ jobs:
       - name: Install Extension Dependencies
         run: |
           npm install
-          npm install -g vsce
+          npm install -g vsce ovsx
 
       - name: Build Extension
         run: vsce package
 
-      - name: Publish to Marketplace
-        run: vsce publish -p $PUBLISHER_TOKEN
+      - name: Publish to VS Code Marketplace
+        run: vsce publish -p $PUBLISHER_TOKEN --packagePath *.vsix
         env:
           PUBLISHER_TOKEN: ${{ secrets.PUBLISHER_TOKEN }}
+
+      - name: Publish to Open VSX Registry
+        run: ovsx publish *.vsix -p $OVSX_TOKEN
+        env:
+          OVSX_TOKEN: ${{ secrets.OVSX_TOKEN }}

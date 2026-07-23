@@ -14,7 +14,7 @@ import { checkForEditorAndDocument, findEndLineIndex } from '../dspf-edit.utils/
 /**
  * Information needed to create a new constant.
  */
-interface NewConstantInfo {
+export interface NewConstantInfo {
     text: string;
     row: number;
     column: number;
@@ -165,9 +165,9 @@ async function handleAddConstantCommand(node?: DdsNode): Promise<void> {
  * @param column - Column position for length validation
  * @returns The entered text or null if cancelled
  */
-async function getConstantTextFromUser(
-    title: string, 
-    defaultValue: string, 
+export async function getConstantTextFromUser(
+    title: string,
+    defaultValue: string,
     column?: number
 ): Promise<string | null> {
     const newText = await vscode.window.showInputBox({
@@ -560,7 +560,7 @@ export async function updateExistingConstant(
  * @param editor - The active text editor
  * @param constantInfo - Information about the new constant
  */
-async function insertNewConstant(editor: vscode.TextEditor, constantInfo: NewConstantInfo): Promise<void> {
+export async function insertNewConstant(editor: vscode.TextEditor, constantInfo: NewConstantInfo): Promise<void> {
     const newValue = `'${constantInfo.text}'`;
     const uri = editor.document.uri;
     const workspaceEdit = new vscode.WorkspaceEdit();
@@ -705,7 +705,7 @@ function createMultiLineConstantFromBase(baseLine: string, value: string): strin
         const nextChunk = remainingText.substring(0, 35);
         remainingText = remainingText.substring(35);
         
-        const isLastChunk = remainingText.trim() === "'" || remainingText.length === 0;
+        const isLastChunk = remainingText.length === 0;
         const continuationChar = isLastChunk ? ' ' : '-';
         const contLine = '     A' + ' '.repeat(38) + nextChunk.padEnd(35, ' ') + continuationChar;
         lines.push(contLine);

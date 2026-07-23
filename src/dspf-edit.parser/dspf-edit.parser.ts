@@ -15,6 +15,7 @@ import {
     records,
     fieldsPerRecords,
     getDefaultSize,
+    getSizeForFormat,
     attributesFileLevel
 } from '../dspf-edit.model/dspf-edit.model';
 
@@ -70,6 +71,11 @@ function clearGlobalState(): void {
     records.length = 0;
     fieldsPerRecords.length = 0;
     attributesFileLevel.length = 0;
+
+    // Reset both display-size slots so switching to a document with fewer (or no) DSPSIZ formats
+    // doesn't leak a stale second size (e.g. *DS4) left over from a previously parsed document —
+    // processDspsizAttribute below only overwrites the slots it actually finds in this document.
+    setDefaultScreenSize();
 };
 
 /**
@@ -155,14 +161,18 @@ function parseSingleDdsLine(
  * @returns Object containing parsed line components
  */
 function extractLineComponents(trimmedLine: string) {
-    const indicators = parseDdsIndicators(trimmedLine.substring(2, 11));
+    const conditionZone = trimmedLine.substring(2, 11);
+    // The same zone that normally holds up to 3 indicators can instead hold a display format
+    // name (e.g. "*DS3"), conditioning the line to only apply under that DSPSIZ format.
+    const displayFormat = parseDisplayFormatCondition(conditionZone);
+    const indicators = displayFormat ? [] : parseDdsIndicators(conditionZone);
     const fieldName = trimmedLine.substring(13, 23).trim();
     const rowText = trimmedLine.substring(33, 36).trim();
     const colText = trimmedLine.substring(36, 39).trim();
     const row = rowText ? Number(rowText) : undefined;
     const col = colText ? Number(colText) : undefined;
 
-    return { indicators, fieldName, row, col };
+    return { indicators, fieldName, row, col, displayFormat };
 };
 
 /**
@@ -266,7 +276,7 @@ function parseFieldElement(
     const isHidden = trimmedLine[32] === 'H';
     const isReferenced = trimmedLine[23] === 'R';
 
-    const { attributes, nextIndex } = extractAttributes('F', lines, lineIndex, true, components.indicators);
+    const { attributes, nextIndex } = extractAttributes('F', lines, lineIndex, true, components.indicators, components.displayFormat);
 
     // Check if the current record (lastRecord) is a subfile by looking at its attributes
     const currentRecordEntry = fieldsPerRecords.find(r => r.record === lastRecord);
@@ -298,6 +308,7 @@ function parseFieldElement(
         recordname: lastRecord,
         attributes: attributes || [],
         indicators: components.indicators || undefined,
+        displayFormat: components.displayFormat,
     };
 
     return { element, nextIndex, lastRecord };
@@ -321,7 +332,7 @@ function parseConstantElement(
 ) {
     // Handle multi-line constants
     const { fullValue, lastLineIndex } = extractMultiLineConstant(lines, lineIndex, trimmedLine);
-    const { attributes, nextIndex } = extractAttributes('C', lines, lastLineIndex, true, components.indicators);
+    const { attributes, nextIndex } = extractAttributes('C', lines, lastLineIndex, true, components.indicators, components.displayFormat);
 
     // Check if the current record (lastRecord) is a subfile by looking at its attributes
     const currentRecordEntry = fieldsPerRecords.find(r => r.record === lastRecord);
@@ -345,7 +356,8 @@ function parseConstantElement(
         lastLineIndex: lastLineIndex,
         recordname: lastRecord,
         attributes: attributes || [],
-        indicators: components.indicators
+        indicators: components.indicators,
+        displayFormat: components.displayFormat
     };
 
     return { element, nextIndex: lastLineIndex, lastRecord };
@@ -397,7 +409,7 @@ function parseAttributeElement(
     components: any,
     lastRecord: string
 ) {
-    const { attributes, nextIndex } = extractAttributes('A', lines, lineIndex, true, components.indicators);
+    const { attributes, nextIndex } = extractAttributes('A', lines, lineIndex, true, components.indicators, components.displayFormat);
 
     if (attributes.length > 0) {
         const maxLastLineIndex = attributes.reduce(
@@ -410,6 +422,7 @@ function parseAttributeElement(
             lastLineIndex: maxLastLineIndex,
             value: '',
             indicators: components.indicators,
+            displayFormat: components.displayFormat,
             attributes: attributes
         };
         return { element, nextIndex, lastRecord };
@@ -445,6 +458,19 @@ export function parseDdsIndicators(input: string): DdsIndicator[] {
     return indicators;
 };
 
+/**
+ * Detects a display format condition (e.g. "*DS3", "*DS4") in the same 9-character zone that
+ * normally holds indicators. A DDS line can be conditioned on a named DSPSIZ format instead of
+ * (or as well as) indicators, so this must be checked before treating that zone as indicators —
+ * otherwise the "*DS3" text gets misread as garbage indicator data.
+ * @param input - 9-character string containing indicator specifications or a format condition
+ * @returns The format name (e.g. "*DS3") if present, else undefined
+ */
+export function parseDisplayFormatCondition(input: string): string | undefined {
+    const match = input.trim().match(/^(\*[A-Z0-9]+)/i);
+    return match ? match[1].toUpperCase() : undefined;
+};
+
 
 /**
  * Extracts attribute specifications from DDS lines, handling multi-line attributes
@@ -460,7 +486,8 @@ function extractAttributes(
     lines: string[],
     startIndex: number,
     includeIndicators: boolean,
-    indicators?: DdsIndicator[]
+    indicators?: DdsIndicator[],
+    displayFormat?: string
 ): { attributes: DdsAttribute[]; nextIndex: number } {
 
     let rawAttributeText = '';
@@ -498,7 +525,8 @@ function extractAttributes(
         lineIndex: startIndex,
         lastLineIndex: currentIndex,
         value: lineType === 'C' ? '' : rawAttributeText,
-        indicators: includeIndicators && indicators ? indicators : []
+        indicators: includeIndicators && indicators ? indicators : [],
+        displayFormat: includeIndicators ? displayFormat : undefined
     };
 
     return { attributes: [attribute], nextIndex: currentIndex };
@@ -597,19 +625,22 @@ function addFieldToRecord(field: any, recordEntry: any): void {
             value: attr.value,
             indicators: attr.indicators || [],
             lineIndex: attr.lineIndex,
-            lastLineIndex: attr.lastLineIndex ?? attr.lineIndex
+            lastLineIndex: attr.lastLineIndex ?? attr.lineIndex,
+            displayFormat: attr.displayFormat
         })).filter((attr: any) => attr.value) || [];
 
         recordEntry.fields.push({
             name: field.name,
             type: field.type,
+            usage: field.usage,
             row: field.row || 0,
             col: field.column || 0,
             length: field.length || 0,
             attributes: processedAttributes,
             indicators: field.indicators || [],
             lineIndex: field.lineIndex,
-            lastLineIndex: field.lastLineIndex || field.lineIndex
+            lastLineIndex: field.lastLineIndex || field.lineIndex,
+            displayFormat: field.displayFormat
         });
     }
 };
@@ -628,7 +659,8 @@ function addConstantToRecord(constant: any, recordEntry: any): void {
         value: attr.value,
         indicators: attr.indicators || [],
         lineIndex: attr.lineIndex,
-        lastLineIndex: attr.lastLineIndex ?? attr.lineIndex
+        lastLineIndex: attr.lastLineIndex ?? attr.lineIndex,
+        displayFormat: attr.displayFormat
     })).filter((attr: any) => attr.value) || [];
 
     // Avoid duplicate constants
@@ -640,8 +672,10 @@ function addConstantToRecord(constant: any, recordEntry: any): void {
             col: constant.column || 0,
             length: constantName.length,
             attributes: processedAttributes,
+            indicators: constant.indicators || [],
             lineIndex: constant.lineIndex,
-            lastLineIndex: constant.lastLineIndex
+            lastLineIndex: constant.lastLineIndex,
+            displayFormat: constant.displayFormat
         });
     };
 };
@@ -772,6 +806,12 @@ function updateFileSizeAttributes(sizes: Array<{ row: number; col: number; name:
         fileSizeAttributes.maxRow2 = sizes[1].row;
         fileSizeAttributes.maxCol2 = sizes[1].col;
         fileSizeAttributes.nameDsply2 = sizes[1].name;
+    } else {
+        // No second format in this document — clear it explicitly rather than leaving whatever
+        // was there before (relevant if this is ever called more than once per parse).
+        fileSizeAttributes.maxRow2 = 0;
+        fileSizeAttributes.maxCol2 = 0;
+        fileSizeAttributes.nameDsply2 = '';
     };
 };
 
@@ -791,23 +831,21 @@ function setDefaultScreenSize(): void {
 
 /**
  * NEW: Processes record sizes after all elements have been parsed
- * Assigns default size or WINDOW-specific size to each record
+ * Assigns default size or WINDOW-specific size to each record.
+ * Handles both forms of the WINDOW() keyword: the direct
+ * WINDOW(startRow startCol numRows numCols), and the shared-window reference
+ * WINDOW(other-record-name) — commonly used by a subfile's SFLCTL record to reuse the same
+ * window as another record (e.g. one that carries the WDWTITLE and footer text). It also
+ * propagates a window's size across an SFL/SFLCTL pair when only one side of the pair declares it,
+ * since both halves occupy the exact same screen area.
  * @param ddsElements - Array of all parsed DDS elements
  */
 function processRecordSizes(ddsElements: DdsElement[]): void {
     const recordElements = ddsElements.filter(el => el.kind === 'record') as DdsRecord[];
+    const sizeByRecord = computeSizeByRecord(recordElements);
 
     for (const record of recordElements) {
-        // Check if record has WINDOW attribute
-        const windowSize = extractWindowSize(record.attributes);
-
-        if (windowSize) {
-            // Use WINDOW-specific size
-            record.size = windowSize;
-        } else {
-            // Use default size from file attributes
-            record.size = getDefaultSize();
-        };
+        record.size = sizeByRecord.get(record.name) ?? getDefaultSize();
 
         // Also update the fieldsPerRecords structure for easy access
         const recordEntry = fieldsPerRecords.find(r => r.record === record.name);
@@ -818,37 +856,167 @@ function processRecordSizes(ddsElements: DdsElement[]): void {
 };
 
 /**
- * Extracts WINDOW size information from record attributes
- * @param attributes - Record attributes to search
- * @returns DdsSize object if WINDOW attribute found, undefined otherwise
+ * Computes each record's WINDOW-derived size: direct definition, WINDOW(other-record-name)
+ * references (following chains, guarding against cycles), and SFL/SFLCTL pair propagation.
+ * Shared by the parse-time cached resolution (processRecordSizes, format-oblivious — always picks
+ * the first WINDOW candidate) and the live, display-format-aware resolution used by the preview
+ * (resolveRecordSizeForFormat) when a record is conditioned by more than one DSPSIZ format.
+ * @param recordElements - All parsed records
+ * @param activeFormat - Selected display format name (e.g. "*DS3") to prefer when a record has
+ * more than one WINDOW() candidate; undefined to always take the first candidate (original behavior)
  */
-function extractWindowSize(attributes?: DdsAttribute[]): DdsSize | undefined {
-    if (!attributes) return undefined;
+function computeSizeByRecord(recordElements: DdsRecord[], activeFormat?: string): Map<string, DdsSize> {
+    const sizeByRecord = new Map<string, DdsSize>();
+    const referenceByRecord = new Map<string, string>();
 
-    const windowAttribute = attributes.find(attr =>
-        attr.value.toUpperCase().includes('WINDOW(')
-    );
+    for (const record of recordElements) {
+        const extracted = extractWindowSize(record.attributes, activeFormat);
+        if (extracted?.size) {
+            sizeByRecord.set(record.name, extracted.size);
+        } else if (extracted?.referenceName) {
+            referenceByRecord.set(record.name, extracted.referenceName);
+        };
+    };
+
+    // Resolve WINDOW(other-record-name) references, following chains and guarding against cycles.
+    for (const [recordName, referenceName] of referenceByRecord) {
+        const visited = new Set<string>([recordName]);
+        let ownerName = referenceName;
+        while (referenceByRecord.has(ownerName) && !sizeByRecord.has(ownerName) && !visited.has(ownerName)) {
+            visited.add(ownerName);
+            ownerName = referenceByRecord.get(ownerName)!;
+        };
+
+        const ownerSize = sizeByRecord.get(ownerName);
+        if (ownerSize) {
+            sizeByRecord.set(recordName, { ...ownerSize, sharedFromRecord: ownerSize.sharedFromRecord ?? ownerName });
+        };
+    };
+
+    propagateSubfileWindowSizes(recordElements, sizeByRecord);
+
+    return sizeByRecord;
+};
+
+/**
+ * Live, display-format-aware version of the WINDOW size resolution done by processRecordSizes at
+ * parse time. Used by the preview panel to recompute a record's effective size on the fly when
+ * the user switches display format (*DS3/*DS4), without needing a re-parse — some records
+ * (typically a subfile's SFLCTL, or a window that reuses another record's WINDOW) declare a
+ * different WINDOW() for each format, one line per format, conditioned on that format's name.
+ * @param recordName - Name of the record to resolve
+ * @param activeFormat - Selected display format name (e.g. "*DS3")
+ */
+export function resolveRecordSizeForFormat(recordName: string, activeFormat: string): DdsSize {
+    const recordElements = currentDdsElements.filter(el => el.kind === 'record') as DdsRecord[];
+    const sizeByRecord = computeSizeByRecord(recordElements, activeFormat);
+    return sizeByRecord.get(recordName) ?? getSizeForFormat(activeFormat) ?? getDefaultSize();
+};
+
+/**
+ * Shares a window's size across an SFL/SFLCTL pair when only one side declares WINDOW(): the
+ * subfile detail (SFL) record and its control (SFLCTL) record occupy the exact same screen area,
+ * but the WINDOW() keyword (direct or shared-reference) commonly sits on just one of them.
+ * @param recordElements - All parsed records
+ * @param sizeByRecord - Sizes resolved so far (direct + reference), mutated in place
+ */
+function propagateSubfileWindowSizes(recordElements: DdsRecord[], sizeByRecord: Map<string, DdsSize>): void {
+    const findSflCtlPairName = (sflName: string): string | undefined => {
+        const ctlRecord = recordElements.find(r =>
+            r.attributes?.some(attr => {
+                const match = attr.value.match(/^SFLCTL\(\s*([A-Za-z0-9@#$]+)\s*\)$/i);
+                return Boolean(match && match[1].toUpperCase() === sflName.toUpperCase());
+            })
+        );
+        return ctlRecord?.name;
+    };
+
+    const findSflNameFromCtl = (ctlRecord: DdsRecord): string | undefined => {
+        const attr = ctlRecord.attributes?.find(a => a.value.toUpperCase().startsWith('SFLCTL('));
+        return attr?.value.match(/^SFLCTL\(\s*([A-Za-z0-9@#$]+)\s*\)$/i)?.[1];
+    };
+
+    for (const record of recordElements) {
+        if (sizeByRecord.has(record.name)) {
+            continue;
+        };
+
+        const pairName = isSubfileRecord(record.attributes)
+            ? findSflCtlPairName(record.name)
+            : findSflNameFromCtl(record);
+
+        const pairSize = pairName ? sizeByRecord.get(pairName) : undefined;
+        if (pairSize) {
+            sizeByRecord.set(record.name, pairSize);
+        };
+    };
+};
+
+/**
+ * Picks which of a record's WINDOW() attribute candidates applies. A record can have more than
+ * one when it's conditioned by different DSPSIZ display formats (*DS3/*DS4), one WINDOW() line
+ * per format. Prefers the one matching activeFormat, falling back to an unconditioned one, then to
+ * the first candidate in source order — that last fallback is what makes this format-oblivious
+ * (always "first WINDOW wins") when no activeFormat is given, preserving the original behavior for
+ * the parse-time cached size.
+ * @param attributes - Record attributes to search
+ * @param activeFormat - Selected display format name (e.g. "*DS3"), or undefined
+ */
+function pickWindowAttribute(attributes: DdsAttribute[] | undefined, activeFormat?: string): DdsAttribute | undefined {
+    const candidates = (attributes ?? []).filter(attr => attr.value.toUpperCase().startsWith('WINDOW('));
+    if (candidates.length === 0) {
+        return undefined;
+    };
+    if (!activeFormat) {
+        return candidates[0];
+    };
+    return candidates.find(attr => attr.displayFormat === activeFormat)
+        ?? candidates.find(attr => !attr.displayFormat)
+        ?? candidates[0];
+};
+
+/**
+ * Extracts WINDOW size information from record attributes. Supports both the direct form,
+ * WINDOW(startRow startCol numRows numCols), and the shared-window reference form,
+ * WINDOW(other-record-name), which is resolved later against the other record's own size.
+ * @param attributes - Record attributes to search
+ * @param activeFormat - Selected display format name (e.g. "*DS3"), to pick the right candidate
+ * when the record has more than one WINDOW() line (one per DSPSIZ format)
+ * @returns The resolved size (direct form), a reference name to resolve later (name form), or undefined
+ */
+function extractWindowSize(attributes?: DdsAttribute[], activeFormat?: string): { size?: DdsSize; referenceName?: string } | undefined {
+    const windowAttribute = pickWindowAttribute(attributes, activeFormat);
     if (!windowAttribute) return undefined;
 
     // WINDOW(startRow startCol numRows numCols)
     const windowMatch = windowAttribute.value.match(
         /WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\)/i
     );
-    if (!windowMatch) return undefined;
+    if (windowMatch) {
+        const startRow = parseInt(windowMatch[1], 10);
+        const startCol = parseInt(windowMatch[2], 10);
+        const rows = parseInt(windowMatch[3], 10);
+        const cols = parseInt(windowMatch[4], 10);
 
-    const startRow = parseInt(windowMatch[1], 10);
-    const startCol = parseInt(windowMatch[2], 10);
-    const rows = parseInt(windowMatch[3], 10);
-    const cols = parseInt(windowMatch[4], 10);
-
-    return {
-        rows,
-        cols,
-        name: `WINDOW_${startRow}_${startCol}_${rows}_${cols}`,
-        source: 'window',
-        originRow: startRow,
-        originCol: startCol
+        return {
+            size: {
+                rows,
+                cols,
+                name: `WINDOW_${startRow}_${startCol}_${rows}_${cols}`,
+                source: 'window',
+                originRow: startRow,
+                originCol: startCol
+            }
+        };
     };
+
+    // WINDOW(other-record-name): reuses the window defined by another record.
+    const referenceMatch = windowAttribute.value.match(/WINDOW\s*\(\s*([A-Za-z0-9@#$]+)\s*\)/i);
+    if (referenceMatch) {
+        return { referenceName: referenceMatch[1] };
+    };
+
+    return undefined;
 };
 
 /**

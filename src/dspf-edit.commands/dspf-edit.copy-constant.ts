@@ -514,10 +514,10 @@ async function generateCopiedConstantLines(editor: vscode.TextEditor, config: Co
 function generateConstantContentLines(config: CopyConstantConfig, newConstantValue: string): string[] {
     const lines: string[] = [];
     
-    // Create base line with position
-    const rowStr = config.targetPosition.row.toString().padStart(2, ' ');
-    const colStr = config.targetPosition.column.toString().padStart(2, ' ');
-    const baseLine = `     A` + ' '.repeat(33) + `${rowStr} ${colStr}`;
+    // Create base line with position (row at raw 38-41, column at raw 41-44, each 3 chars wide)
+    const rowStr = config.targetPosition.row.toString().padStart(3, ' ');
+    const colStr = config.targetPosition.column.toString().padStart(3, ' ');
+    const baseLine = `     A` + ' '.repeat(32) + `${rowStr}${colStr}`;
 
     // Check if the new constant fits in a single line (36 characters or less)
     if (newConstantValue.length <= 36) {
@@ -635,11 +635,11 @@ function generateAttributeContentLines(
 ): string[] {
     const lines: string[] = [];
     
-    // Create base line with position for the attribute
-    const rowStr = targetPosition.row.toString().padStart(2, ' ');
-    const colStr = targetPosition.column.toString().padStart(2, ' ');
-    
-    const baseLine = `     A`+ ' '.repeat(33) + `${rowStr} ${colStr}`;
+    // Create base line with position for the attribute (row at raw 38-41, column at raw 41-44, each 3 chars wide)
+    const rowStr = targetPosition.row.toString().padStart(3, ' ');
+    const colStr = targetPosition.column.toString().padStart(3, ' ');
+
+    const baseLine = `     A`+ ' '.repeat(32) + `${rowStr}${colStr}`;
 
     // Check if the attribute value fits in a single line (36 characters or less)
     if (attributeValue.length <= 36) {

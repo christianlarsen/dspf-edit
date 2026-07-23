@@ -34,7 +34,9 @@ The extension provides a **navigable schema view** of the DDS source file that i
     - Assign command keys.
     - Add / Remove / Change indicators.
     - Resizing (if window record).
+    - Change Window Title (if window record).
     - Sort elements.
+    - Preview Screen Layout (also available as an inline button on the record).
 
 - **Constants**
   - Show text, position (row/column), indicators, and attributes.
@@ -66,6 +68,19 @@ The extension provides a **navigable schema view** of the DDS source file that i
 - **Attributes**
     - Add / Remove / Change indicators.
     - Remove attribute.
+
+- **Screen Preview**
+  - Visual, green-screen-style preview of a record's fields and constants (colors, DSPATR attributes, and placeholders for output/input/both fields).
+  - A single, compact toolbar (size, display format, overlay, indicators, add buttons) sits above the preview.
+  - Drag fields/constants to reposition them directly on the preview.
+  - "+ Field" / "+ Constant" buttons: click, then click a point on the screen to place a new field/constant there, using the same prompts as the tree's "Add field"/"Add constant" commands.
+  - WINDOW records are drawn at their real screen position and can be resized/moved with the mouse; shows WDWTITLE if present. Supports windows shared via WINDOW(record-name).
+  - Click a window's title to edit it, or use its "⋮" actions menu / one-click "center horizontally" icon — all shown only while hovering over the window.
+  - Subfile (SFL/SFLCTL) records show all SFLPAG rows, and automatically preview their paired header/detail record; detail rows can't be dragged up over the header's own content.
+  - Overlay any other record (dimmed) behind the one being previewed, to see how they compose.
+  - Simulate indicators on/off to preview conditional fields, constants, and attributes.
+  - For files with more than one DSPSIZ format (e.g. *DS3/*DS4), switch which one is previewed — window positions/sizes and conditioned elements are resolved for the selected format.
+  - Stays in sync with the schema tree selection in both directions.
 
 ---
 
@@ -103,8 +118,17 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.12.3** - 2025-11-30
-- Fixed: When creating a new field, the horizontal position was being saved incorrectly in the source.
+**0.13.0** - 2026-07-23
+- Added: New "Preview Screen Layout" option — visual, green-screen-style preview of a record, with drag-to-move, window/subfile support, record overlay, indicator simulation, and a display format (*DS3/*DS4) switcher.
+- Added: "+ Field" / "+ Constant" buttons in the preview to create new elements by clicking a point on the screen.
+- Added: New "Change Window Title" command (also editable directly from the preview), plus a window actions menu and a one-click "center horizontally" icon, shown only while hovering over the window.
+- Added: Inline "Preview Screen Layout" button on record tree items.
+- Fixed: Moving a field or constant left/right in a subfile wrote the new position into the wrong source columns.
+- Fixed: The "Add buttons" command used the wrong starting column in window records.
+- Fixed: A line conditioned by a display format name was misread as garbage indicator data.
+- Fixed: Mutually-exclusive fields/constants conditioned by complementary indicators could show at once without indicator simulation enabled.
+- Fixed: Switching between two open DSPF files could leak a stale display-format size into the other file's selector.
+- Fixed: The record filter could silently hide a newly-added record, or reset unpredictably when a record was renamed/removed.
 
 ---
 

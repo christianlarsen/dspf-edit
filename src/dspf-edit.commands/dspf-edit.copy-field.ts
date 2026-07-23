@@ -61,9 +61,9 @@ const COPY_CONSTANTS = {
     MAX_NAME_LENGTH: 10,
     NAME_COLUMN_START: 18,
     NAME_COLUMN_END: 28,
-    ROW_COLUMN_START: 39,
+    ROW_COLUMN_START: 38,
     ROW_COLUMN_END: 41,
-    COLUMN_COLUMN_START: 42,
+    COLUMN_COLUMN_START: 41,
     COLUMN_COLUMN_END: 44
 } as const;
 
@@ -670,15 +670,15 @@ function updateMainFieldLine(originalLine: string, config: CopyFieldConfig, isHi
 
     // Update position only for visible fields
     if (!isHidden && config.targetPosition) {
-        // Update position (columns 40-41 row, 43-44 col, 0-based: 39-40, 42-43)
-        const rowStr = config.targetPosition.row.toString().padStart(2, ' ');
-        const colStr = config.targetPosition.column.toString().padStart(2, ' ');
+        // Update position (row at raw 38-41, column at raw 41-44, each 3 chars wide)
+        const rowStr = config.targetPosition.row.toString().padStart(3, ' ');
+        const colStr = config.targetPosition.column.toString().padStart(3, ' ');
         line = replaceAt(line, COPY_CONSTANTS.ROW_COLUMN_START, rowStr);
         line = replaceAt(line, COPY_CONSTANTS.COLUMN_COLUMN_START, colStr);
     } else if (isHidden) {
         // For hidden fields, clear the position columns
-        line = replaceAt(line, COPY_CONSTANTS.ROW_COLUMN_START, '  ');
-        line = replaceAt(line, COPY_CONSTANTS.COLUMN_COLUMN_START, '  ');
+        line = replaceAt(line, COPY_CONSTANTS.ROW_COLUMN_START, '   ');
+        line = replaceAt(line, COPY_CONSTANTS.COLUMN_COLUMN_START, '   ');
     };
 
     return line.trimEnd();
