@@ -16,6 +16,13 @@ import { ExtensionState } from '../dspf-edit.states/state';
 interface DocumentFilter {
 	visibilityFilter: Set<'field' | 'constant'>;
 	recordFilter: Set<string>;
+	/** Whether recordFilter has been seeded for this document yet. Needed to tell an intentional
+	 * "hide all" (empty recordFilter) apart from a brand-new document that just hasn't been
+	 * initialized yet — both look like an empty set otherwise. */
+	initialized: boolean;
+	/** Every record name seen as of the last setElements() call, filtered or not — used to detect
+	 * newly-added records (as opposed to ones that were already there but filtered out). */
+	knownRecords: Set<string>;
 }
 
 /**
@@ -35,7 +42,9 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 	// Filtro por defecto para nuevos documentos
 	private defaultFilter: DocumentFilter = {
 		visibilityFilter: new Set(['field', 'constant']),
-		recordFilter: new Set()
+		recordFilter: new Set(),
+		initialized: false,
+		knownRecords: new Set()
 	};
 
 	// TreeView instance for expand/collapse operations
@@ -55,15 +64,44 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 
 		const filter = this.getCurrentFilter();
 		const recordNames = this.elements.filter(e => e.kind === 'record').map(r => r.name);
+		const currentRecordNames = new Set(recordNames);
 
-		// Si el filtro está vacío o tiene registros que ya no existen, reinicializar con todos
-		const hasInvalidRecords = filter.recordFilter.size > 0 &&
-			[...filter.recordFilter].some(name => !recordNames.includes(name));
-
-		if (filter.recordFilter.size === 0 || hasInvalidRecords) {
+		if (!filter.initialized) {
+			// Brand-new document: seed the filter with every record, so nothing is hidden by
+			// default. Only happens once — an explicit "Hide all" afterwards must stick.
 			filter.recordFilter = new Set(recordNames);
-			this.setCurrentFilter(filter);
-		}
+			filter.initialized = true;
+		} else {
+			const newRecords = recordNames.filter(name => !filter.knownRecords.has(name));
+			// "Partially" filtered = some records are actively hidden (not none, not all) — a
+			// brand-new record would silently vanish into that hidden set with no obvious cause.
+			const wasPartiallyFiltered = filter.recordFilter.size > 0 && filter.recordFilter.size < filter.knownRecords.size;
+
+			if (newRecords.length > 0 && wasPartiallyFiltered) {
+				// Rather than leave the new record(s) invisible for no apparent reason, disable
+				// the record filter entirely (show everything) and let the user know why.
+				filter.recordFilter = new Set(recordNames);
+
+				const docName = ExtensionState.lastDdsDocument ? path.basename(ExtensionState.lastDdsDocument.uri.fsPath) : 'this document';
+				vscode.window.showWarningMessage(
+					`New record${newRecords.length > 1 ? 's' : ''} (${newRecords.join(', ')}) detected in ${docName} — record filter disabled so it's visible.`
+				);
+			} else {
+				// Prune record names that no longer exist (renamed/removed). Any new record is
+				// silently included too, unless the filter was intentionally emptied ("Hide all"),
+				// which stays that way.
+				const pruned = new Set([...filter.recordFilter].filter(name => currentRecordNames.has(name)));
+				if (filter.recordFilter.size > 0) {
+					for (const name of newRecords) {
+						pruned.add(name);
+					};
+				};
+				filter.recordFilter = pruned;
+			};
+		};
+
+		filter.knownRecords = currentRecordNames;
+		this.setCurrentFilter(filter);
 
 		// Actualizar el status bar después de establecer los elementos
 		// con un pequeño delay para evitar parpadeos
@@ -130,7 +168,9 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 			// Crear una copia del filtro por defecto para este documento
 			this.documentFilters.set(uri, {
 				visibilityFilter: new Set(this.defaultFilter.visibilityFilter),
-				recordFilter: new Set(this.defaultFilter.recordFilter)
+				recordFilter: new Set(this.defaultFilter.recordFilter),
+				initialized: false,
+				knownRecords: new Set()
 			});
 		}
 
@@ -226,7 +266,7 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 			.map(e => ({
 				label: `📄 ${e.name}`,
 				name: e.name,
-				picked: filter.recordFilter.size > 0 && filter.recordFilter.has(e.name)
+				picked: filter.recordFilter.has(e.name)
 			}));
 
 		const selectedRecords = await vscode.window.showQuickPick(recordItems, {
@@ -235,11 +275,9 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 		});
 
 		if (selectedRecords !== undefined) {
+			// Leaving none checked is a valid (if unusual) choice — it means "hide all records",
+			// same as the "Hide all" command; it's not silently reinterpreted as "show all".
 			filter.recordFilter = new Set(selectedRecords.map(r => r.name));
-			if (filter.recordFilter.size === 0) {
-				// Si no se selecciona ninguno, mostrar todos
-				filter.recordFilter = new Set(this.elements.filter(e => e.kind === 'record').map(r => r.name));
-			}
 		}
 
 		// Select which element types to show
@@ -247,7 +285,7 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 		const elementItems = allElementTypes.map(type => ({
 			label: type === 'field' ? '🔤 Fields' : '💡 Constants',
 			type: type,
-			picked: filter.visibilityFilter.has(type) || filter.visibilityFilter.size === 0
+			picked: filter.visibilityFilter.has(type)
 		}));
 
 		const selectedElements = await vscode.window.showQuickPick(elementItems, {
@@ -256,14 +294,12 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 		});
 
 		if (selectedElements !== undefined) {
+			// Same as above: leaving none checked means "hide all types", not a fallback to "all".
 			filter.visibilityFilter = new Set(selectedElements.map(e => e.type as 'field' | 'constant'));
-			if (filter.visibilityFilter.size === 0) {
-				// If none selected, restore all types
-				filter.visibilityFilter = new Set(allElementTypes);
-			}
 		}
 
 		// Guardar filtro actualizado
+		filter.initialized = true;
 		this.setCurrentFilter(filter);
 
 		// Refresh tree and update status bar
@@ -281,6 +317,7 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 		} else {
 			filter.visibilityFilter.add(kind);
 		}
+		filter.initialized = true;
 		this.setCurrentFilter(filter);
 		this.refresh();
 		this.updateStatusBar();
@@ -293,6 +330,7 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 		const filter = this.getCurrentFilter();
 		filter.visibilityFilter = new Set(['field', 'constant']);
 		filter.recordFilter = new Set(this.elements.filter(e => e.kind === 'record').map(r => r.name));
+		filter.initialized = true;
 		this.setCurrentFilter(filter);
 
 		this.refresh();
@@ -310,6 +348,7 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 		const filter = this.getCurrentFilter();
 		filter.visibilityFilter.clear();
 		filter.recordFilter.clear();
+		filter.initialized = true;
 		this.setCurrentFilter(filter);
 
 		this.refresh();
@@ -326,8 +365,7 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 	}
 
 	private isVisibleRecord(name: string): boolean {
-		const filter = this.getCurrentFilter();
-		return filter.recordFilter.size === 0 || filter.recordFilter.has(name);
+		return this.getCurrentFilter().recordFilter.has(name);
 	}
 
 	// TreeDataProvider required methods

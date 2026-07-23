@@ -307,13 +307,10 @@ function getRecordInformation(recordName: string): RecordInformation | null {
  * @returns Layout information for button placement
  */
 function calculateButtonLayout(buttons: ButtonDefinition[], recordInfo: RecordInformation): ButtonLayout {
-    let startCol = 2;       // Start column for buttons (for non window records)
+    const startCol = 2;     // Start column for buttons (relative column 1 is unusable in windows, so both cases start at 2)
     const spacing = 2;      // Space between buttons
     let col = startCol;
     let rowsNeeded = 1;
-
-    // If it is a window, then the start column is 1.
-    if (recordInfo.isWindow) startCol = 1;
 
     // Calculate how many rows are needed
     for (const btn of buttons) {

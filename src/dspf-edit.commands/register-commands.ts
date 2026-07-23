@@ -26,6 +26,7 @@ import { addErrorMessage } from './dspf-edit.add-error-messages';
 import { addIndicators } from './dspf-edit.add-indicators';
 import { fillConstant } from './dspf-edit.fill-constant';
 import { windowResize } from './dspf-edit.window-resize';
+import { windowTitle } from './dspf-edit.window-title';
 import { sortElements } from './dspf-edit.sort-elements';
 import { copyField } from './dspf-edit.copy-field';
 import { copyConstant } from './dspf-edit.copy-constant';
@@ -58,6 +59,7 @@ export const commands = [
     { name: 'addIndicators', handler: addIndicators, needsTreeProvider: false },
     { name: 'fillConstant', handler: fillConstant, needsTreeProvider: false },
     { name: 'windowResize', handler: windowResize, needsTreeProvider: false },
+    { name: 'windowTitle', handler: windowTitle, needsTreeProvider: false },
     { name: 'sortElements', handler: sortElements, needsTreeProvider: false },
     { name: 'copyField', handler: copyField, needsTreeProvider: false },
     { name: 'copyConstant', handler: copyConstant, needsTreeProvider: false },

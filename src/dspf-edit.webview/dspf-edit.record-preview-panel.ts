@@ -1,13 +1,17 @@
 /*
-    Christian Larsen, 2025
+    Christian Larsen, 2026
     "RPG structure"
     dspf-edit.record-preview-panel.ts
 */
 
 import * as vscode from 'vscode';
-import { FieldsPerRecord, DdsSize, AttributeWithIndicators, DdsIndicator, fieldsPerRecords, records, getDefaultSize } from '../dspf-edit.model/dspf-edit.model';
+import { FieldsPerRecord, DdsSize, AttributeWithIndicators, DdsIndicator, fieldsPerRecords, records, getDefaultSize, getAvailableDisplayFormats, getSizeForFormat } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, updateTreeProvider } from '../dspf-edit.utils/dspf-edit.helper';
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
+import { resolveRecordSizeForFormat } from '../dspf-edit.parser/dspf-edit.parser';
+import { editWindowTitleForRecord } from '../dspf-edit.commands/dspf-edit.window-title';
+import { getConstantTextFromUser, insertNewConstant } from '../dspf-edit.commands/dspf-edit.edit-constant';
+import { addFieldAtPosition } from '../dspf-edit.commands/dspf-edit.edit-field';
 
 /**
  * Item sent to the webview for rendering (a single field or constant on the screen grid).
@@ -140,12 +144,15 @@ function attributeGroupKey(value: string): string {
 };
 
 /**
- * Finds the record's WINDOW() keyword, if any.
+ * Finds the record's WINDOW() keyword, if any. When the record is conditioned by more than one
+ * display format (one WINDOW() line per format), picks the one matching activeFormat.
  * @param recordName - Name of the record to inspect
+ * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
  */
-function findWindowAttribute(recordName: string): { startRow: number; startCol: number; numRows: number; numCols: number; lineIndex: number } | undefined {
+function findWindowAttribute(recordName: string, activeFormat?: string): { startRow: number; startCol: number; numRows: number; numCols: number; lineIndex: number } | undefined {
     const record = fieldsPerRecords.find(r => r.record === recordName);
-    const attr = record?.attributes?.find(a => a.value.toUpperCase().startsWith('WINDOW('));
+    const candidates = record?.attributes?.filter(a => a.value.toUpperCase().startsWith('WINDOW(')) ?? [];
+    const attr = pickForActiveFormat(candidates, activeFormat);
     if (!attr) {
         return undefined;
     };
@@ -175,17 +182,19 @@ interface WindowTitle {
  * Finds and parses the record's WDWTITLE() keyword, if any. When the record shares its window
  * with another record (WINDOW(other-record-name), or an SFL/SFLCTL pair where only one side
  * declares the window), the title is commonly only present on that owner record — falls back
- * to it if the record itself has none.
+ * to it if the record itself has none. When conditioned by more than one display format (one
+ * WDWTITLE() per format), picks the one matching activeFormat.
  * Handles the common form WDWTITLE((*TEXT 'title text') [*TOP|*BOTTOM] [*LEFT|*CENTER|*RIGHT]).
  * @param recordName - Name of the record to inspect
+ * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
  */
-function findWindowTitle(recordName: string): WindowTitle | undefined {
-    const record = fieldsPerRecords.find(r => r.record === recordName);
-    const ownerName = record?.size?.sharedFromRecord;
+function findWindowTitle(recordName: string, activeFormat?: string): WindowTitle | undefined {
+    const ownerName = getEffectiveSize(recordName, activeFormat)?.sharedFromRecord;
 
     for (const name of ownerName ? [recordName, ownerName] : [recordName]) {
         const rec = fieldsPerRecords.find(r => r.record === name);
-        const attr = rec?.attributes?.find(a => a.value.toUpperCase().startsWith('WDWTITLE('));
+        const candidates = rec?.attributes?.filter(a => a.value.toUpperCase().startsWith('WDWTITLE(')) ?? [];
+        const attr = pickForActiveFormat(candidates, activeFormat);
         if (!attr) {
             continue;
         };
@@ -228,15 +237,19 @@ function findSflControlRecord(sflRecordName: string): FieldsPerRecord | undefine
 /**
  * Finds the SFLPAG (page size, i.e. number of subfile rows shown at once) for a subfile record,
  * by locating its control record (the one with SFLCTL(sflRecordName)) and reading SFLPAG() from it.
+ * When conditioned by more than one display format (one SFLPAG() per format), picks the one
+ * matching activeFormat.
  * @param sflRecordName - Name of the subfile (SFL) record
+ * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
  */
-function findSubfilePageSize(sflRecordName: string): number | undefined {
+function findSubfilePageSize(sflRecordName: string, activeFormat?: string): number | undefined {
     const controlRecord = findSflControlRecord(sflRecordName);
     if (!controlRecord) {
         return undefined;
     };
 
-    const pagAttr = controlRecord.attributes?.find(a => a.value.toUpperCase().startsWith('SFLPAG('));
+    const candidates = controlRecord.attributes?.filter(a => a.value.toUpperCase().startsWith('SFLPAG(')) ?? [];
+    const pagAttr = pickForActiveFormat(candidates, activeFormat);
     const match = pagAttr?.value.match(/SFLPAG\(\s*(\d+)\s*\)/i);
     return match ? parseInt(match[1], 10) : undefined;
 };
@@ -270,9 +283,8 @@ function findSubfilePairRecordName(recordName: string): string | undefined {
  * other static text (e.g. function-key footers) that belong to the window as a whole.
  * @param recordName - Name of the record to inspect
  */
-function findWindowOwnerRecordName(recordName: string): string | undefined {
-    const record = fieldsPerRecords.find(r => r.record === recordName);
-    const owner = record?.size?.sharedFromRecord;
+function findWindowOwnerRecordName(recordName: string, activeFormat?: string): string | undefined {
+    const owner = getEffectiveSize(recordName, activeFormat)?.sharedFromRecord;
     return owner && owner.toUpperCase() !== recordName.toUpperCase() ? owner : undefined;
 };
 
@@ -283,12 +295,60 @@ function findWindowOwnerRecordName(recordName: string): string | undefined {
  * from (WINDOW(other-record-name), or an inherited SFL/SFLCTL pair). Undefined for non-window records.
  * @param recordName - Name of the record to inspect
  */
-function windowOwnerOf(recordName: string): string | undefined {
-    const record = fieldsPerRecords.find(r => r.record === recordName);
-    if (record?.size?.source !== 'window') {
+function windowOwnerOf(recordName: string, activeFormat?: string): string | undefined {
+    const size = getEffectiveSize(recordName, activeFormat);
+    if (size?.source !== 'window') {
         return undefined;
     };
-    return record.size.sharedFromRecord ?? recordName;
+    return size.sharedFromRecord ?? recordName;
+};
+
+/**
+ * Resolves a record's effective size: the live, display-format-aware resolution
+ * (resolveRecordSizeForFormat) when a display format is actively selected in the preview, else the
+ * cached parse-time size — unchanged behavior for files that don't declare multiple DSPSIZ formats.
+ * @param recordName - Name of the record to resolve
+ * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
+ */
+function getEffectiveSize(recordName: string, activeFormat?: string): DdsSize | undefined {
+    if (activeFormat) {
+        return resolveRecordSizeForFormat(recordName, activeFormat);
+    };
+    return fieldsPerRecords.find(r => r.record === recordName)?.size;
+};
+
+/**
+ * Filters out attributes/fields/constants conditioned by a display format other than the active
+ * one; unconditioned ones (and everything, when no format is active) always pass through.
+ * @param items - Items carrying an optional displayFormat condition
+ * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
+ */
+function filterForActiveFormat<T extends { displayFormat?: string }>(items: T[], activeFormat: string | undefined): T[] {
+    if (!activeFormat) {
+        return items;
+    };
+    return items.filter(item => !item.displayFormat || item.displayFormat === activeFormat);
+};
+
+/**
+ * Picks which of several same-keyword candidates applies, when a record/field/constant is
+ * conditioned by more than one display format (one line per format, e.g. WDWTITLE or SFLPAG
+ * declared once for *DS3 and once for *DS4). Prefers the one matching activeFormat, falling back
+ * to an unconditioned one, then to the first candidate — so behavior is unchanged when no format
+ * is active.
+ * @param candidates - Same-keyword attribute candidates, in source order
+ * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
+ */
+function pickForActiveFormat<T extends { displayFormat?: string }>(candidates: T[], activeFormat?: string): T | undefined {
+    if (candidates.length === 0) {
+        return undefined;
+    };
+    if (!activeFormat) {
+        return candidates[0];
+    };
+    return candidates.find(c => c.displayFormat === activeFormat)
+        ?? candidates.find(c => !c.displayFormat)
+        ?? candidates[0];
 };
 
 /**
@@ -309,6 +369,7 @@ export class RecordPreviewPanel {
     private overlayRecordName: string | undefined;
     private indicatorsEnabled = false;
     private activeIndicators: Set<number> = new Set();
+    private activeDisplayFormat: string | undefined;
     private lastRecordInfo: FieldsPerRecord | undefined;
     private lastSize: DdsSize | undefined;
 
@@ -374,6 +435,7 @@ export class RecordPreviewPanel {
             existing.overlayRecordName = undefined;
             existing.indicatorsEnabled = false;
             existing.activeIndicators = new Set();
+            existing.activeDisplayFormat = undefined;
             existing.panel.title = `Preview: ${recordName}`;
             // Reveal without forcing a column: the user may have moved the panel elsewhere
             // (e.g. to a bottom group), and switching records shouldn't snap it back to "Beside".
@@ -409,27 +471,79 @@ export class RecordPreviewPanel {
     };
 
     /**
-     * Renders the last received record data, honoring the current overlay selection.
-     * Split out from `update()` so changing the overlay (a pure view change) can re-render
-     * without needing a fresh parse.
+     * Resolves the previewed record's current geometry (size, whether it's a window, and the
+     * row/col offset that places its record-local coordinates on the screen canvas), honoring the
+     * active display format. Shared by `render()` and by anything that needs to convert a screen
+     * click back to a record-local position (e.g. placing a new constant).
      */
-    private render(): void {
+    private resolveActiveGeometry(): {
+        recordInfo: FieldsPerRecord;
+        size: DdsSize;
+        isWindow: boolean;
+        rowOffset: number;
+        colOffset: number;
+        minDetailRow: number | null;
+    } | null {
         const recordInfo = this.lastRecordInfo;
-        const size = this.lastSize;
-
-        if (!recordInfo || !size) {
-            this.panel.webview.postMessage({ type: 'notFound' });
-            return;
+        if (!recordInfo || !this.lastSize) {
+            return null;
         };
 
+        // Default to the first declared format so a record's WINDOW()/attributes conditioned per
+        // format resolve consistently from the very first render, instead of showing every
+        // candidate at once. The selector itself stays locked to it when the file only declares one.
+        const availableFormats = getAvailableDisplayFormats();
+        if (availableFormats.length > 0 && !this.activeDisplayFormat) {
+            this.activeDisplayFormat = availableFormats[0].name;
+        };
+
+        // With a format actively selected, re-resolve the record's size live (it may be
+        // conditioned differently per format, e.g. a WINDOW() line per format); otherwise use the
+        // cached, parse-time size exactly as before.
+        const size = this.activeDisplayFormat
+            ? resolveRecordSizeForFormat(this.recordName, this.activeDisplayFormat)
+            : this.lastSize;
+
         const isWindow = size.source === 'window';
-        const defaultSize = getDefaultSize();
 
         // A window is drawn at its real screen position, on a canvas sized to the full display,
         // so its own fields/constants (which are stored record-local) need shifting by its origin.
         // Content starts 1 row/col past the border's own corner (see WINDOW_BORDER_* above).
         const rowOffset = isWindow ? size.originRow : 0;
         const colOffset = isWindow ? size.originCol : 0;
+
+        // A subfile detail (SFL) record's own rows shouldn't be draggable up into the area already
+        // occupied by its SFLCTL header's static content (labels, titles...) — that's not a valid
+        // screen layout, the repeating detail area has to start below wherever the header ends.
+        let minDetailRow: number | null = null;
+        if (isSflRecordInfo(recordInfo)) {
+            const pairName = findSubfilePairRecordName(this.recordName);
+            const headerItems = pairName ? this.buildBackgroundItemsFor(pairName) : undefined;
+            if (headerItems && headerItems.length > 0) {
+                minDetailRow = Math.max(...headerItems.map(item => item.row)) + 1;
+            };
+        };
+
+        return { recordInfo, size, isWindow, rowOffset, colOffset, minDetailRow };
+    };
+
+    /**
+     * Renders the last received record data, honoring the current overlay selection.
+     * Split out from `update()` so changing the overlay (a pure view change) can re-render
+     * without needing a fresh parse.
+     */
+    private render(): void {
+        const geometry = this.resolveActiveGeometry();
+        if (!geometry) {
+            this.panel.webview.postMessage({ type: 'notFound' });
+            return;
+        };
+        const { recordInfo, size, isWindow, rowOffset, colOffset, minDetailRow } = geometry;
+
+        const availableFormats = getAvailableDisplayFormats();
+        const defaultSize = this.activeDisplayFormat
+            ? (getSizeForFormat(this.activeDisplayFormat) ?? getDefaultSize())
+            : getDefaultSize();
 
         const canvasSize = isWindow ? { rows: defaultSize.rows, cols: defaultSize.cols } : { rows: size.rows, cols: size.cols };
 
@@ -469,7 +583,7 @@ export class RecordPreviewPanel {
         for (let i = 0; i < toProcess.length; i++) {
             const anchor = toProcess[i];
             addBackground(findSubfilePairRecordName(anchor));
-            addBackground(findWindowOwnerRecordName(anchor));
+            addBackground(findWindowOwnerRecordName(anchor, this.activeDisplayFormat));
         };
 
         const availableIndicators = this.collectIndicatorNumbers(recordInfo).sort((a, b) => a - b);
@@ -499,7 +613,7 @@ export class RecordPreviewPanel {
             : null;
 
         const availableRecords = records.filter(name => name !== this.recordName);
-        const windowTitle = isWindow ? (findWindowTitle(this.recordName) ?? null) : null;
+        const windowTitle = isWindow ? (findWindowTitle(this.recordName, this.activeDisplayFormat) ?? null) : null;
 
         this.panel.webview.postMessage({
             type: 'render',
@@ -515,6 +629,9 @@ export class RecordPreviewPanel {
             availableIndicators,
             indicatorsEnabled: this.indicatorsEnabled,
             activeIndicators: [...this.activeIndicators],
+            availableFormats,
+            activeDisplayFormat: this.activeDisplayFormat ?? null,
+            minDetailRow,
             items,
             backgroundItems
         });
@@ -532,9 +649,10 @@ export class RecordPreviewPanel {
             return undefined;
         };
 
-        const isWin = record.size?.source === 'window';
-        const rOffset = isWin && record.size ? record.size.originRow : 0;
-        const cOffset = isWin && record.size ? record.size.originCol : 0;
+        const size = getEffectiveSize(recordName, this.activeDisplayFormat);
+        const isWin = size?.source === 'window';
+        const rOffset = isWin && size ? size.originRow : 0;
+        const cOffset = isWin && size ? size.originCol : 0;
 
         const items = this.buildItems(record, rOffset, cOffset, true);
         if (isSflRecordInfo(record)) {
@@ -544,8 +662,8 @@ export class RecordPreviewPanel {
         // A same-window item (an auto-paired SFL/SFLCTL half, or the window's owner) is part of
         // the window's own content and must show through its opaque frame, unlike a genuinely
         // different record merely positioned behind the window.
-        const foregroundOwner = windowOwnerOf(this.recordName);
-        const sameWindow = foregroundOwner !== undefined && windowOwnerOf(recordName) === foregroundOwner;
+        const foregroundOwner = windowOwnerOf(this.recordName, this.activeDisplayFormat);
+        const sameWindow = foregroundOwner !== undefined && windowOwnerOf(recordName, this.activeDisplayFormat) === foregroundOwner;
         for (const item of items) {
             item.sameWindow = sameWindow;
         };
@@ -568,12 +686,16 @@ export class RecordPreviewPanel {
         // Undo that swap here to get the real screen row/col for display.
         const isSfl = isSflRecordInfo(recordInfo);
 
-        // Indicator simulation only applies to the record being actively previewed; an overlaid
-        // background record always renders as if indicators were off (the static "first wins" view).
-        const indicatorsApply = this.indicatorsEnabled && !isBackground;
+        // Indicator toggling only applies to the record being actively previewed; an overlaid
+        // background record always uses the resting state (every indicator OFF), regardless of
+        // what's toggled for the foreground record.
+        const useLiveIndicators = this.indicatorsEnabled && !isBackground;
 
         for (const field of recordInfo.fields) {
-            if (indicatorsApply && !this.isItemDisplayed(field.indicators)) {
+            if (this.activeDisplayFormat && field.displayFormat && field.displayFormat !== this.activeDisplayFormat) {
+                continue;
+            };
+            if (!this.isItemDisplayed(field.indicators, useLiveIndicators)) {
                 continue;
             };
 
@@ -581,7 +703,7 @@ export class RecordPreviewPanel {
             const trueCol = isSfl ? field.row : field.col;
 
             if (trueRow > 0 && trueCol > 0) {
-                const activeAttrs = this.getActiveAttributes(field.attributes, indicatorsApply);
+                const activeAttrs = this.getActiveAttributes(field.attributes, useLiveIndicators);
                 const usageCode = (field.usage || '').trim().toUpperCase();
                 items.push({
                     kind: 'field',
@@ -608,7 +730,10 @@ export class RecordPreviewPanel {
         };
 
         for (const constant of recordInfo.constants) {
-            if (indicatorsApply && !this.isItemDisplayed(constant.indicators)) {
+            if (this.activeDisplayFormat && constant.displayFormat && constant.displayFormat !== this.activeDisplayFormat) {
+                continue;
+            };
+            if (!this.isItemDisplayed(constant.indicators, useLiveIndicators)) {
                 continue;
             };
 
@@ -616,7 +741,7 @@ export class RecordPreviewPanel {
             const trueCol = isSfl ? constant.row : constant.col;
 
             if (trueRow > 0 && trueCol > 0) {
-                const activeAttrs = this.getActiveAttributes(constant.attributes, indicatorsApply);
+                const activeAttrs = this.getActiveAttributes(constant.attributes, useLiveIndicators);
                 items.push({
                     kind: 'constant',
                     name: constant.name,
@@ -641,42 +766,49 @@ export class RecordPreviewPanel {
             };
         };
 
-        // Without indicator simulation, we can't know which of several alternate constants/fields
-        // sharing the same spot (conditioned by complementary indicators) would really show, so
-        // just keep whichever one is defined first in the source, like a static "designer" view.
-        return indicatorsApply ? items : this.dedupByPosition(items);
+        // Even with indicators resolved (live or resting-state), two genuinely unconditioned
+        // items (or ones whose conditions aren't perfectly complementary) could still land on the
+        // exact same spot — keep only the first-defined one so they don't render stacked.
+        return this.dedupByPosition(items);
     };
 
     /**
      * Checks whether a field/constant's own line-level indicators (columns 7-15, e.g. "61"/"N61")
-     * are satisfied by the currently active indicator set. Multiple indicators on one line are
-     * ANDed together, matching real DDS conditioning. No indicators at all means "always shown".
+     * are satisfied. With live indicators, checks them against the currently toggled-on set
+     * (multiple indicators on one line are ANDed together, matching real DDS conditioning).
+     * Otherwise, uses the resting state — every indicator assumed OFF — so only unconditioned
+     * items and negated ("N") conditions show; this is what makes mutually-exclusive alternates
+     * (e.g. one shown on "61", another on "N61") resolve to a single, deterministic one even when
+     * they don't happen to share the same screen position. No indicators at all means "always shown".
      * @param indicators - The item's own indicators
+     * @param useLiveIndicators - Whether to check against the toggled-on indicator set, or assume all OFF
      */
-    private isItemDisplayed(indicators: DdsIndicator[] | undefined): boolean {
+    private isItemDisplayed(indicators: DdsIndicator[] | undefined, useLiveIndicators: boolean): boolean {
         if (!indicators || indicators.length === 0) {
             return true;
+        };
+        if (!useLiveIndicators) {
+            return indicators.every(ind => !ind.active);
         };
         return indicators.every(ind => this.activeIndicators.has(ind.number) === ind.active);
     };
 
     /**
      * Filters a field/constant's own COLOR()/DSPATR() attributes the same way visibility is
-     * filtered: with indicator simulation on, keep only the ones whose own indicators are
-     * satisfied; otherwise, keep just the first (by source order) alternative of each keyword,
-     * so conditioned alternates (e.g. two COLOR() lines for different indicator states) don't
-     * all apply to the static preview at once.
+     * filtered: attributes conditioned on a display format other than the active one are dropped
+     * first; then, ones whose own indicators aren't satisfied (checked live or against the resting
+     * state — see isItemDisplayed) are dropped too. If more than one candidate for the same
+     * keyword still remains (e.g. two unconditioned COLOR() lines), keeps just the first-defined one.
      * @param attributes - The field/constant's own attributes
-     * @param indicatorsApply - Whether indicator simulation applies to this record right now
+     * @param useLiveIndicators - Whether to check against the toggled-on indicator set, or assume all OFF
      */
-    private getActiveAttributes(attributes: AttributeWithIndicators[], indicatorsApply: boolean): AttributeWithIndicators[] {
-        if (indicatorsApply) {
-            return attributes.filter(attr => this.isItemDisplayed(attr.indicators));
-        };
+    private getActiveAttributes(attributes: AttributeWithIndicators[], useLiveIndicators: boolean): AttributeWithIndicators[] {
+        const forFormat = filterForActiveFormat(attributes, this.activeDisplayFormat);
+        const displayed = forFormat.filter(attr => this.isItemDisplayed(attr.indicators, useLiveIndicators));
 
         const seen = new Set<string>();
         const result: AttributeWithIndicators[] = [];
-        for (const attr of attributes) {
+        for (const attr of displayed) {
             const key = attributeGroupKey(attr.value);
             if (seen.has(key)) {
                 continue;
@@ -743,7 +875,7 @@ export class RecordPreviewPanel {
      * @param recordName - Name of the subfile (SFL) record
      */
     private buildSubfileRepeats(baseItems: PreviewItem[], recordName: string): PreviewItem[] {
-        const sflPag = findSubfilePageSize(recordName);
+        const sflPag = findSubfilePageSize(recordName, this.activeDisplayFormat);
         if (!sflPag || sflPag <= 1 || baseItems.length === 0) {
             return [];
         };
@@ -795,8 +927,39 @@ export class RecordPreviewPanel {
             return;
         };
 
+        if (message?.type === 'editWindowTitle') {
+            await this.editWindowTitle();
+            return;
+        };
+
+        if (message?.type === 'windowMenu') {
+            await this.showWindowMenu();
+            return;
+        };
+
+        if (message?.type === 'centerWindowHorizontally') {
+            await this.centerWindowHorizontally();
+            return;
+        };
+
+        if (message?.type === 'addConstantAt' && typeof message.row === 'number' && typeof message.col === 'number') {
+            await this.addConstantAt(message.row, message.col);
+            return;
+        };
+
+        if (message?.type === 'addFieldAt' && typeof message.row === 'number' && typeof message.col === 'number') {
+            await this.addFieldAt(message.row, message.col);
+            return;
+        };
+
         if (message?.type === 'setOverlay') {
             this.overlayRecordName = message.recordName || undefined;
+            this.render();
+            return;
+        };
+
+        if (message?.type === 'setDisplayFormat' && typeof message.name === 'string') {
+            this.activeDisplayFormat = message.name || undefined;
             this.render();
             return;
         };
@@ -891,12 +1054,99 @@ export class RecordPreviewPanel {
     };
 
     /**
+     * Places a brand-new constant at a screen position picked directly in the preview (the
+     * "+ Constant" button's placement mode): converts the click back to a record-local row/col,
+     * validates it's actually within the previewed record's own area, then reuses the same
+     * text-prompt and insertion logic as the tree's "Add constant" command.
+     * @param screenRow - Row clicked, in screen/canvas coordinates
+     * @param screenCol - Column clicked, in screen/canvas coordinates
+     */
+    private async addConstantAt(screenRow: number, screenCol: number): Promise<void> {
+        const { editor } = checkForEditorAndDocument();
+        if (!editor) {
+            return;
+        };
+
+        const position = this.resolveClickPosition(screenRow, screenCol, 'constant');
+        if (!position) {
+            return;
+        };
+        const { row, col } = position;
+
+        const text = await getConstantTextFromUser("Enter constant text (without quotes)", "", col);
+        if (!text) {
+            return;
+        };
+
+        await insertNewConstant(editor, { text, row, column: col, recordName: this.recordName });
+        this.forceReparse(editor.document);
+    };
+
+    /**
+     * Places a brand-new field at a screen position picked directly in the preview (the
+     * "+ Field" button's placement mode): converts the click back to a record-local row/col,
+     * validates it, then reuses the same name/usage/type prompts and insertion logic as the
+     * tree's "Add field" command.
+     * @param screenRow - Row clicked, in screen/canvas coordinates
+     * @param screenCol - Column clicked, in screen/canvas coordinates
+     */
+    private async addFieldAt(screenRow: number, screenCol: number): Promise<void> {
+        const { editor } = checkForEditorAndDocument();
+        if (!editor) {
+            return;
+        };
+
+        const position = this.resolveClickPosition(screenRow, screenCol, 'field');
+        if (!position) {
+            return;
+        };
+
+        await addFieldAtPosition(this.recordName, { row: position.row, column: position.col });
+        this.forceReparse(editor.document);
+    };
+
+    /**
+     * Converts a screen click to a record-local row/col for the currently previewed record,
+     * validating it falls within the record's own area (its window's content frame, if it's a
+     * window; the record's own screen size otherwise) and, for an SFL detail record, below its
+     * SFLCTL header's occupied rows. Shows a warning and returns null on an invalid click.
+     * @param screenRow - Row clicked, in screen/canvas coordinates
+     * @param screenCol - Column clicked, in screen/canvas coordinates
+     * @param kind - What's being placed, only used to word the warning message
+     */
+    private resolveClickPosition(screenRow: number, screenCol: number, kind: 'constant' | 'field'): { row: number; col: number } | null {
+        const geometry = this.resolveActiveGeometry();
+        if (!geometry) {
+            return null;
+        };
+        const { size, rowOffset, colOffset, minDetailRow } = geometry;
+
+        const row = screenRow - rowOffset;
+        const col = screenCol - colOffset;
+
+        if (row < 1 || row > size.rows || col < 1 || col > size.cols) {
+            vscode.window.showWarningMessage(
+                `Cannot place a ${kind} there — click inside record '${this.recordName}' (rows 1-${size.rows}, columns 1-${size.cols}).`
+            );
+            return null;
+        };
+        if (minDetailRow !== null && row < minDetailRow) {
+            vscode.window.showWarningMessage(
+                `Cannot place a ${kind} on row ${row} — it's occupied by the subfile header (rows below ${minDetailRow} only).`
+            );
+            return null;
+        };
+
+        return { row, col };
+    };
+
+    /**
      * Name of the record whose WINDOW() keyword should actually be edited for the current record:
      * itself, unless its window was inherited (WINDOW(other-record-name), or an SFL/SFLCTL pair
      * sharing one side's window) — in which case the real geometry lives on the owner record.
      */
     private resolveWindowRecordName(): string {
-        return fieldsPerRecords.find(r => r.record === this.recordName)?.size?.sharedFromRecord ?? this.recordName;
+        return getEffectiveSize(this.recordName, this.activeDisplayFormat)?.sharedFromRecord ?? this.recordName;
     };
 
     /**
@@ -905,7 +1155,7 @@ export class RecordPreviewPanel {
      * @param newCols - New window width
      */
     private async resizeWindow(newRows: number, newCols: number): Promise<void> {
-        const windowInfo = findWindowAttribute(this.resolveWindowRecordName());
+        const windowInfo = findWindowAttribute(this.resolveWindowRecordName(), this.activeDisplayFormat);
         if (!windowInfo) {
             return;
         };
@@ -919,12 +1169,75 @@ export class RecordPreviewPanel {
      * @param newCol - New window screen column
      */
     private async moveWindowPosition(newRow: number, newCol: number): Promise<void> {
-        const windowInfo = findWindowAttribute(this.resolveWindowRecordName());
+        const windowInfo = findWindowAttribute(this.resolveWindowRecordName(), this.activeDisplayFormat);
         if (!windowInfo) {
             return;
         };
 
         await this.rewriteWindowKeyword(windowInfo.lineIndex, newRow, newCol, windowInfo.numRows, windowInfo.numCols);
+    };
+
+    /**
+     * Opens the same "Change Window Title" prompt used from the tree's context menu, triggered by
+     * clicking the title directly on the preview. Edits the window-owner record when the title
+     * belongs to a shared window (WINDOW(other-record-name), or an inherited SFL/SFLCTL pair).
+     */
+    private async editWindowTitle(): Promise<void> {
+        await editWindowTitleForRecord(this.resolveWindowRecordName());
+
+        const { editor } = checkForEditorAndDocument();
+        if (editor) {
+            this.forceReparse(editor.document);
+        };
+    };
+
+    /**
+     * Shows the window's action menu, opened from the "⋮" button drawn in the frame's corner.
+     * Currently just offers "Change Title...", but is meant to grow: additional actions (e.g. a
+     * one-click "Center Horizontally") can be appended here, and/or given their own icon on the
+     * canvas later, following the same pattern as the title button.
+     */
+    private async showWindowMenu(): Promise<void> {
+        const options: (vscode.QuickPickItem & { action: string })[] = [
+            { label: '$(edit) Change Title...', action: 'editTitle' }
+        ];
+
+        const selection = await vscode.window.showQuickPick(options, {
+            title: `Window '${this.recordName}' — Actions`,
+            placeHolder: 'Select an action',
+            ignoreFocusOut: true
+        });
+        if (!selection) {
+            return;
+        };
+
+        if (selection.action === 'editTitle') {
+            await this.editWindowTitle();
+        };
+    };
+
+    /**
+     * Centers the window horizontally on the screen, keeping its row and size unchanged. A
+     * one-click action triggered from its own icon, bypassing the actions menu — the same
+     * centering math as the "Change Window Size" command's CENTERED option, for consistency.
+     */
+    private async centerWindowHorizontally(): Promise<void> {
+        const windowRecordName = this.resolveWindowRecordName();
+        const windowInfo = findWindowAttribute(windowRecordName, this.activeDisplayFormat);
+        if (!windowInfo) {
+            return;
+        };
+
+        const defaultSize = this.activeDisplayFormat
+            ? (getSizeForFormat(this.activeDisplayFormat) ?? getDefaultSize())
+            : getDefaultSize();
+
+        const newStartCol = Math.max(1, Math.floor((defaultSize.cols - windowInfo.numCols) / 2) + 1);
+        if (newStartCol === windowInfo.startCol) {
+            return;
+        };
+
+        await this.rewriteWindowKeyword(windowInfo.lineIndex, windowInfo.startRow, newStartCol, windowInfo.numRows, windowInfo.numCols);
     };
 
     /**
@@ -980,30 +1293,62 @@ export class RecordPreviewPanel {
         color: #00ff00;
         font-family: var(--vscode-editor-font-family, monospace);
     }
+    #toolbarRow {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        column-gap: 16px;
+        row-gap: 4px;
+        margin-bottom: 6px;
+        font-size: 12px;
+    }
     #info {
-        margin-bottom: 6px;
         opacity: 0.7;
-        font-size: 12px;
     }
-    #toolbar {
+    #formatBar, #toolbar {
         display: none;
-        margin-bottom: 6px;
-        font-size: 12px;
+        align-items: center;
+        gap: 4px;
     }
-    #toolbar select {
+    #formatBar select, #toolbar select {
         background: #000000;
         color: #00ff00;
         border: 1px solid #333333;
         font-family: inherit;
     }
+    #formatBar select:disabled {
+        color: #666666;
+        border-color: #222222;
+        cursor: default;
+    }
+    #actionBar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    #actionBar button {
+        background: #000000;
+        color: #00ff00;
+        border: 1px solid #333333;
+        font-family: inherit;
+        font-size: 12px;
+        padding: 2px 6px;
+        cursor: pointer;
+    }
+    #actionBar button.active {
+        background: #00ff00;
+        color: #000000;
+        border-color: #00ff00;
+    }
     #indicatorBar {
         display: none;
-        margin-bottom: 6px;
-        font-size: 12px;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
     }
     #indicatorList {
         display: none;
-        margin-top: 4px;
+        margin-bottom: 6px;
     }
     .indicator-btn {
         display: inline-block;
@@ -1031,31 +1376,44 @@ export class RecordPreviewPanel {
 </style>
 </head>
 <body>
-<div id="info">Loading...</div>
-<div id="toolbar">
-    <label for="overlaySelect">Overlay on: </label>
-    <select id="overlaySelect"></select>
+<div id="toolbarRow">
+    <span id="info">Loading...</span>
+    <span id="formatBar">
+        <label for="formatSelect">Format: </label>
+        <select id="formatSelect"></select>
+    </span>
+    <span id="toolbar">
+        <label for="overlaySelect">Overlay: </label>
+        <select id="overlaySelect"></select>
+    </span>
+    <label id="indicatorBar"><input type="checkbox" id="indicatorsToggle"> Indicators</label>
+    <span id="actionBar">
+        <button id="addFieldBtn" title="Click, then click a point in the screen to place a new field there">+ Field</button>
+        <button id="addConstantBtn" title="Click, then click a point in the screen to place a new constant there">+ Constant</button>
+    </span>
 </div>
-<div id="indicatorBar">
-    <label><input type="checkbox" id="indicatorsToggle"> Use indicators</label>
-    <div id="indicatorList"></div>
-</div>
+<div id="indicatorList"></div>
 <canvas id="screen"></canvas>
 <script>
     const vscode = acquireVsCodeApi();
     const canvas = document.getElementById('screen');
     const ctx = canvas.getContext('2d');
     const info = document.getElementById('info');
+    const formatBar = document.getElementById('formatBar');
+    const formatSelect = document.getElementById('formatSelect');
     const toolbar = document.getElementById('toolbar');
     const overlaySelect = document.getElementById('overlaySelect');
     const indicatorBar = document.getElementById('indicatorBar');
     const indicatorsToggle = document.getElementById('indicatorsToggle');
     const indicatorList = document.getElementById('indicatorList');
+    const addConstantBtn = document.getElementById('addConstantBtn');
+    const addFieldBtn = document.getElementById('addFieldBtn');
 
     const CHAR_W = 9;
     const CHAR_H = 18;
     const BLINK_INTERVAL_MS = 600;
     const HANDLE_SIZE = 8;
+    const MENU_ICON_SIZE = 16;
     // Mirrors WINDOW_BORDER_* on the host: content sits 1 row/col inside the border, except on
     // the right, where it's 2 (verified against a real window's on-screen footprint).
     const WINDOW_BORDER_TOP = 1;
@@ -1069,13 +1427,19 @@ export class RecordPreviewPanel {
     let currentWindowFrame = null;
     let currentOuterFrame = null;
     let currentWindowTitle = null;
+    let currentTitleRect = null;
+    let currentMenuIconRect = null;
+    let currentCenterIconRect = null;
+    let windowHovered = false;
     let maxSize = null;
+    let minDetailRow = null;
     let blinkOn = true;
     let dragState = null;
     let resizeState = null;
     let moveWindowState = null;
     let selectedLineIndex = null;
     let currentRecordName = null;
+    let placingKind = null; // null | 'constant' | 'field'
 
     function clamp(value, min, max) {
         return Math.min(Math.max(value, min), max);
@@ -1214,6 +1578,8 @@ export class RecordPreviewPanel {
             ctx.fillRect(hx - HANDLE_SIZE, hy - HANDLE_SIZE, HANDLE_SIZE, HANDLE_SIZE);
         }
 
+        currentTitleRect = null;
+
         if (currentOuterFrame && currentWindowTitle) {
             const fx = (currentOuterFrame.col - 1) * CHAR_W;
             const fy = (currentOuterFrame.row - 1) * CHAR_H;
@@ -1239,6 +1605,38 @@ export class RecordPreviewPanel {
             ctx.fillRect(textX, titleY, textWidth, CHAR_H);
             ctx.fillStyle = '#ffffff';
             ctx.fillText(text, textX, titleY + CHAR_H / 2);
+
+            currentTitleRect = { x: textX, y: titleY, width: textWidth, height: CHAR_H };
+        }
+
+        currentMenuIconRect = null;
+        currentCenterIconRect = null;
+        if (currentOuterFrame && windowHovered) {
+            const drawIconButton = (x, y, glyph, title) => {
+                ctx.fillStyle = '#dddddd';
+                ctx.fillRect(x, y, MENU_ICON_SIZE, MENU_ICON_SIZE);
+                ctx.strokeStyle = '#666666';
+                ctx.strokeRect(x + 0.5, y + 0.5, MENU_ICON_SIZE - 1, MENU_ICON_SIZE - 1);
+
+                ctx.fillStyle = '#000000';
+                ctx.font = (MENU_ICON_SIZE - 2) + 'px ' + fontFamily;
+                const glyphWidth = ctx.measureText(glyph).width;
+                ctx.fillText(glyph, x + (MENU_ICON_SIZE - glyphWidth) / 2, y + MENU_ICON_SIZE / 2);
+
+                return { x, y, width: MENU_ICON_SIZE, height: MENU_ICON_SIZE };
+            };
+
+            // "Window actions" button in the frame's top-right corner: always available (even
+            // before a title exists), and where future menu-based actions can be added.
+            const menuX = (currentOuterFrame.col - 1 + currentOuterFrame.cols) * CHAR_W - MENU_ICON_SIZE - 2;
+            const menuY = (currentOuterFrame.row - 1) * CHAR_H + (CHAR_H - MENU_ICON_SIZE) / 2;
+            currentMenuIconRect = drawIconButton(menuX, menuY, '⋮', 'Window actions');
+
+            // "Center horizontally" button, a one-click action next to it (no menu needed) — the
+            // pattern any future direct-action icon can follow.
+            const centerX = menuX - MENU_ICON_SIZE - 2;
+            const centerY = menuY;
+            currentCenterIconRect = drawIconButton(centerX, centerY, '↔', 'Center horizontally');
         }
     }
 
@@ -1291,12 +1689,99 @@ export class RecordPreviewPanel {
                col >= currentOuterFrame.col && col < currentOuterFrame.col + currentOuterFrame.cols;
     }
 
+    function isOverTitle(ev) {
+        if (!currentTitleRect) {
+            return false;
+        }
+        const rect = canvas.getBoundingClientRect();
+        const px = ev.clientX - rect.left;
+        const py = ev.clientY - rect.top;
+        return px >= currentTitleRect.x && px < currentTitleRect.x + currentTitleRect.width &&
+               py >= currentTitleRect.y && py < currentTitleRect.y + currentTitleRect.height;
+    }
+
+    function isOverMenuIcon(ev) {
+        if (!currentMenuIconRect) {
+            return false;
+        }
+        const rect = canvas.getBoundingClientRect();
+        const px = ev.clientX - rect.left;
+        const py = ev.clientY - rect.top;
+        return px >= currentMenuIconRect.x && px < currentMenuIconRect.x + currentMenuIconRect.width &&
+               py >= currentMenuIconRect.y && py < currentMenuIconRect.y + currentMenuIconRect.height;
+    }
+
+    function isOverCenterIcon(ev) {
+        if (!currentCenterIconRect) {
+            return false;
+        }
+        const rect = canvas.getBoundingClientRect();
+        const px = ev.clientX - rect.left;
+        const py = ev.clientY - rect.top;
+        return px >= currentCenterIconRect.x && px < currentCenterIconRect.x + currentCenterIconRect.width &&
+               py >= currentCenterIconRect.y && py < currentCenterIconRect.y + currentCenterIconRect.height;
+    }
+
+    // Icons only show while the mouse is over the window (frame + content); redraw only happens
+    // when this actually flips, so hovering elsewhere doesn't repaint on every mousemove pixel.
+    function updateWindowHoverState(ev) {
+        const hovering = isOverWindowFrame(ev);
+        if (hovering !== windowHovered) {
+            windowHovered = hovering;
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+        }
+    }
+
+    function setPlacingKind(kind) {
+        placingKind = kind;
+        addConstantBtn.classList.toggle('active', placingKind === 'constant');
+        addFieldBtn.classList.toggle('active', placingKind === 'field');
+        canvas.style.cursor = placingKind ? 'crosshair' : '';
+        canvas.title = placingKind ? ('Click a point in the screen to place the new ' + placingKind) : '';
+    }
+
+    addConstantBtn.addEventListener('click', () => {
+        setPlacingKind(placingKind === 'constant' ? null : 'constant');
+    });
+
+    addFieldBtn.addEventListener('click', () => {
+        setPlacingKind(placingKind === 'field' ? null : 'field');
+    });
+
+    document.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Escape' && placingKind) {
+            setPlacingKind(null);
+        }
+    });
+
     canvas.addEventListener('mousedown', (ev) => {
+        if (placingKind) {
+            const { row, col } = cellAt(ev);
+            vscode.postMessage({ type: placingKind === 'field' ? 'addFieldAt' : 'addConstantAt', row, col });
+            setPlacingKind(null);
+            return;
+        }
+
         if (isOverResizeHandle(ev)) {
             resizeState = {
                 contentRows: currentOuterFrame.rows - WINDOW_BORDER_TOP - WINDOW_BORDER_BOTTOM,
                 contentCols: currentOuterFrame.cols - WINDOW_BORDER_LEFT - WINDOW_BORDER_RIGHT
             };
+            return;
+        }
+
+        if (isOverMenuIcon(ev)) {
+            vscode.postMessage({ type: 'windowMenu' });
+            return;
+        }
+
+        if (isOverCenterIcon(ev)) {
+            vscode.postMessage({ type: 'centerWindowHorizontally' });
+            return;
+        }
+
+        if (isOverTitle(ev)) {
+            vscode.postMessage({ type: 'editWindowTitle' });
             return;
         }
 
@@ -1330,7 +1815,21 @@ export class RecordPreviewPanel {
         }
     });
 
+    document.addEventListener('mouseleave', () => {
+        // The mouse left the whole webview, so no more mousemove events will arrive to notice it —
+        // hide the icons explicitly instead of leaving them stuck showing.
+        if (windowHovered) {
+            windowHovered = false;
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+        }
+    });
+
     window.addEventListener('mousemove', (ev) => {
+        if (placingKind) {
+            canvas.style.cursor = 'crosshair';
+            return;
+        }
+
         if (resizeState) {
             const { row, col } = cellAt(ev);
             const limitRows = maxSize ? maxSize.rows : currentSize.rows;
@@ -1368,10 +1867,27 @@ export class RecordPreviewPanel {
         }
 
         if (!dragState) {
+            updateWindowHoverState(ev);
+
             const overHandle = isOverResizeHandle(ev);
             if (overHandle) {
                 canvas.style.cursor = 'nwse-resize';
                 canvas.title = '';
+                return;
+            }
+            if (isOverMenuIcon(ev)) {
+                canvas.style.cursor = 'pointer';
+                canvas.title = 'Window actions';
+                return;
+            }
+            if (isOverCenterIcon(ev)) {
+                canvas.style.cursor = 'pointer';
+                canvas.title = 'Center horizontally';
+                return;
+            }
+            if (isOverTitle(ev)) {
+                canvas.style.cursor = 'pointer';
+                canvas.title = 'Click to change the window title';
                 return;
             }
             const hit = findItemAt(ev);
@@ -1393,6 +1909,11 @@ export class RecordPreviewPanel {
             // including the last column, is usable.
             minCol = currentWindowFrame.col + 1;
             maxCol = Math.max(currentWindowFrame.col + currentWindowFrame.cols - width, minCol);
+        }
+
+        // A subfile detail record's own rows can't be dragged up into its header's static content.
+        if (minDetailRow !== null && !dragState.item.isBackground) {
+            minRow = Math.max(minRow, minDetailRow);
         }
 
         const newRow = clamp(row - dragState.grabRowOffset, minRow, maxRow);
@@ -1446,6 +1967,23 @@ export class RecordPreviewPanel {
         draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
     });
 
+    formatSelect.addEventListener('change', () => {
+        vscode.postMessage({ type: 'setDisplayFormat', name: formatSelect.value || null });
+    });
+
+    function rebuildFormatOptions(availableFormats, selectedValue) {
+        formatSelect.innerHTML = '';
+
+        for (const format of availableFormats) {
+            const opt = document.createElement('option');
+            opt.value = format.name;
+            opt.textContent = format.name + ' (' + format.rows + 'x' + format.cols + ')';
+            formatSelect.appendChild(opt);
+        }
+
+        formatSelect.value = selectedValue;
+    }
+
     overlaySelect.addEventListener('change', () => {
         vscode.postMessage({ type: 'setOverlay', recordName: overlaySelect.value || null });
     });
@@ -1496,14 +2034,23 @@ export class RecordPreviewPanel {
             }
 
             maxSize = message.maxSize || null;
+            minDetailRow = typeof message.minDetailRow === 'number' ? message.minDetailRow : null;
+            const availableFormats = message.availableFormats || [];
+            formatBar.style.display = availableFormats.length > 0 ? 'inline-flex' : 'none';
+            if (availableFormats.length > 0) {
+                rebuildFormatOptions(availableFormats, message.activeDisplayFormat || '');
+                // Locked (disabled) when the file only declares one display format — nothing to switch to.
+                formatSelect.disabled = availableFormats.length <= 1;
+            }
+
             const hasOverlayOptions = message.availableRecords && message.availableRecords.length > 0;
-            toolbar.style.display = hasOverlayOptions ? 'block' : 'none';
+            toolbar.style.display = hasOverlayOptions ? 'inline-flex' : 'none';
             if (hasOverlayOptions) {
                 rebuildOverlayOptions(message.availableRecords, message.overlayRecordName || '');
             }
 
             const hasIndicators = message.availableIndicators && message.availableIndicators.length > 0;
-            indicatorBar.style.display = hasIndicators ? 'block' : 'none';
+            indicatorBar.style.display = hasIndicators ? 'inline-flex' : 'none';
             if (hasIndicators) {
                 indicatorsToggle.checked = Boolean(message.indicatorsEnabled);
                 indicatorList.style.display = message.indicatorsEnabled ? 'block' : 'none';

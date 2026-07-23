@@ -8,6 +8,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [0.13.0] - 2026-07-23
+### Added
+- New "Preview Screen Layout" option: shows a green-screen-style visual preview of a record on a canvas. Also available as an inline button on record tree items, in addition to the context-menu option.
+  - Supports COLOR() and DSPATR() keywords (HI, RI, BL, UL, CS, ND); input-capable fields are shown underlined.
+  - Fields/constants can be dragged to reposition them, writing the new position back into the source.
+  - "+ Field" / "+ Constant" buttons: click, then click a point on the screen to place a new field/constant there, reusing the same name/type/position prompts as the tree's "Add field"/"Add constant" commands. Validated against the record's own area (a window's content frame, or the SFL detail area below its header).
+  - WINDOW records are drawn at their real screen position and can be resized/moved with the mouse; WDWTITLE is shown. Windows shared via WINDOW(record-name) are supported.
+  - Clicking a window's title edits it directly; a "⋮" actions menu and a one-click "center horizontally" icon are also available on the window frame — all three only appear while hovering over the window.
+  - Subfile (SFL/SFLCTL) records show all SFLPAG rows, and automatically preview their paired header/detail record; the detail rows can't be dragged up over the header's own content.
+  - Any other record can be overlaid (dimmed) behind the one being previewed, to see how they compose.
+  - Indicator simulation: toggle indicators on/off to preview conditional fields, constants, and attributes.
+  - Display format switcher: for DSPF files declaring more than one DSPSIZ format (e.g. *DS3/*DS4), lets you switch between them — window positions/sizes, SFLSIZ/SFLPAG, and conditioned fields/constants/attributes are resolved for whichever format is active. Locked when the file only declares one format.
+  - The preview stays in sync with the schema tree selection in both directions.
+  - The toolbar (size, display format, overlay, indicators, add buttons) is laid out as a single, compact row.
+- New "Change Window Title" command (record context menu) to add, edit, or remove a window's WDWTITLE(), with horizontal alignment (*LEFT/*CENTER/*RIGHT) and vertical position (*TOP/*BOTTOM); also editable directly from the preview.
+### Fixed
+- Moving a field or constant left/right in a subfile (buttons in the schema view) wrote the new position into the wrong source columns.
+- The "Add buttons" command placed buttons in column 1 for window records instead of column 2 (column 1 isn't usable inside a window).
+- A line conditioned by a display format name (e.g. "*DS3") instead of indicators was misread as garbage indicator data.
+- Without indicator simulation, mutually-exclusive fields/constants/attributes conditioned by complementary indicators (e.g. one on "61", the other on "N61") could show at once instead of resolving to a single, deterministic state.
+- Switching between two open DSPF files could leak one file's second DSPSIZ format size into the other's display-format selector.
+- The record filter could silently hide a newly-added record with no obvious cause; it's now disabled (with a warning message) whenever a new record appears while the filter is active.
+- The record filter could reset unpredictably back to "show all" whenever any record became invalid (e.g. renamed/removed), instead of just pruning the stale entry.
+- "Hide all" in the record filter menu didn't actually hide records, only fields/constants.
+
 ## [0.12.3] - 2025-11-30
 ### Fixed
 - When creating a new field, the horizontal position was being saved incorrectly in the source.

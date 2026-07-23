@@ -30,6 +30,8 @@ export interface DdsAttribute {
   indicators?: DdsIndicator[];
   attributes?: DdsAttribute[];
   children?: DdsElement[];
+  /** Set when this line is conditioned by a display format name (e.g. "*DS3") instead of/besides indicators. */
+  displayFormat?: string;
 };
 
 /**
@@ -102,6 +104,8 @@ export interface DdsField {
   children?: DdsElement[];
   attributes?: DdsAttribute[];
   indicators?: DdsIndicator[];
+  /** Set when this field's line is conditioned by a display format name (e.g. "*DS3"). */
+  displayFormat?: string;
 };
 
 /** Field attribute (e.g., EDTCDE, DSPATR) */
@@ -128,6 +132,8 @@ export interface DdsConstant {
   attributes?: DdsAttribute[];
   indicators?: DdsIndicator[];
   children?: DdsElement[];
+  /** Set when this constant's line is conditioned by a display format name (e.g. "*DS3"). */
+  displayFormat?: string;
 };
 
 /** Constant attribute (similar to field attributes but for constants) */
@@ -211,6 +217,8 @@ export interface FieldInfo {
   indicators?: DdsIndicator[];
   lineIndex: number;
   lastLineIndex: number;
+  /** Set when this field's line is conditioned by a display format name (e.g. "*DS3"). */
+  displayFormat?: string;
 };
 
 /** Simplified constant info */
@@ -224,6 +232,8 @@ export interface ConstantInfo {
   indicators?: DdsIndicator[];
   lineIndex: number;
   lastLineIndex: number;
+  /** Set when this constant's line is conditioned by a display format name (e.g. "*DS3"). */
+  displayFormat?: string;
 };
 
 /*** Attribute with indicadors info */
@@ -232,6 +242,8 @@ export interface AttributeWithIndicators {
   indicators?: DdsIndicator[];
   lineIndex: number;
   lastLineIndex: number;
+  /** Set when this attribute's line is conditioned by a display format name (e.g. "*DS3"). */
+  displayFormat?: string;
 };
 
 /** Record container for fields & constants */
@@ -283,5 +295,43 @@ export function getAllRecordSizes(): Array<{ record: string; size: DdsSize }> {
   return fieldsPerRecords
     .filter(r => r.size)
     .map(r => ({ record: r.record, size: r.size! }));
+};
+
+/**
+ * Lists the display formats declared in DSPSIZ (e.g. *DS3/*DS4), if the file declares more than
+ * one. Used to offer a format switcher in the preview; empty when the file has a single size.
+ */
+export function getAvailableDisplayFormats(): Array<{ name: string; rows: number; cols: number }> {
+  const formats: Array<{ name: string; rows: number; cols: number }> = [];
+
+  if (fileSizeAttributes.nameDsply1) {
+    formats.push({ name: fileSizeAttributes.nameDsply1, rows: fileSizeAttributes.maxRow1, cols: fileSizeAttributes.maxCol1 });
+  };
+  if (fileSizeAttributes.nameDsply2) {
+    formats.push({ name: fileSizeAttributes.nameDsply2, rows: fileSizeAttributes.maxRow2, cols: fileSizeAttributes.maxCol2 });
+  };
+
+  return formats;
+};
+
+/**
+ * Gets the default (non-window) screen size for a specific named display format (e.g. "*DS3"),
+ * as declared in DSPSIZ. Undefined if the name doesn't match either declared format.
+ * @param formatName - The display format name to look up
+ */
+export function getSizeForFormat(formatName: string): DdsSize | undefined {
+  const format = getAvailableDisplayFormats().find(f => f.name === formatName);
+  if (!format) {
+    return undefined;
+  };
+
+  return {
+    rows: format.rows,
+    cols: format.cols,
+    name: format.name,
+    source: 'default',
+    originCol: 1,
+    originRow: 1
+  };
 };
 
