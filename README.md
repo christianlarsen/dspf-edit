@@ -118,6 +118,11 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
+**0.13.1** - 2026-07-24
+- Added: New "Grid Dots" toggle in the preview toolbar — marks every empty character cell with a dot, to see spacing between fields/constants (and around a window's border) while designing a screen.
+- Added: Indicator simulation now resolves `ERRMSG()` — when its conditioning indicator is on, the message shows on the display's message line (in white), and the field it's attached to is shown in reverse image.
+- Fixed: A `WINDOW()` keyword followed by an optional parameter (e.g. `*NOMSGLIN`, `*RESTORE`, `*PRINT`) was not recognized, so the window wasn't rendered in the preview; moving/resizing a window with such a parameter, or editing its title, no longer strips it.
+
 **0.13.0** - 2026-07-23
 - Added: New "Preview Screen Layout" option — visual, green-screen-style preview of a record, with drag-to-move, window/subfile support, record overlay, indicator simulation, and a display format (*DS3/*DS4) switcher.
 - Added: "+ Field" / "+ Constant" buttons in the preview to create new elements by clicking a point on the screen.

@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [0.13.1] - 2026-07-24
+### Added
+- New "Grid Dots" toggle in the preview toolbar: marks every empty character cell with a dot, to see spacing between fields/constants (and around a window's border) while designing a screen.
+- Indicator simulation now resolves `ERRMSG()`: when its conditioning indicator is on, the message shows on the display's message line (in white), and the field it's attached to is shown in reverse image.
+### Fixed
+- A `WINDOW()` keyword followed by an optional parameter (e.g. `*NOMSGLIN`, `*RESTORE`, `*PRINT`) was not recognized, so the window wasn't rendered in the preview; moving/resizing a window with such a parameter, or editing its title, no longer strips it.
+
 ## [0.13.0] - 2026-07-23
 ### Added
 - New "Preview Screen Layout" option: shows a green-screen-style visual preview of a record on a canvas. Also available as an inline button on record tree items, in addition to the context-menu option.

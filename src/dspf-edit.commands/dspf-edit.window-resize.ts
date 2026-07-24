@@ -291,7 +291,7 @@ function findCurrentWindowDimensions(editor: vscode.TextEditor, element: any): C
 
     if (windowAttribute) {
         // WINDOW(startRow startCol numRows numCols)
-        const match = windowAttribute.value.match(/WINDOW\((\d+) (\d+) (\d+) (\d+)\)/);
+        const match = windowAttribute.value.match(/WINDOW\((\d+) (\d+) (\d+) (\d+)(?: [^)]*)?\)/);
         if (match) {
             return {
                 startRow: parseInt(match[1]),
@@ -508,11 +508,13 @@ async function applyWindowResize(
     const line = editor.document.lineAt(windowLine);
     const lineText = line.text;
 
-    // Replace the WINDOW keyword parameters
-    const oldWindowPattern = /WINDOW\(\d+\s+\d+\s+\d+\s+\d+\)/;
-    const newWindowKeyword = `WINDOW(${newDimensions.startRow} ${newDimensions.startCol} ${newDimensions.numRows} ${newDimensions.numCols})`;
-    
-    const updatedLine = lineText.replace(oldWindowPattern, newWindowKeyword);
+    // Replace the WINDOW keyword parameters, preserving any trailing suffix (e.g. *NOMSGLIN)
+    const oldWindowPattern = /WINDOW\(\d+\s+\d+\s+\d+\s+\d+(\s+[^)]*)?\)/;
+
+    const updatedLine = lineText.replace(
+        oldWindowPattern,
+        (_match, suffix) => `WINDOW(${newDimensions.startRow} ${newDimensions.startCol} ${newDimensions.numRows} ${newDimensions.numCols}${suffix ?? ''})`
+    );
     workspaceEdit.replace(uri, line.range, updatedLine);
 
     await vscode.workspace.applyEdit(workspaceEdit);

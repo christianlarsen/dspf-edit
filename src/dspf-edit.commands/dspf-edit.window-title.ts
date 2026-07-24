@@ -74,7 +74,7 @@ export async function editWindowTitleForRecord(recordName: string): Promise<void
             return;
         };
 
-        const windowMatch = windowAttr.value.match(/WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\)/i);
+        const windowMatch = windowAttr.value.match(/WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)(?:\s+[^)]*)?\s*\)/i);
         if (!windowMatch) {
             vscode.window.showWarningMessage(
                 `Record '${recordName}' shares another record's window (WINDOW(${windowAttr.value.replace(/^WINDOW\(|\)$/g, '')})) — change the title on that record instead.`

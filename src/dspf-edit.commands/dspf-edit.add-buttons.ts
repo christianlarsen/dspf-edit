@@ -240,7 +240,7 @@ function getRecordInformation(recordName: string): RecordInformation | null {
         if (windowAttribute) {
             // Extract WINDOW size directly from attribute
             const windowMatch = windowAttribute.value.match(
-                /WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\)/i
+                /WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)(?:\s+[^)]*)?\s*\)/i
             );
             
             if (windowMatch) {

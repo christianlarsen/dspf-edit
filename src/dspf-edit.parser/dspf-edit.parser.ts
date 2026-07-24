@@ -988,9 +988,9 @@ function extractWindowSize(attributes?: DdsAttribute[], activeFormat?: string): 
     const windowAttribute = pickWindowAttribute(attributes, activeFormat);
     if (!windowAttribute) return undefined;
 
-    // WINDOW(startRow startCol numRows numCols)
+    // WINDOW(startRow startCol numRows numCols [*NOMSGLIN | *RESTORE | *PRINT])
     const windowMatch = windowAttribute.value.match(
-        /WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\)/i
+        /WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)(?:\s+[^)]*)?\s*\)/i
     );
     if (windowMatch) {
         const startRow = parseInt(windowMatch[1], 10);

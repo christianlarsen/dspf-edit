@@ -157,7 +157,7 @@ function findWindowAttribute(recordName: string, activeFormat?: string): { start
         return undefined;
     };
 
-    const match = attr.value.match(/WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\)/i);
+    const match = attr.value.match(/WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)(?:\s+[^)]*)?\s*\)/i);
     if (!match) {
         return undefined;
     };
@@ -614,6 +614,7 @@ export class RecordPreviewPanel {
 
         const availableRecords = records.filter(name => name !== this.recordName);
         const windowTitle = isWindow ? (findWindowTitle(this.recordName, this.activeDisplayFormat) ?? null) : null;
+        const errorMessage = this.resolveErrorMessage(recordInfo);
 
         this.panel.webview.postMessage({
             type: 'render',
@@ -623,6 +624,7 @@ export class RecordPreviewPanel {
             windowFrame,
             outerFrame,
             windowTitle,
+            errorMessage,
             maxSize,
             availableRecords,
             overlayRecordName: this.overlayRecordName ?? null,
@@ -715,7 +717,7 @@ export class RecordPreviewPanel {
                     lineIndex: field.lineIndex,
                     color: getDisplayColor(activeAttrs),
                     highIntensity: hasDisplayAttribute(activeAttrs, 'HI'),
-                    reverseImage: hasDisplayAttribute(activeAttrs, 'RI'),
+                    reverseImage: hasDisplayAttribute(activeAttrs, 'RI') || this.hasActiveErrorMessage(field.attributes, useLiveIndicators),
                     blink: hasDisplayAttribute(activeAttrs, 'BL'),
                     underline: hasDisplayAttribute(activeAttrs, 'UL'),
                     columnSeparator: hasDisplayAttribute(activeAttrs, 'CS'),
@@ -820,6 +822,42 @@ export class RecordPreviewPanel {
     };
 
     /**
+     * Whether a field's own ERRMSG() is currently active (its conditioning indicator satisfied) —
+     * the field it's attached to is shown in reverse image while its error is in effect, same as a
+     * real 5250 highlights the field an error message refers to.
+     */
+    private hasActiveErrorMessage(attributes: AttributeWithIndicators[], useLiveIndicators: boolean): boolean {
+        const forFormat = filterForActiveFormat(attributes, this.activeDisplayFormat);
+        return forFormat.some(attr => /^ERRMSG\(/i.test(attr.value) && this.isItemDisplayed(attr.indicators, useLiveIndicators));
+    };
+
+    /**
+     * Finds the record's currently-active ERRMSG() message, if any: an ERRMSG keyword (record-level,
+     * or on one of the record's own fields/constants) whose own conditioning indicator is satisfied
+     * by the indicator simulation — same gating already used for COLOR()/DSPATR() via isItemDisplayed.
+     * Shown on the display's message line (the bottom row) like a real 5250 error, in white.
+     */
+    private resolveErrorMessage(recordInfo: FieldsPerRecord): { text: string } | null {
+        const candidates: { value: string; indicators?: DdsIndicator[]; displayFormat?: string }[] = [
+            ...(recordInfo.attributes ?? []),
+            ...recordInfo.fields.flatMap(field => field.attributes),
+            ...recordInfo.constants.flatMap(constant => constant.attributes)
+        ];
+
+        const forFormat = filterForActiveFormat(candidates, this.activeDisplayFormat);
+        for (const attr of forFormat) {
+            if (!this.isItemDisplayed(attr.indicators, this.indicatorsEnabled)) {
+                continue;
+            };
+            const errmsgMatch = attr.value.match(/^ERRMSG\('([^']+)'\s*(\d{2})?\)$/);
+            if (errmsgMatch) {
+                return { text: errmsgMatch[1] };
+            };
+        };
+        return null;
+    };
+
+    /**
      * Keeps only the first (lowest lineIndex) item at each exact (row, col), so alternate
      * constants/fields that occupy the same spot don't render stacked on top of each other.
      */
@@ -839,11 +877,17 @@ export class RecordPreviewPanel {
     };
 
     /**
-     * Collects the distinct indicator numbers referenced by a record's own fields/constants
-     * (used to populate the indicator toggle list in the toolbar).
+     * Collects the distinct indicator numbers referenced by a record's own fields/constants, and
+     * its own record-level attributes (e.g. a record-level ERRMSG()) — used to populate the
+     * indicator toggle list in the toolbar.
      */
     private collectIndicatorNumbers(recordInfo: FieldsPerRecord): number[] {
         const numbers = new Set<number>();
+        for (const attr of recordInfo.attributes ?? []) {
+            for (const ind of attr.indicators ?? []) {
+                numbers.add(ind.number);
+            };
+        };
         for (const field of recordInfo.fields) {
             for (const ind of field.indicators ?? []) {
                 numbers.add(ind.number);
@@ -1251,8 +1295,8 @@ export class RecordPreviewPanel {
 
         const line = editor.document.lineAt(lineIndex);
         const updatedLine = line.text.replace(
-            /WINDOW\s*\(\s*\d+\s+\d+\s+\d+\s+\d+\s*\)/i,
-            `WINDOW(${startRow} ${startCol} ${numRows} ${numCols})`
+            /WINDOW\s*\(\s*\d+\s+\d+\s+\d+\s+\d+(\s+[^)]*)?\s*\)/i,
+            (_match, suffix) => `WINDOW(${startRow} ${startCol} ${numRows} ${numCols}${suffix ?? ''})`
         );
 
         if (updatedLine === line.text) {
@@ -1390,6 +1434,7 @@ export class RecordPreviewPanel {
     <span id="actionBar">
         <button id="addFieldBtn" title="Click, then click a point in the screen to place a new field there">+ Field</button>
         <button id="addConstantBtn" title="Click, then click a point in the screen to place a new constant there">+ Constant</button>
+        <button id="gridDotsBtn" title="Show a dot in every empty character cell, to see spacing between fields/constants">⋅ Grid</button>
     </span>
 </div>
 <div id="indicatorList"></div>
@@ -1408,6 +1453,7 @@ export class RecordPreviewPanel {
     const indicatorList = document.getElementById('indicatorList');
     const addConstantBtn = document.getElementById('addConstantBtn');
     const addFieldBtn = document.getElementById('addFieldBtn');
+    const gridDotsBtn = document.getElementById('gridDotsBtn');
 
     const CHAR_W = 9;
     const CHAR_H = 18;
@@ -1427,6 +1473,7 @@ export class RecordPreviewPanel {
     let currentWindowFrame = null;
     let currentOuterFrame = null;
     let currentWindowTitle = null;
+    let currentErrorMessage = null;
     let currentTitleRect = null;
     let currentMenuIconRect = null;
     let currentCenterIconRect = null;
@@ -1440,9 +1487,23 @@ export class RecordPreviewPanel {
     let selectedLineIndex = null;
     let currentRecordName = null;
     let placingKind = null; // null | 'constant' | 'field'
+    let showGridDots = false;
 
     function clamp(value, min, max) {
         return Math.min(Math.max(value, min), max);
+    }
+
+    function resolveItemRowCol(item, moveDelta) {
+        const isDragged = dragState && dragState.item === item;
+        let row = isDragged ? dragState.row : item.row;
+        let col = isDragged ? dragState.col : item.col;
+
+        if (moveDelta && !item.isBackground) {
+            row += moveDelta.row;
+            col += moveDelta.col;
+        }
+
+        return { row, col };
     }
 
     function drawItem(item, fontFamily, moveDelta) {
@@ -1453,15 +1514,9 @@ export class RecordPreviewPanel {
             return;
         }
 
-        const isDragged = dragState && dragState.item === item;
         const isSelected = item.lineIndex === selectedLineIndex;
-        let row = isDragged ? dragState.row : item.row;
-        let col = isDragged ? dragState.col : item.col;
-
-        if (moveDelta && !item.isBackground) {
-            row += moveDelta.row;
-            col += moveDelta.col;
-        }
+        const { row, col } = resolveItemRowCol(item, moveDelta);
+        const isDragged = dragState && dragState.item === item;
 
         const x = (col - 1) * CHAR_W;
         const y = (row - 1) * CHAR_H;
@@ -1477,8 +1532,18 @@ export class RecordPreviewPanel {
             ctx.fillStyle = item.color;
         }
 
+        // Drawn one character at a time, centered in its own CHAR_W-wide cell — same cx formula
+        // grid dots use — rather than a single fillText call left-padded by a flat 2px. Both fixes
+        // the drift a whole-string fillText has from the font's own glyph advance width over a
+        // long enough string, and keeps each character's visual center aligned with a grid dot's,
+        // instead of a fixed left pad making wider glyphs (e.g. bold capitals) look shifted right
+        // of where a dot in the same cell sits.
         const text = item.text.length > item.length ? item.text.substring(0, item.length) : item.text;
-        ctx.fillText(text, x + 2, y + CHAR_H / 2);
+        ctx.textAlign = 'center';
+        for (let i = 0; i < text.length; i++) {
+            ctx.fillText(text[i], x + i * CHAR_W + CHAR_W / 2, y + CHAR_H / 2);
+        }
+        ctx.textAlign = 'start';
 
         if (item.underline || item.isInputCapable) {
             ctx.strokeStyle = item.reverseImage ? '#000000' : item.color;
@@ -1505,6 +1570,81 @@ export class RecordPreviewPanel {
             ctx.strokeRect(x - 1.5, y - 1.5, w + 2, CHAR_H + 2);
             ctx.restore();
         }
+    }
+
+    function drawGridDots(size, items, backgroundItems, moveDelta, outerFrame, windowFrame) {
+        if (!showGridDots) {
+            return;
+        }
+
+        // A "behind" background item covered by the window's own opaque frame fill (see the
+        // fillRect over currentOuterFrame in draw()) is invisible there, so it must not blank out
+        // a grid dot in that cell; outside the frame (or for "sameWindow" items, which are drawn
+        // after the fill and do show through) it's still visibly occupying its cell.
+        const isCoveredByFrame = (row, col) => {
+            if (!outerFrame) {
+                return false;
+            }
+            return row >= outerFrame.row && row < outerFrame.row + outerFrame.rows &&
+                col >= outerFrame.col && col < outerFrame.col + outerFrame.cols;
+        };
+
+        // Cells where a field/constant could never actually go: the border itself (the outer frame
+        // minus the content rect it wraps), and — per the same rule already applied when placing
+        // buttons (calculateButtonLayout in dspf-edit.add-buttons.ts) — a window's own first and
+        // last content column, which DDS reserves and never lets a field/constant use.
+        const isUnwritableCell = (row, col) => {
+            if (!outerFrame || !isCoveredByFrame(row, col)) {
+                return false;
+            }
+            if (!windowFrame) {
+                return true;
+            }
+            const insideContent = row >= windowFrame.row && row < windowFrame.row + windowFrame.rows &&
+                col >= windowFrame.col && col < windowFrame.col + windowFrame.cols;
+            if (!insideContent) {
+                return true;
+            }
+            return col === windowFrame.col || col === windowFrame.col + windowFrame.cols - 1;
+        };
+
+        const occupied = new Set();
+        const markOccupied = (item, respectFrameCover) => {
+            if (item.nonDisplay || (item.blink && !blinkOn)) {
+                return;
+            }
+            const { row, col } = resolveItemRowCol(item, moveDelta);
+            const w = Math.max(item.length, item.text.length, 1);
+            for (let c = 0; c < w; c++) {
+                const cellCol = col + c;
+                if (respectFrameCover && isCoveredByFrame(row, cellCol)) {
+                    continue;
+                }
+                occupied.add(row + ',' + cellCol);
+            }
+        };
+        items.forEach(item => markOccupied(item, false));
+        (backgroundItems || []).forEach(item => markOccupied(item, !item.sameWindow));
+
+        // Drawn as an actual circle rather than the '⋅' glyph: a font's glyph bearing/advance box
+        // isn't necessarily centered on the character it draws, which visibly threw the dot off
+        // to one side of its cell; an arc is centered on (cx, cy) exactly, by construction.
+        const DOT_RADIUS = 1.3;
+        ctx.save();
+        ctx.fillStyle = '#008800';
+        for (let row = 1; row <= size.rows; row++) {
+            for (let col = 1; col <= size.cols; col++) {
+                if (occupied.has(row + ',' + col) || isUnwritableCell(row, col)) {
+                    continue;
+                }
+                const cx = (col - 1) * CHAR_W + CHAR_W / 2;
+                const cy = (row - 1) * CHAR_H + CHAR_H / 2;
+                ctx.beginPath();
+                ctx.arc(cx, cy, DOT_RADIUS, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        ctx.restore();
     }
 
     function draw(size, items, backgroundItems, windowFrame, windowTitle, outerFrame) {
@@ -1569,6 +1709,25 @@ export class RecordPreviewPanel {
 
         for (const item of items) {
             drawItem(item, fontFamily, moveDelta);
+        }
+
+        drawGridDots(size, items, currentBackgroundItems, moveDelta, currentOuterFrame, currentWindowFrame);
+
+        // A currently-active ERRMSG() shows on the display's message line — the physical screen's
+        // bottom row, whether or not the record being previewed is itself a window — in white,
+        // overwriting whatever would otherwise be there, same as a real 5250 error line.
+        if (currentErrorMessage) {
+            const rowY = (size.rows - 1) * CHAR_H;
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, rowY, canvas.width, CHAR_H);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = (CHAR_H - 4) + 'px ' + fontFamily;
+            ctx.textAlign = 'center';
+            const text = currentErrorMessage.text;
+            for (let i = 0; i < text.length && i < size.cols; i++) {
+                ctx.fillText(text[i], i * CHAR_W + CHAR_W / 2, rowY + CHAR_H / 2);
+            }
+            ctx.textAlign = 'start';
         }
 
         if (currentOuterFrame) {
@@ -1746,6 +1905,14 @@ export class RecordPreviewPanel {
 
     addFieldBtn.addEventListener('click', () => {
         setPlacingKind(placingKind === 'field' ? null : 'field');
+    });
+
+    gridDotsBtn.addEventListener('click', () => {
+        showGridDots = !showGridDots;
+        gridDotsBtn.classList.toggle('active', showGridDots);
+        if (currentSize) {
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+        }
     });
 
     document.addEventListener('keydown', (ev) => {
@@ -2063,6 +2230,7 @@ export class RecordPreviewPanel {
                   ' at (' + message.windowFrame.row + ',' + message.windowFrame.col + ')'
                 : baseInfo;
 
+            currentErrorMessage = message.errorMessage || null;
             draw(message.size, message.items, message.backgroundItems, message.windowFrame, message.windowTitle, message.outerFrame);
         } else if (message.type === 'notFound') {
             info.textContent = 'Record no longer exists.';
