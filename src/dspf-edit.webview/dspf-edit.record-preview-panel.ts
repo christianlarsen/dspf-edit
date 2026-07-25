@@ -5,7 +5,7 @@
 */
 
 import * as vscode from 'vscode';
-import { FieldsPerRecord, DdsSize, AttributeWithIndicators, DdsIndicator, fieldsPerRecords, records, getDefaultSize, getAvailableDisplayFormats, getSizeForFormat } from '../dspf-edit.model/dspf-edit.model';
+import { FieldsPerRecord, DdsSize, DdsAttribute, AttributeWithIndicators, DdsIndicator, fieldsPerRecords, records, getDefaultSize, getAvailableDisplayFormats, getSizeForFormat } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, updateTreeProvider } from '../dspf-edit.utils/dspf-edit.helper';
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
 import { resolveRecordSizeForFormat } from '../dspf-edit.parser/dspf-edit.parser';
@@ -221,6 +221,11 @@ function isSflRecordInfo(recordInfo: FieldsPerRecord): boolean {
     return recordInfo.attributes?.some(attr => attr.value === 'SFL') ?? false;
 };
 
+/** Whether a record's attributes include an SFLCTL() keyword (i.e. it's a subfile control record). */
+function isSflCtlRecordInfo(recordInfo: FieldsPerRecord): boolean {
+    return recordInfo.attributes?.some(attr => attr.value.toUpperCase().startsWith('SFLCTL(')) ?? false;
+};
+
 /**
  * Finds the control record for a subfile (SFL) record, i.e. the one carrying SFLCTL(sflRecordName).
  * @param sflRecordName - Name of the subfile (SFL) record
@@ -232,6 +237,17 @@ function findSflControlRecord(sflRecordName: string): FieldsPerRecord | undefine
             return Boolean(match && match[1].toUpperCase() === sflRecordName.toUpperCase());
         })
     );
+};
+
+/**
+ * Finds an SFLCTL record's own SFLPAG() attribute (the candidate matching activeFormat, when
+ * conditioned by more than one display format).
+ * @param recordInfo - The SFLCTL record
+ * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
+ */
+function findOwnSflPagAttribute(recordInfo: FieldsPerRecord, activeFormat?: string): DdsAttribute | undefined {
+    const candidates = recordInfo.attributes?.filter(a => a.value.toUpperCase().startsWith('SFLPAG(')) ?? [];
+    return pickForActiveFormat(candidates, activeFormat);
 };
 
 /**
@@ -248,8 +264,7 @@ function findSubfilePageSize(sflRecordName: string, activeFormat?: string): numb
         return undefined;
     };
 
-    const candidates = controlRecord.attributes?.filter(a => a.value.toUpperCase().startsWith('SFLPAG(')) ?? [];
-    const pagAttr = pickForActiveFormat(candidates, activeFormat);
+    const pagAttr = findOwnSflPagAttribute(controlRecord, activeFormat);
     const match = pagAttr?.value.match(/SFLPAG\(\s*(\d+)\s*\)/i);
     return match ? parseInt(match[1], 10) : undefined;
 };
@@ -615,6 +630,9 @@ export class RecordPreviewPanel {
         const availableRecords = records.filter(name => name !== this.recordName);
         const windowTitle = isWindow ? (findWindowTitle(this.recordName, this.activeDisplayFormat) ?? null) : null;
         const errorMessage = this.resolveErrorMessage(recordInfo);
+        const sflPagAttr = isSflCtlRecordInfo(recordInfo) ? findOwnSflPagAttribute(recordInfo, this.activeDisplayFormat) : undefined;
+        const sflPagMatch = sflPagAttr?.value.match(/SFLPAG\(\s*(\d+)\s*\)/i);
+        const sflPag = sflPagMatch ? parseInt(sflPagMatch[1], 10) : null;
 
         this.panel.webview.postMessage({
             type: 'render',
@@ -625,6 +643,7 @@ export class RecordPreviewPanel {
             outerFrame,
             windowTitle,
             errorMessage,
+            sflPag,
             maxSize,
             availableRecords,
             overlayRecordName: this.overlayRecordName ?? null,
@@ -1021,6 +1040,16 @@ export class RecordPreviewPanel {
                 this.activeIndicators.add(message.number);
             };
             this.render();
+            return;
+        };
+
+        if (message?.type === 'sflpagIncrement') {
+            await this.adjustSubfilePageSize(1);
+            return;
+        };
+
+        if (message?.type === 'sflpagDecrement') {
+            await this.adjustSubfilePageSize(-1);
         };
     };
 
@@ -1310,6 +1339,59 @@ export class RecordPreviewPanel {
     };
 
     /**
+     * Increments or decrements an SFLCTL record's SFLPAG() (number of subfile rows shown at once),
+     * always keeping SFLSIZ() one more than SFLPAG — the common convention that gives the subfile
+     * one row of headroom past what's visible. Both are 4-digit zero-padded numeric literals.
+     */
+    private async adjustSubfilePageSize(delta: number): Promise<void> {
+        const { editor } = checkForEditorAndDocument();
+        if (!editor) {
+            return;
+        };
+
+        const recordInfo = fieldsPerRecords.find(r => r.record === this.recordName);
+        if (!recordInfo || !isSflCtlRecordInfo(recordInfo)) {
+            return;
+        };
+
+        const pagAttr = findOwnSflPagAttribute(recordInfo, this.activeDisplayFormat);
+        const pagMatch = pagAttr?.value.match(/SFLPAG\(\s*(\d+)\s*\)/i);
+        if (!pagAttr || !pagMatch) {
+            return;
+        };
+
+        const currentPag = parseInt(pagMatch[1], 10);
+        const newPag = Math.min(Math.max(currentPag + delta, 1), 9998);
+        if (newPag === currentPag) {
+            return;
+        };
+        const newSiz = newPag + 1;
+
+        const workspaceEdit = new vscode.WorkspaceEdit();
+
+        const pagLine = editor.document.lineAt(pagAttr.lineIndex);
+        workspaceEdit.replace(
+            editor.document.uri,
+            pagLine.range,
+            pagLine.text.replace(/SFLPAG\(\s*\d+\s*\)/i, `SFLPAG(${String(newPag).padStart(4, '0')})`)
+        );
+
+        const sizCandidates = recordInfo.attributes?.filter(a => a.value.toUpperCase().startsWith('SFLSIZ(')) ?? [];
+        const sizAttr = pickForActiveFormat(sizCandidates, this.activeDisplayFormat);
+        if (sizAttr) {
+            const sizLine = editor.document.lineAt(sizAttr.lineIndex);
+            workspaceEdit.replace(
+                editor.document.uri,
+                sizLine.range,
+                sizLine.text.replace(/SFLSIZ\(\s*\d+\s*\)/i, `SFLSIZ(${String(newSiz).padStart(4, '0')})`)
+            );
+        };
+
+        await vscode.workspace.applyEdit(workspaceEdit);
+        this.forceReparse(editor.document);
+    };
+
+    /**
      * The webview holds focus during drag/resize, so the normal onDidChangeTextDocument listener
      * (which only reacts when the edited document is the active text editor) won't fire.
      * Force the re-parse immediately instead of waiting for the user to click back into the source.
@@ -1370,7 +1452,7 @@ export class RecordPreviewPanel {
         align-items: center;
         gap: 6px;
     }
-    #actionBar button {
+    #actionBar button, #sflpagBar button {
         background: #000000;
         color: #00ff00;
         border: 1px solid #333333;
@@ -1384,11 +1466,25 @@ export class RecordPreviewPanel {
         color: #000000;
         border-color: #00ff00;
     }
+    #actionBar button:disabled, #sflpagBar button:disabled {
+        color: #666666;
+        border-color: #222222;
+        cursor: default;
+    }
     #indicatorBar {
         display: none;
         align-items: center;
         gap: 4px;
         cursor: pointer;
+    }
+    #sflpagBar {
+        display: none;
+        align-items: center;
+        gap: 4px;
+    }
+    #sflpagValue {
+        min-width: 2ch;
+        text-align: center;
     }
     #indicatorList {
         display: none;
@@ -1431,6 +1527,12 @@ export class RecordPreviewPanel {
         <select id="overlaySelect"></select>
     </span>
     <label id="indicatorBar"><input type="checkbox" id="indicatorsToggle"> Indicators</label>
+    <span id="sflpagBar">
+        <label>Page rows: </label>
+        <button id="sflpagMinusBtn" title="Decrease SFLPAG (SFLSIZ stays SFLPAG + 1)">-</button>
+        <span id="sflpagValue"></span>
+        <button id="sflpagPlusBtn" title="Increase SFLPAG (SFLSIZ stays SFLPAG + 1)">+</button>
+    </span>
     <span id="actionBar">
         <button id="addFieldBtn" title="Click, then click a point in the screen to place a new field there">+ Field</button>
         <button id="addConstantBtn" title="Click, then click a point in the screen to place a new constant there">+ Constant</button>
@@ -1451,6 +1553,10 @@ export class RecordPreviewPanel {
     const indicatorBar = document.getElementById('indicatorBar');
     const indicatorsToggle = document.getElementById('indicatorsToggle');
     const indicatorList = document.getElementById('indicatorList');
+    const sflpagBar = document.getElementById('sflpagBar');
+    const sflpagMinusBtn = document.getElementById('sflpagMinusBtn');
+    const sflpagPlusBtn = document.getElementById('sflpagPlusBtn');
+    const sflpagValue = document.getElementById('sflpagValue');
     const addConstantBtn = document.getElementById('addConstantBtn');
     const addFieldBtn = document.getElementById('addFieldBtn');
     const gridDotsBtn = document.getElementById('gridDotsBtn');
@@ -1498,7 +1604,11 @@ export class RecordPreviewPanel {
         let row = isDragged ? dragState.row : item.row;
         let col = isDragged ? dragState.col : item.col;
 
-        if (moveDelta && !item.isBackground) {
+        // A "sameWindow" background item (the other half of an SFL/SFLCTL pair, sharing this exact
+        // window) must move along with the window being dragged, same as the foreground record's
+        // own items — only a genuinely different background record (a different window, or none at
+        // all) stays put.
+        if (moveDelta && (!item.isBackground || item.sameWindow)) {
             row += moveDelta.row;
             col += moveDelta.col;
         }
@@ -1680,8 +1790,10 @@ export class RecordPreviewPanel {
             ctx.restore();
         }
 
-        // While the window is being dragged, its own fields/constants move along with its border
-        // (the background record's items stay put, since that record isn't being moved).
+        // While the window is being dragged, its own fields/constants — and any "sameWindow"
+        // background items, the other half of an SFL/SFLCTL pair sharing this exact window — move
+        // along with its border. A genuinely different background record's items stay put, since
+        // that record (and its own window, if any) isn't being moved.
         const moveDelta = (moveWindowState && currentOuterFrame)
             ? { row: currentOuterFrame.row - moveWindowState.startRow, col: currentOuterFrame.col - moveWindowState.startCol }
             : null;
@@ -1702,7 +1814,7 @@ export class RecordPreviewPanel {
             ctx.save();
             ctx.globalAlpha = 0.45;
             for (const item of sameWindowItems) {
-                drawItem(item, fontFamily, null);
+                drawItem(item, fontFamily, moveDelta);
             }
             ctx.restore();
         }
@@ -1913,6 +2025,14 @@ export class RecordPreviewPanel {
         if (currentSize) {
             draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
         }
+    });
+
+    sflpagMinusBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'sflpagDecrement' });
+    });
+
+    sflpagPlusBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'sflpagIncrement' });
     });
 
     document.addEventListener('keydown', (ev) => {
@@ -2222,6 +2342,14 @@ export class RecordPreviewPanel {
                 indicatorsToggle.checked = Boolean(message.indicatorsEnabled);
                 indicatorList.style.display = message.indicatorsEnabled ? 'block' : 'none';
                 rebuildIndicatorList(message.availableIndicators, message.activeIndicators || []);
+            }
+
+            const hasSflPag = typeof message.sflPag === 'number';
+            sflpagBar.style.display = hasSflPag ? 'inline-flex' : 'none';
+            if (hasSflPag) {
+                sflpagValue.textContent = String(message.sflPag);
+                sflpagMinusBtn.disabled = message.sflPag <= 1;
+                sflpagPlusBtn.disabled = message.sflPag >= 9998;
             }
 
             const baseInfo = message.size.rows + ' x ' + message.size.cols;

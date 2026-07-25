@@ -947,7 +947,7 @@ function propagateSubfileWindowSizes(recordElements: DdsRecord[], sizeByRecord: 
 
         const pairSize = pairName ? sizeByRecord.get(pairName) : undefined;
         if (pairSize) {
-            sizeByRecord.set(record.name, pairSize);
+            sizeByRecord.set(record.name, { ...pairSize, sharedFromRecord: pairSize.sharedFromRecord ?? pairName });
         };
     };
 };

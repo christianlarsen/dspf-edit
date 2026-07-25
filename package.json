@@ -8,7 +8,7 @@
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "0.13.1",
+  "version": "0.13.2",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
@@ -104,6 +104,10 @@
       {
         "command": "dspf-edit.add-buttons",
         "title": "Add Buttons"
+      },
+      {
+        "command": "dspf-edit.add-commands-record",
+        "title": "Add Commands Record"
       },
       {
         "command": "dspf-edit.add-constant",
@@ -308,42 +312,47 @@
         },
         {
           "command": "dspf-edit.window-resize",
-          "when": "view == dspf-edit.schema-view && viewItem == record",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
           "group": "records_navigation1@1"
         },
         {
           "command": "dspf-edit.rename-record",
-          "when": "view == dspf-edit.schema-view && viewItem == record",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
           "group": "records_navigation1@2"
         },
         {
           "command": "dspf-edit.copy-record",
-          "when": "view == dspf-edit.schema-view && viewItem == record",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
           "group": "records_navigation1@3"
         },
         {
           "command": "dspf-edit.delete-record",
-          "when": "view == dspf-edit.schema-view && viewItem == record",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
           "group": "records_navigation1@4"
         },
         {
           "command": "dspf-edit.window-title",
-          "when": "view == dspf-edit.schema-view && viewItem == record",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
           "group": "records_navigation1@5"
         },
         {
           "command": "dspf-edit.add-buttons",
-          "when": "view == dspf-edit.schema-view && viewItem == record",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
           "group": "records_navigation2@1"
         },
         {
+          "command": "dspf-edit.add-commands-record",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\bsflctl\\b/",
+          "group": "records_navigation2@2"
+        },
+        {
           "command": "dspf-edit.add-key",
-          "when": "view == dspf-edit.schema-view && viewItem == record",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
           "group": "records_navigation3@1"
         },
         {
           "command": "dspf-edit.sort-elements",
-          "when": "view == dspf-edit.schema-view && viewItem == record",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
           "group": "records_navigation4@1"
         },
         {
@@ -353,17 +362,17 @@
         },
         {
           "command": "dspf-edit.preview-record",
-          "when": "view == dspf-edit.schema-view && viewItem == record",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
           "group": "records_navigation5@1"
         },
         {
           "command": "dspf-edit.add-constant",
-          "when": "view == dspf-edit.schema-view && viewItem == record",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
           "group": "records_navigation0@1"
         },
         {
           "command": "dspf-edit.add-field",
-          "when": "view == dspf-edit.schema-view && viewItem == record",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
           "group": "records_navigation0@2"
         },
         {
@@ -413,12 +422,12 @@
         },
         {
           "command" : "dspf-edit.rename-record",
-          "when" : "view == dspf-edit.schema-view && viewItem == record",
+          "when" : "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
           "group" : "inline@99"
         },
         {
           "command": "dspf-edit.preview-record",
-          "when": "view == dspf-edit.schema-view && viewItem == record",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
           "group": "inline@1"
         },
         {
