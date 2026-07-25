@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [0.13.2] - 2026-07-25
+### Added
+- New "Add Commands Record" command (record context menu, shown only on subfile control (SFLCTL) records): creates a record right after the subfile for its function-key legend (e.g. "F3=Exit"). For window subfiles, moves the SFLCTL's own `WINDOW()` (and `WDWTITLE()`/`WDWBORDER()`) onto the new record and leaves a `WINDOW(record)` reference behind, so the legend shares the subfile's window.
+- New "Page rows" +/- control in the preview toolbar for SFLCTL records: adjusts `SFLPAG()`, always keeping `SFLSIZ()` one more than `SFLPAG()`.
+### Fixed
+- An SFL/SFLCTL pair sharing a window (the SFLCTL declaring `WINDOW()` directly) could hide the other half's content behind the window's own opaque background in the preview.
+- Dragging a window in the preview left the paired SFL/SFLCTL record's dimmed content static until the mouse was released, instead of moving live with the window.
+
 ## [0.13.1] - 2026-07-24
 ### Added
 - New "Grid Dots" toggle in the preview toolbar: marks every empty character cell with a dot, to see spacing between fields/constants (and around a window's border) while designing a screen.

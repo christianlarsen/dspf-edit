@@ -17,6 +17,7 @@ import { deleteRecord } from './dspf-edit.delete-record';
 import { newRecord } from './dspf-edit.new-record';
 import { goToLineHandler } from './dspf-edit.goto-line';
 import { addButtons } from './dspf-edit.add-buttons';
+import { addCommandsRecord } from './dspf-edit.add-commands-record';
 import { addColor } from './dspf-edit.add-color';
 import { addAttribute } from './dspf-edit.add-attribute';
 import { addKeyCommand } from './dspf-edit.add-keys';
@@ -50,6 +51,7 @@ export const commands = [
     { name: 'newRecord', handler: newRecord, needsTreeProvider: false },
     { name: 'goToLine', handler: goToLineHandler, needsTreeProvider: false },
     { name: 'addButtons', handler: addButtons, needsTreeProvider: false },
+    { name: 'addCommandsRecord', handler: addCommandsRecord, needsTreeProvider: false },
     { name: 'addColor', handler: addColor, needsTreeProvider: false },
     { name: 'addAttribute', handler: addAttribute, needsTreeProvider: false },
     { name: 'addKey', handler: addKeyCommand, needsTreeProvider: false },

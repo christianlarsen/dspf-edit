@@ -721,6 +721,11 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 	}
 }
 
+/** Whether a tree element is a record carrying an SFLCTL() keyword (a subfile control record). */
+function isSflCtlElement(ddsElement: DdsElement): boolean {
+	return ddsElement.kind === 'record' && (ddsElement.attributes?.some(attr => attr.value.toUpperCase().startsWith('SFLCTL(')) ?? false);
+};
+
 /**
  * DDS NODE CLASS
  * Represents each node in the TreeView. Configures label, tooltip, description,
@@ -731,7 +736,9 @@ export class DdsNode extends vscode.TreeItem {
 		super(label, collapsibleState);
 		this.tooltip = this.getTooltip(ddsElement);
 		this.description = this.getDescription(ddsElement);
-		this.contextValue = label.includes('📂 Records') ? 'group:records' : ddsElement.kind;
+		this.contextValue = label.includes('📂 Records')
+			? 'group:records'
+			: isSflCtlElement(ddsElement) ? 'record sflctl' : ddsElement.kind;
 
 		if (this.shouldHaveNavigationCommand(ddsElement)) {
 			this.command = { command: 'ddsEdit.goToLine', title: `Go to ${ddsElement.kind}`, arguments: [ddsElement.lineIndex + 1] };

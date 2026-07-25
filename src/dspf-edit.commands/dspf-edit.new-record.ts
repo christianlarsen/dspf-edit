@@ -201,7 +201,7 @@ async function collectRecordName(): Promise<string | null> {
  * @param value - The record name to validate
  * @returns Error message or null if valid
  */
-function validateRecordName(value: string): string | null {
+export function validateRecordName(value: string): string | null {
     if (!value || value.trim() === '') {
         return "The record name cannot be empty.";
     };
