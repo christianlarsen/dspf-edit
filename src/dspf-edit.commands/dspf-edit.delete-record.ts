@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 
 // COMMAND REGISTRATION
 
@@ -62,7 +62,9 @@ async function handleDeleteRecordCommand(node: DdsNode): Promise<void> {
         };
 
         // Perform the deletion
-        await deleteRecordLines(editor, recordBoundaries);
+        if (!(await deleteRecordLines(editor, recordBoundaries))) {
+            return;
+        };
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
         
@@ -226,7 +228,7 @@ async function showDeleteConfirmation(recordName: string, info: RecordDeletionIn
  * @param editor - The active text editor
  * @param boundaries - The record boundaries to delete
  */
-async function deleteRecordLines(editor: vscode.TextEditor, boundaries: RecordBoundaries): Promise<void> {
+async function deleteRecordLines(editor: vscode.TextEditor, boundaries: RecordBoundaries): Promise<boolean> {
     const document = editor.document;
     const { startOffset, endOffset } = calculateDeletionOffsets(document, boundaries);
 
@@ -240,9 +242,9 @@ async function deleteRecordLines(editor: vscode.TextEditor, boundaries: RecordBo
     const uri = document.uri;
     const startPos = document.positionAt(startOffset);
     const endPos = document.positionAt(endOffset);
-    
+
     workspaceEdit.delete(uri, new vscode.Range(startPos, endPos));
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'delete the record');
 };
 
 /**

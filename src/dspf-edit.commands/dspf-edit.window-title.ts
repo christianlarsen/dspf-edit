@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { FieldsPerRecord, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 import { generateWindowTitleLines } from './dspf-edit.new-record';
 
 type TitleAlign = 'LEFT' | 'CENTER' | 'RIGHT';
@@ -95,7 +95,9 @@ export async function editWindowTitleForRecord(recordName: string): Promise<void
                 vscode.window.showInformationMessage('No title entered.');
                 return;
             };
-            await removeWindowTitle(editor, existing);
+            if (!(await removeWindowTitle(editor, existing))) {
+                return;
+            };
             vscode.window.showInformationMessage(`Removed window title for '${recordName}'.`);
             return;
         };
@@ -111,7 +113,9 @@ export async function editWindowTitleForRecord(recordName: string): Promise<void
         };
 
         const anchorLineIndex = windowAttr.lastLineIndex ?? windowAttr.lineIndex;
-        await applyWindowTitle(editor, anchorLineIndex, existing, text, align, position);
+        if (!(await applyWindowTitle(editor, anchorLineIndex, existing, text, align, position))) {
+            return;
+        };
 
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
@@ -256,7 +260,7 @@ async function applyWindowTitle(
     text: string,
     align: TitleAlign,
     position: TitlePosition
-): Promise<void> {
+): Promise<boolean> {
     const lines = generateWindowTitleLines(text, align, position);
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
@@ -272,7 +276,7 @@ async function applyWindowTitle(
         workspaceEdit.insert(uri, insertPosition, lines.join('\n') + '\n');
     };
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'update the window title');
 };
 
 /**
@@ -280,7 +284,7 @@ async function applyWindowTitle(
  * @param editor - The active text editor
  * @param existing - The title to remove
  */
-async function removeWindowTitle(editor: vscode.TextEditor, existing: ExistingWindowTitle): Promise<void> {
+async function removeWindowTitle(editor: vscode.TextEditor, existing: ExistingWindowTitle): Promise<boolean> {
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
 
@@ -290,5 +294,5 @@ async function removeWindowTitle(editor: vscode.TextEditor, existing: ExistingWi
     );
     workspaceEdit.delete(uri, range);
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'remove the window title');
 };

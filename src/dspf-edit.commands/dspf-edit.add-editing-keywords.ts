@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
-import { isAttributeLine, findElementInsertionPoint, checkForEditorAndDocument, groupConsecutiveLines } from '../dspf-edit.utils/dspf-edit.helper';
+import { isAttributeLine, findElementInsertionPoint, checkForEditorAndDocument, groupConsecutiveLines, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
@@ -173,7 +173,9 @@ async function handleEditingKeywordsCommand(node: DdsNode): Promise<void> {
         };
 
         // Apply the selected editing to the field
-        await addEditingToField(editor, node.ddsElement, selectedEditing);
+        if (!(await addEditingToField(editor, node.ddsElement, selectedEditing))) {
+            return;
+        };
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
         
@@ -536,7 +538,7 @@ async function addEditingToField(
     editor: vscode.TextEditor,
     element: any,
     editing: EditConfiguration[]
-): Promise<void> {
+): Promise<boolean> {
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
     const fieldLine = editor.document.lineAt(element.lineIndex);
@@ -568,7 +570,7 @@ async function addEditingToField(
         await addAdditionalEditingLines(editing, insertionPoint, workspaceEdit, uri, editor);
     };
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'apply the field editing');
 };
 
 /**
@@ -719,9 +721,9 @@ function createEditingLine(editConfig: EditConfiguration): string {
  * @param editor - The active text editor
  * @param element - The DDS field to remove editing from
  */
-async function removeEditingFromField(editor: vscode.TextEditor, element: any): Promise<void> {
+async function removeEditingFromField(editor: vscode.TextEditor, element: any): Promise<boolean> {
     const editingLines = findExistingEditingLines(editor, element);
-    if (editingLines.length === 0) return;
+    if (editingLines.length === 0) return true;
 
     const document = editor.document;
     const workspaceEdit = new vscode.WorkspaceEdit();
@@ -757,11 +759,14 @@ async function removeEditingFromField(editor: vscode.TextEditor, element: any): 
         workspaceEdit.replace(uri, line.range, cleanedText);
     };
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    if (!(await applyWorkspaceEdit(workspaceEdit, 'remove the field editing'))) {
+        return false;
+    };
     await vscode.commands.executeCommand('cursorRight');
     await vscode.commands.executeCommand('cursorLeft');
 
     vscode.window.showInformationMessage(`Removed field editing from ${element.name}.`);
+    return true;
 };
 
 /**

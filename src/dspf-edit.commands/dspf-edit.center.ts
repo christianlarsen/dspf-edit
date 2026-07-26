@@ -6,8 +6,8 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { getRecordSize } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
+import { getRecordSize, SYSTEM_FIELD_PLACEHOLDER } from '../dspf-edit.model/dspf-edit.model';
+import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 
 // POSITION CENTERING FUNCTIONALITY
 
@@ -65,7 +65,9 @@ async function handleCenterCommand(node: DdsNode): Promise<void> {
         };
 
         // Apply the position change
-        await applyPositionChange(editor, element, newPosition);
+        if (!(await applyPositionChange(editor, element, newPosition))) {
+            return;
+        };
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
         
@@ -145,8 +147,7 @@ function calculateCenterPosition(element: any, maxCols: number): { row: number; 
  * @returns The calculated center column position
  */
 function calculateConstantCenterPosition(element: any, maxCols: number): number {
-    // For constants, use the name length minus 2 (for quotes)
-    const contentLength = element.name.length - 2;
+    const contentLength = getElementDisplayWidth(element.name);
     return Math.floor((maxCols - contentLength) / 2) + 1;
 };
 
@@ -157,12 +158,32 @@ function calculateConstantCenterPosition(element: any, maxCols: number): number 
  * @returns The calculated center column position
  */
 function calculateFieldCenterPosition(element: any, maxCols: number): number {
-    if (element.length) {
-        return Math.floor((maxCols - element.length) / 2) + 1;
+    // A system keyword field (DATE, USER...) always displays at its own fixed width, regardless
+    // of whatever the source's own length column holds (typically blank/0 for these).
+    const systemWidth = SYSTEM_FIELD_PLACEHOLDER[String(element.name).trim().toUpperCase()]?.length;
+    const width = systemWidth ?? element.length;
+
+    if (width) {
+        return Math.floor((maxCols - width) / 2) + 1;
     } else {
         // If no length is available, keep the current column position
         return element.column;
     };
+};
+
+/**
+ * Resolves how wide a constant actually displays: a system keyword (DATE, USER...) coded bare, at
+ * its own fixed width; a quoted literal ('...'), its text without the surrounding quotes; anything
+ * else, as-is (defensive fallback — the parser always keeps constants in one of the first two forms).
+ * @param name - The constant's raw source name (as parsed, before any quote-stripping)
+ */
+function getElementDisplayWidth(name: string): number {
+    const systemPlaceholder = SYSTEM_FIELD_PLACEHOLDER[name.trim().toUpperCase()];
+    if (systemPlaceholder) {
+        return systemPlaceholder.length;
+    };
+
+    return name.length >= 2 && name.startsWith("'") && name.endsWith("'") ? name.length - 2 : name.length;
 };
 
 // FILE MODIFICATION FUNCTIONS
@@ -174,10 +195,10 @@ function calculateFieldCenterPosition(element: any, maxCols: number): number {
  * @param newPosition - The new position coordinates
  */
 async function applyPositionChange(
-    editor: vscode.TextEditor, 
-    element: any, 
+    editor: vscode.TextEditor,
+    element: any,
     newPosition: { row: number; col: number }
-): Promise<void> {
+): Promise<boolean> {
     const lineIndex = element.lineIndex;
     const line = editor.document.lineAt(lineIndex).text;
 
@@ -194,7 +215,7 @@ async function applyPositionChange(
         updatedLine
     );
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'center the element');
 };
 
 /**

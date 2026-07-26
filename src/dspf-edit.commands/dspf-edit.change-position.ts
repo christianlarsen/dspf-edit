@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fileSizeAttributes } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
@@ -87,7 +87,9 @@ async function handleChangePositionCommand(node: DdsNode): Promise<void> {
         };
 
         // Update the element position in the document
-        await updateElementPosition(editor, element, newPosition);
+        if (!(await updateElementPosition(editor, element, newPosition))) {
+            return;
+        };
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
 
@@ -258,10 +260,10 @@ function validatePositionBounds(position: ElementPosition): PositionValidation {
  * @param newPosition - New position coordinates
  */
 async function updateElementPosition(
-    editor: vscode.TextEditor, 
-    element: any, 
+    editor: vscode.TextEditor,
+    element: any,
     newPosition: ElementPosition
-): Promise<void> {
+): Promise<boolean> {
     // Validate the new position
     const positionValidation = validatePositionBounds(newPosition);
     if (!positionValidation.isValid) {
@@ -294,7 +296,7 @@ async function updateElementPosition(
         updatedLine
     );
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'move the element');
 };
 
 /**

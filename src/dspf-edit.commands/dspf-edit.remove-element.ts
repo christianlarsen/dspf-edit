@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fieldsPerRecords, FieldInfo, ConstantInfo } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 
 // TYPE DEFINITIONS
 
@@ -96,7 +96,9 @@ async function handleRemoveElementCommand(node: DdsNode): Promise<void> {
         };
 
         // Execute the deletion
-        await executeElementDeletion(editor, deletionPlan);
+        if (!(await executeElementDeletion(editor, deletionPlan))) {
+            return;
+        };
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
 
@@ -227,9 +229,9 @@ async function showDeletionConfirmation(deletionPlan: ElementDeletionPlan): Prom
  * @param deletionPlan - The plan for what to delete
  */
 async function executeElementDeletion(
-    editor: vscode.TextEditor, 
+    editor: vscode.TextEditor,
     deletionPlan: ElementDeletionPlan
-): Promise<void> {
+): Promise<boolean> {
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
 
@@ -242,7 +244,7 @@ async function executeElementDeletion(
     };
 
     // Apply all deletions
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'delete the element');
 };
 
 /**

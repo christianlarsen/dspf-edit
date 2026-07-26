@@ -11,7 +11,8 @@ import {
     isAttributeLine, findElementInsertionPointRecordFirstLine, findElementInsertionPointFileFirstLine,
     handleDspsizWorkflow, DspsizConfig,
     checkForEditorAndDocument,
-    groupConsecutiveLines
+    groupConsecutiveLines,
+    applyWorkspaceEdit
 } from '../dspf-edit.utils/dspf-edit.helper';
 
 // INTERFACES AND TYPES
@@ -103,25 +104,33 @@ async function handleAddKeyCommandCommand(node: DdsNode): Promise<void> {
             if (!action) return;
 
             if (action === 'Remove all key commands') {
+                let removed = true;
                 switch (node.ddsElement.kind) {
                     case 'record':
-                        await removeKeyCommandsFromRecord(editor, node.ddsElement);
+                        removed = await removeKeyCommandsFromRecord(editor, node.ddsElement);
                         break;
                     case 'file':
-                        await removeKeyCommandsFromFile(editor);
+                        removed = await removeKeyCommandsFromFile(editor);
                         break;
+                };
+                if (!removed) {
+                    return;
                 };
                 return;
             };
 
             if (action === 'Replace all key commands') {
+                let removed = true;
                 switch (node.ddsElement.kind) {
                     case 'record':
-                        await removeKeyCommandsFromRecord(editor, node.ddsElement);
+                        removed = await removeKeyCommandsFromRecord(editor, node.ddsElement);
                         break;
                     case 'file':
-                        await removeKeyCommandsFromFile(editor);
+                        removed = await removeKeyCommandsFromFile(editor);
                         break;
+                };
+                if (!removed) {
+                    return;
                 };
                 // Continue to add new key commands
                 availableKeys = getAvailableKeyNumbers([]);
@@ -138,15 +147,19 @@ async function handleAddKeyCommandCommand(node: DdsNode): Promise<void> {
             return;
         };
 
+        let added = true;
         switch (node.ddsElement.kind) {
             case 'record':
                 // Apply the selected key commands to the record
-                await addKeyCommandsToRecord(editor, node.ddsElement, selectedKeyCommands);
+                added = await addKeyCommandsToRecord(editor, node.ddsElement, selectedKeyCommands);
                 break;
             case 'file':
                 // Apply the selected key commands to the file
-                await addKeyCommandsToFile(editor, selectedKeyCommands);
+                added = await addKeyCommandsToFile(editor, selectedKeyCommands);
                 break;
+        };
+        if (!added) {
+            return;
         };
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
@@ -428,7 +441,7 @@ async function addKeyCommandsToRecord(
     editor: vscode.TextEditor,
     element: any,
     keyCommands: KeyCommandWithIndicators[]
-): Promise<void> {
+): Promise<boolean> {
     const insertionPoint = findElementInsertionPointRecordFirstLine(editor, element);
     if (insertionPoint === -1) {
         throw new Error('Could not find insertion point for key commands');
@@ -454,7 +467,7 @@ async function addKeyCommandsToRecord(
         };
     };
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'add the key commands');
 };
 
 /**
@@ -465,7 +478,7 @@ async function addKeyCommandsToRecord(
 async function addKeyCommandsToFile(
     editor: vscode.TextEditor,
     keyCommands: KeyCommandWithIndicators[]
-): Promise<void> {
+): Promise<boolean> {
     const insertionPoint = findElementInsertionPointFileFirstLine(editor);
     if (insertionPoint === -1) {
         throw new Error('Could not find insertion point for key commands');
@@ -491,7 +504,7 @@ async function addKeyCommandsToFile(
         };
     };
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'add the key commands');
 };
 
 /**
@@ -528,9 +541,9 @@ function createKeyCommandLineWithIndicators(keyCommandWithIndicators: KeyCommand
  * @param editor - The active text editor
  * @param element - The DDS record to remove key commands from
  */
-async function removeKeyCommandsFromRecord(editor: vscode.TextEditor, element: any): Promise<void> {
+async function removeKeyCommandsFromRecord(editor: vscode.TextEditor, element: any): Promise<boolean> {
     const keyCommandLines = findExistingKeyCommandLines(editor, element);
-    if (keyCommandLines.length === 0) return;
+    if (keyCommandLines.length === 0) return true;
 
     const document = editor.document;
     const workspaceEdit = new vscode.WorkspaceEdit();
@@ -547,7 +560,7 @@ async function removeKeyCommandsFromRecord(editor: vscode.TextEditor, element: a
         workspaceEdit.delete(uri, new vscode.Range(startPos, endPos));
     };
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'remove the key commands');
 };
 
 /**
@@ -555,9 +568,9 @@ async function removeKeyCommandsFromRecord(editor: vscode.TextEditor, element: a
  * Handles edge cases properly to avoid leaving blank lines at the end of the file.
  * @param editor - The active text editor
  */
-async function removeKeyCommandsFromFile(editor: vscode.TextEditor): Promise<void> {
+async function removeKeyCommandsFromFile(editor: vscode.TextEditor): Promise<boolean> {
     const keyCommandLines = findExistingKeyCommandLinesInFile(editor);
-    if (keyCommandLines.length === 0) return;
+    if (keyCommandLines.length === 0) return true;
 
     const document = editor.document;
     const workspaceEdit = new vscode.WorkspaceEdit();
@@ -574,7 +587,7 @@ async function removeKeyCommandsFromFile(editor: vscode.TextEditor): Promise<voi
         workspaceEdit.delete(uri, new vscode.Range(startPos, endPos));
     };
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'remove the key commands');
 };
 
 /**

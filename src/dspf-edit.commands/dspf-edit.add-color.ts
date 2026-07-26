@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { isAttributeLine, findElementInsertionPoint, checkForEditorAndDocument, parseIndicatorsFromLine, groupConsecutiveLines } from '../dspf-edit.utils/dspf-edit.helper';
+import { isAttributeLine, findElementInsertionPoint, checkForEditorAndDocument, parseIndicatorsFromLine, groupConsecutiveLines, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 import { fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
 
 // INTERFACES AND TYPES
@@ -82,7 +82,9 @@ async function handleAddColorCommand(node: DdsNode): Promise<void> {
             };
 
             if (action === 'Replace all colors') {
-                await removeColorsFromElement(editor, node.ddsElement);
+                if (!(await removeColorsFromElement(editor, node.ddsElement))) {
+                    return;
+                };
                 // Continue to add new colors
                 availableColors = getAvailableColors([]);
             };
@@ -98,7 +100,9 @@ async function handleAddColorCommand(node: DdsNode): Promise<void> {
         };
 
         // Apply the selected colors to the element
-        await addColorsToElement(editor, node.ddsElement, selectedColors);
+        if (!(await addColorsToElement(editor, node.ddsElement, selectedColors))) {
+            return;
+        };
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
         
@@ -283,7 +287,7 @@ async function addColorsToElement(
     editor: vscode.TextEditor,
     element: any,
     colorsToAdd: ColorWithIndicators[]
-): Promise<void> {
+): Promise<boolean> {
     const isConstant = element.kind === 'constant';
     const numberOfAttributes = getNumberOfAttributesForElement(element);
     const workspaceEdit = new vscode.WorkspaceEdit();
@@ -349,7 +353,7 @@ async function addColorsToElement(
         };
     };
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'add the colors');
 };
 
 function getNumberOfAttributesForElement(element: any): number | undefined {
@@ -422,9 +426,9 @@ function createColorLineWithIndicators(colorWithIndicators: ColorWithIndicators)
  * @param editor - The active text editor
  * @param element - The DDS element to remove colors from
  */
-async function removeColorsFromElement(editor: vscode.TextEditor, element: any): Promise<void> {
+async function removeColorsFromElement(editor: vscode.TextEditor, element: any): Promise<boolean> {
     const currentColors = getCurrentColorsForElement(editor, element);
-    if (currentColors.length === 0) return;
+    if (currentColors.length === 0) return true;
 
     const document = editor.document;
     const workspaceEdit = new vscode.WorkspaceEdit();
@@ -459,7 +463,7 @@ async function removeColorsFromElement(editor: vscode.TextEditor, element: any):
         };
     };
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'remove the colors');
 };
 
 /**

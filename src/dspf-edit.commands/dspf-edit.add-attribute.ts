@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from './../dspf-edit.providers/dspf-edit.providers';
-import { isAttributeLine, findElementInsertionPoint, checkForEditorAndDocument, parseIndicatorsFromLine, groupConsecutiveLines } from './../dspf-edit.utils/dspf-edit.helper';
+import { isAttributeLine, findElementInsertionPoint, checkForEditorAndDocument, parseIndicatorsFromLine, groupConsecutiveLines, applyWorkspaceEdit } from './../dspf-edit.utils/dspf-edit.helper';
 import { fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
  
 // INTERFACES AND TYPES
@@ -82,7 +82,9 @@ async function handleAddAttributeCommand(node: DdsNode): Promise<void> {
             };
 
             if (action === 'Replace all attributes') {
-                await removeAttributesFromElement(editor, node.ddsElement);
+                if (!(await removeAttributesFromElement(editor, node.ddsElement))) {
+                    return;
+                };
                 // Continue to add new attributes
                 availableAttributes = getAvailableAttributes([]);
             };
@@ -98,7 +100,9 @@ async function handleAddAttributeCommand(node: DdsNode): Promise<void> {
         };
 
         // Apply the selected attributes to the element
-        await addAttributesToElement(editor, node.ddsElement, selectedAttributes);
+        if (!(await addAttributesToElement(editor, node.ddsElement, selectedAttributes))) {
+            return;
+        };
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
 
@@ -308,7 +312,7 @@ async function addAttributesToElement(
     editor: vscode.TextEditor,
     element: any,
     attrToAdd: AttributeWithIndicators[]
-): Promise<void> {
+): Promise<boolean> {
     const isConstant = element.kind === 'constant';
     const numberOfAttributes = getNumberOfAttributesForElement(element);
     const workspaceEdit = new vscode.WorkspaceEdit();
@@ -415,7 +419,7 @@ async function addAttributesToElement(
     };
 
     // Apply all the text edits to the document
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'add the attributes');
 };
 
 /**
@@ -459,9 +463,9 @@ function createAttributeLineWithIndicators(attributeWithIndicators: AttributeWit
  * @param editor - The active text editor
  * @param element - The DDS element to remove attributes from
  */
-async function removeAttributesFromElement(editor: vscode.TextEditor, element: any): Promise<void> {
+async function removeAttributesFromElement(editor: vscode.TextEditor, element: any): Promise<boolean> {
     const currentAttributes = getCurrentAttributesForElement(editor, element);
-    if (currentAttributes.length === 0) return;
+    if (currentAttributes.length === 0) return true;
 
     const document = editor.document;
     const workspaceEdit = new vscode.WorkspaceEdit();
@@ -496,7 +500,7 @@ async function removeAttributesFromElement(editor: vscode.TextEditor, element: a
         };
     };
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'remove the attributes');
 };
 
 /**

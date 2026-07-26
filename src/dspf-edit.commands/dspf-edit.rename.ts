@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 import { fieldsPerRecords, records } from '../dspf-edit.model/dspf-edit.model';
 
 // TYPE DEFINITIONS
@@ -117,7 +117,9 @@ async function handleRenameFieldCommand(node: DdsNode): Promise<void> {
         };
 
         // Execute the rename
-        await executeFieldRename(editor, renameInfo);
+        if (!(await executeFieldRename(editor, renameInfo))) {
+            return;
+        };
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
 
@@ -185,7 +187,9 @@ async function handleRenameRecordCommand(node: DdsNode): Promise<void> {
         };
 
         // Execute the rename
-        await executeRecordRename(editor, renameInfo);
+        if (!(await executeRecordRename(editor, renameInfo))) {
+            return;
+        };
 
         vscode.window.showInformationMessage(`Record "${oldName}" renamed to "${newName}" successfully.`);
 
@@ -347,7 +351,7 @@ async function showRecordRenameConfirmation(renameInfo: RecordRenameInfo): Promi
 async function executeFieldRename(
     editor: vscode.TextEditor,
     renameInfo: FieldRenameInfo
-): Promise<void> {
+): Promise<boolean> {
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
     const document = editor.document;
@@ -367,7 +371,7 @@ async function executeFieldRename(
         vscode.window.showWarningMessage(
             `Field name mismatch at line ${renameInfo.lineIndex + 1}. Expected "${renameInfo.oldName}", found "${currentFieldInLine}".`
         );
-        return;
+        return false;
     };
 
     // Create the new field name, padded to 10 characters
@@ -382,7 +386,7 @@ async function executeFieldRename(
     workspaceEdit.replace(uri, line.range, newLine);
 
     // Apply the edit
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'rename the field');
 };
 
 /**
@@ -393,7 +397,7 @@ async function executeFieldRename(
 async function executeRecordRename(
     editor: vscode.TextEditor,
     renameInfo: RecordRenameInfo
-): Promise<void> {
+): Promise<boolean> {
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
     const document = editor.document;
@@ -421,5 +425,5 @@ async function executeRecordRename(
     };
 
     // Apply all edits
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'rename the record');
 };

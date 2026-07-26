@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 import { fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
 
 // TYPE DEFINITIONS
@@ -108,7 +108,9 @@ async function handleRemoveAttributeCommand(node: DdsNode): Promise<void> {
         };
 
         // Execute the deletion
-        await executeElementDeletion(editor, deletionPlan);
+        if (!(await executeElementDeletion(editor, deletionPlan))) {
+            return;
+        };
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
 
@@ -148,10 +150,9 @@ async function showDeletionConfirmation(): Promise<boolean> {
  * @param deletionPlan - The plan containing details about what lines to delete
  */
 async function executeElementDeletion(
-    editor: vscode.TextEditor, 
+    editor: vscode.TextEditor,
     deletionPlan: ElementDeletionPlan
-): Promise<void> {
-    const workspaceEdit = new vscode.WorkspaceEdit();
+): Promise<boolean> {
     const uri = editor.document.uri;
 
     // Handle special case: first line has a field definition
@@ -163,34 +164,31 @@ async function executeElementDeletion(
         let after = lineText.length > 80 ? lineText.substring(80) : ""; // Keep any text after position 80
         let middle = " ".repeat(80 - 44); // Clear the attributes section with spaces
         let newLine = before + middle + after;
-        
+
         // Replace the entire line in the document
-        workspaceEdit.replace(
-            uri,
-            line.range,
-            newLine
-        );
-        await vscode.workspace.applyEdit(workspaceEdit);
-        
+        const fieldLineEdit = new vscode.WorkspaceEdit();
+        fieldLineEdit.replace(uri, line.range, newLine);
+        if (!(await applyWorkspaceEdit(fieldLineEdit, 'delete the attribute'))) {
+            return false;
+        };
+
         // If there are additional lines to delete, update the plan to start from next line
         if (deletionPlan.range.endLine > deletionPlan.range.startLine) {
             deletionPlan.range.startLine ++;
-            
-            // Process remaining lines in the range
-            await addDeletionRange(workspaceEdit, uri, editor, deletionPlan.range);
-            // Apply all deletions
-            await vscode.workspace.applyEdit(workspaceEdit);
 
+            // Process remaining lines in the range, as a separate edit against the now-updated document
+            const remainingLinesEdit = new vscode.WorkspaceEdit();
+            await addDeletionRange(remainingLinesEdit, uri, editor, deletionPlan.range);
+            return applyWorkspaceEdit(remainingLinesEdit, 'delete the attribute');
         } else {
             // Only one line to process, and we've already handled it
-            return;
+            return true;
         };
     } else {
         // Standard case: delete entire lines
-        // Process range
+        const workspaceEdit = new vscode.WorkspaceEdit();
         await addDeletionRange(workspaceEdit, uri, editor, deletionPlan.range);
-        // Apply all deletions
-        await vscode.workspace.applyEdit(workspaceEdit);
+        return applyWorkspaceEdit(workspaceEdit, 'delete the attribute');
     };
 };
 

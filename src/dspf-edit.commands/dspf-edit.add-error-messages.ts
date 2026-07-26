@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
-import { isAttributeLine, findElementInsertionPointRecordFirstLine, checkForEditorAndDocument, groupConsecutiveLines } from '../dspf-edit.utils/dspf-edit.helper';
+import { isAttributeLine, findElementInsertionPointRecordFirstLine, checkForEditorAndDocument, groupConsecutiveLines, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
@@ -84,16 +84,20 @@ async function handleAddErrorMessageCommand(node: DdsNode): Promise<void> {
             if (!action) return;
 
             if (action === 'Remove all error messages') {
-                await removeErrorMessagesFromField(editor, field);
+                if (!(await removeErrorMessagesFromField(editor, field))) {
+                    return;
+                };
                 await vscode.commands.executeCommand('cursorRight');
                 await vscode.commands.executeCommand('cursorLeft');
-                
+
                 vscode.window.showInformationMessage(`Removed all error messages from field '${field.name}'.`);
                 return;
             };
 
             if (action === 'Replace all error messages') {
-                await removeErrorMessagesFromField(editor, field);
+                if (!(await removeErrorMessagesFromField(editor, field))) {
+                    return;
+                };
             };
             // If "Add more error messages", continue with current logic
         };
@@ -107,7 +111,9 @@ async function handleAddErrorMessageCommand(node: DdsNode): Promise<void> {
         };
 
         // Apply the selected error messages to the field
-        await addErrorMessagesToField(editor, field, selectedErrorMessages);
+        if (!(await addErrorMessagesToField(editor, field, selectedErrorMessages))) {
+            return;
+        };
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
 
@@ -364,7 +370,7 @@ async function addErrorMessagesToField(
     editor: vscode.TextEditor,
     field: any,
     errorMessages: ErrorMessageConfig[]
-): Promise<void> {
+): Promise<boolean> {
     const insertionPoint = findElementInsertionPointRecordFirstLine(editor, field);
     if (insertionPoint === -1) {
         throw new Error('Could not find insertion point for error messages');
@@ -394,7 +400,7 @@ async function addErrorMessagesToField(
         currentInsertionPoint++; // Move insertion point for next error message
     };
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'add the error messages');
 };
 
 /**
@@ -462,9 +468,9 @@ function createErrorMessageLines(errorMessage: ErrorMessageConfig): string[] {
  * @param editor - The active text editor
  * @param field - The DDS field to remove error messages from
  */
-async function removeErrorMessagesFromField(editor: vscode.TextEditor, field: any): Promise<void> {
+async function removeErrorMessagesFromField(editor: vscode.TextEditor, field: any): Promise<boolean> {
     const errorMessageLines = findExistingErrorMessageLines(editor, field);
-    if (errorMessageLines.length === 0) return;
+    if (errorMessageLines.length === 0) return true;
 
     const document = editor.document;
     const workspaceEdit = new vscode.WorkspaceEdit();
@@ -480,7 +486,7 @@ async function removeErrorMessagesFromField(editor: vscode.TextEditor, field: an
         workspaceEdit.delete(uri, new vscode.Range(startPos, endPos));
     };
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'remove the error messages');
 };
 
 /**

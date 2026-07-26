@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from './../dspf-edit.providers/dspf-edit.providers';
 import { DdsAttribute, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 import { validateRecordName } from './dspf-edit.new-record';
 import { findRecordInsertionPoint } from './dspf-edit.add-buttons';
 
@@ -97,7 +97,9 @@ async function handleAddCommandsRecordCommand(node: DdsNode): Promise<void> {
         return;
     };
 
-    await insertCommandsRecord(document, insertionLine, newRecordName, numericWindowAttrs, titleAttrs, borderAttrs);
+    if (!(await insertCommandsRecord(document, insertionLine, newRecordName, numericWindowAttrs, titleAttrs, borderAttrs))) {
+        return;
+    };
 
     await vscode.commands.executeCommand('cursorRight');
     await vscode.commands.executeCommand('cursorLeft');
@@ -140,7 +142,7 @@ async function insertCommandsRecord(
     windowAttrsToMove: DdsAttribute[],
     titleAttrsToMove: DdsAttribute[],
     borderAttrsToMove: DdsAttribute[]
-): Promise<void> {
+): Promise<boolean> {
     const bodyLines = [
         ' '.repeat(5) + 'A' + ' '.repeat(10) + 'R ' + recordName.padEnd(10, ' '),
         ' '.repeat(5) + 'A' + ' '.repeat(38) + 'OVERLAY',
@@ -172,5 +174,5 @@ async function insertCommandsRecord(
         workspaceEdit.delete(document.uri, new vscode.Range(attr.lineIndex, 0, lastLine + 1, 0));
     };
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'add the commands record');
 };

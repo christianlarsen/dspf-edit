@@ -5,8 +5,8 @@
 */
 
 import * as vscode from 'vscode';
-import { FieldsPerRecord, DdsSize, DdsAttribute, AttributeWithIndicators, DdsIndicator, fieldsPerRecords, records, getDefaultSize, getAvailableDisplayFormats, getSizeForFormat } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument, updateTreeProvider } from '../dspf-edit.utils/dspf-edit.helper';
+import { FieldsPerRecord, DdsSize, DdsAttribute, AttributeWithIndicators, DdsIndicator, fieldsPerRecords, records, getDefaultSize, getAvailableDisplayFormats, getSizeForFormat, SYSTEM_FIELD_PLACEHOLDER } from '../dspf-edit.model/dspf-edit.model';
+import { checkForEditorAndDocument, updateTreeProvider, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
 import { resolveRecordSizeForFormat } from '../dspf-edit.parser/dspf-edit.parser';
 import { editWindowTitleForRecord } from '../dspf-edit.commands/dspf-edit.window-title';
@@ -77,25 +77,57 @@ const FIELD_USAGE_PLACEHOLDER: Record<'alpha' | 'numeric', Record<string, string
  * Builds the placeholder text shown across a field's width, based on its data type and usage
  * (O=output, B=both, I=input), matching the classic screen-design-aid convention.
  * Falls back to the field name if the usage code isn't one of O/B/I.
- * @param name - Field name (used as a fallback label)
- * @param type - DDS data type code ('A' = alphanumeric; anything else is treated as numeric)
+ * @param name - Field name (used as a fallback label, and to detect a system keyword field)
+ * @param type - DDS data type code; blank (DDS's own default when no decimals are given) or 'A'
+ * is alphanumeric, anything else (Y, S, L, T, Z, ...) is treated as numeric
  * @param usage - DDS usage code (O, B, I, H, ...)
  * @param length - Field length, i.e. how many placeholder characters to repeat
+ * @param editWordMask - The field's EDTWRD() mask text, if any (e.g. '   .  ') — when present, its
+ * blanks are filled with the placeholder character instead of just repeating it for `length`, so
+ * an edited numeric field previews with its decimal point (or other insert characters) in place.
  */
-function getFieldPlaceholderText(name: string, type: string | undefined, usage: string | undefined, length: number): string {
-    const isNumeric = type !== 'A';
-    const usageCode = (usage || '').trim().toUpperCase();
+function getFieldPlaceholderText(name: string, type: string | undefined, usage: string | undefined, length: number, editWordMask?: string | null): string {
+    const systemPlaceholder = SYSTEM_FIELD_PLACEHOLDER[name.trim().toUpperCase()];
+    if (systemPlaceholder) {
+        return systemPlaceholder;
+    };
+
+    const trimmedType = (type || '').trim();
+    const isNumeric = trimmedType !== '' && trimmedType !== 'A';
+    // A blank usage column means Output — DDS's own default (see generateNewFieldLine, which
+    // leaves it blank for that same reason) — not "no usage code".
+    const usageCode = (usage || '').trim().toUpperCase() || 'O';
     const placeholderChar = FIELD_USAGE_PLACEHOLDER[isNumeric ? 'numeric' : 'alpha'][usageCode];
 
     if (!placeholderChar) {
         return name;
     };
 
+    if (editWordMask) {
+        return editWordMask.split('').map(ch => ch === ' ' ? placeholderChar : ch).join('');
+    };
+
     return placeholderChar.repeat(Math.max(length, 1));
+};
+
+/**
+ * Extracts a field's EDTWRD() mask (the text between its quotes), if it carries one.
+ * @param attributes - The element's DDS attributes
+ */
+function getEditWordMask(attributes: AttributeWithIndicators[] | undefined): string | null {
+    const attr = attributes?.find(a => /^EDTWRD\(/i.test(a.value));
+    if (!attr) {
+        return null;
+    };
+
+    return attr.value.match(/^EDTWRD\(\s*'([^']*)'\s*\)$/i)?.[1] ?? null;
 };
 
 /** Default 5250-style green, used when a field/constant has no COLOR() keyword. */
 const DEFAULT_COLOR = '#00ff00';
+
+/** What DSPATR(HI) alone (no explicit COLOR()) renders as — matching a real 5250 display. */
+const HIGH_INTENSITY_COLOR = '#ffffff';
 
 /** Maps DDS COLOR() keyword codes to their on-screen color. */
 const DDS_COLOR_MAP: Record<string, string> = {
@@ -109,18 +141,21 @@ const DDS_COLOR_MAP: Record<string, string> = {
 };
 
 /**
- * Determines the display color for a field/constant based on its COLOR() DDS keyword, if any.
+ * Determines the display color for a field/constant based on its COLOR() DDS keyword, if any —
+ * falling back to white (not the default green) when DSPATR(HI) is set without an explicit color,
+ * matching a real 5250 display.
  * @param attributes - The element's DDS attributes
+ * @param highIntensity - Whether the element also carries DSPATR(HI)
  * @returns A CSS color string
  */
-function getDisplayColor(attributes: AttributeWithIndicators[] | undefined): string {
+function getDisplayColor(attributes: AttributeWithIndicators[] | undefined, highIntensity: boolean): string {
     const colorAttr = attributes?.find(attr => /^COLOR\([A-Z]{3}\)$/.test(attr.value));
     if (!colorAttr) {
-        return DEFAULT_COLOR;
+        return highIntensity ? HIGH_INTENSITY_COLOR : DEFAULT_COLOR;
     };
 
     const code = colorAttr.value.match(/^COLOR\(([A-Z]{3})\)$/)?.[1];
-    return (code && DDS_COLOR_MAP[code]) || DEFAULT_COLOR;
+    return (code && DDS_COLOR_MAP[code]) || (highIntensity ? HIGH_INTENSITY_COLOR : DEFAULT_COLOR);
 };
 
 /**
@@ -726,15 +761,21 @@ export class RecordPreviewPanel {
             if (trueRow > 0 && trueCol > 0) {
                 const activeAttrs = this.getActiveAttributes(field.attributes, useLiveIndicators);
                 const usageCode = (field.usage || '').trim().toUpperCase();
+                // The displayed text's own length drives the item's width/hit-box (below), not the
+                // parsed field length: a system keyword field (DATE, USER...) always renders at a
+                // fixed width of its own, regardless of whatever the source's length column holds
+                // — and an edited numeric field (EDTWRD) is one character wider per insert
+                // character (its decimal point, typically), which text.length already reflects.
+                const text = getFieldPlaceholderText(field.name, field.type, field.usage, field.length, getEditWordMask(activeAttrs));
                 items.push({
                     kind: 'field',
                     name: field.name,
-                    text: getFieldPlaceholderText(field.name, field.type, field.usage, field.length),
+                    text,
                     row: trueRow + rowOffset,
                     col: trueCol + colOffset,
-                    length: field.length,
+                    length: text.length,
                     lineIndex: field.lineIndex,
-                    color: getDisplayColor(activeAttrs),
+                    color: getDisplayColor(activeAttrs, hasDisplayAttribute(activeAttrs, 'HI')),
                     highIntensity: hasDisplayAttribute(activeAttrs, 'HI'),
                     reverseImage: hasDisplayAttribute(activeAttrs, 'RI') || this.hasActiveErrorMessage(field.attributes, useLiveIndicators),
                     blink: hasDisplayAttribute(activeAttrs, 'BL'),
@@ -763,15 +804,18 @@ export class RecordPreviewPanel {
 
             if (trueRow > 0 && trueCol > 0) {
                 const activeAttrs = this.getActiveAttributes(constant.attributes, useLiveIndicators);
+                // Same reasoning as the field loop above: a bare system keyword (DATE, USER...)
+                // renders at its own fixed width, not the raw constant text's length.
+                const text = SYSTEM_FIELD_PLACEHOLDER[constant.name.trim().toUpperCase()] || constant.name;
                 items.push({
                     kind: 'constant',
                     name: constant.name,
-                    text: constant.name,
+                    text,
                     row: trueRow + rowOffset,
                     col: trueCol + colOffset,
-                    length: constant.length,
+                    length: text.length,
                     lineIndex: constant.lineIndex,
-                    color: getDisplayColor(activeAttrs),
+                    color: getDisplayColor(activeAttrs, hasDisplayAttribute(activeAttrs, 'HI')),
                     highIntensity: hasDisplayAttribute(activeAttrs, 'HI'),
                     reverseImage: hasDisplayAttribute(activeAttrs, 'RI'),
                     blink: hasDisplayAttribute(activeAttrs, 'BL'),
@@ -966,17 +1010,8 @@ export class RecordPreviewPanel {
             return;
         };
 
-        if (message?.type === 'move'
-            && typeof message.lineIndex === 'number'
-            && typeof message.newRow === 'number'
-            && typeof message.newCol === 'number') {
-            await this.moveElement(
-                message.lineIndex,
-                message.newRow,
-                message.newCol,
-                typeof message.rowOffset === 'number' ? message.rowOffset : 0,
-                typeof message.colOffset === 'number' ? message.colOffset : 0
-            );
+        if (message?.type === 'move' && Array.isArray(message.moves)) {
+            await this.moveElements(message.moves);
             return;
         };
 
@@ -1002,6 +1037,16 @@ export class RecordPreviewPanel {
 
         if (message?.type === 'centerWindowHorizontally') {
             await this.centerWindowHorizontally();
+            return;
+        };
+
+        if (message?.type === 'centerElement' && typeof message.lineIndex === 'number') {
+            await this.centerElement(message.lineIndex);
+            return;
+        };
+
+        if (message?.type === 'elementMenu' && typeof message.lineIndex === 'number') {
+            await this.showElementMenu(message.lineIndex);
             return;
         };
 
@@ -1092,25 +1137,21 @@ export class RecordPreviewPanel {
     };
 
     /**
-     * Applies a drag-and-drop move from the preview: writes the new row/column back into the
-     * DDS source line, at the same fixed columns used by the move-fields/move-constants commands
-     * (raw columns 38-41 for the row/line spec, 41-44 for the column/position spec).
-     * The screen position is converted back to record-local coordinates using the offset that was
-     * applied when the item was built (non-zero only for a window's own fields/constants).
-     * @param lineIndex - Zero-based line index of the field/constant being moved
-     * @param newRow - New row, in screen coordinates (as shown in the preview grid)
-     * @param newCol - New column, in screen coordinates (as shown in the preview grid)
-     * @param rowOffset - Offset to subtract to get back to the record-local row
-     * @param colOffset - Offset to subtract to get back to the record-local column
+     * Applies a drag-and-drop move from the preview (one item, or several dragged together as a
+     * multi-selection): writes each one's new row/column back into its own DDS source line, at the
+     * same fixed columns used by the move-fields/move-constants commands (raw columns 38-41 for
+     * the row/line spec, 41-44 for the column/position spec). All moves land in a single
+     * WorkspaceEdit, so a group move is also a single undo step.
+     * Each screen position is converted back to record-local coordinates using the offset that was
+     * applied when its item was built (non-zero only for a window's own fields/constants).
+     * @param moves - One entry per moved field/constant: its line index, new screen row/col, and
+     * the row/col offset to subtract to get back to record-local coordinates
      */
-    private async moveElement(lineIndex: number, newRow: number, newCol: number, rowOffset: number, colOffset: number): Promise<void> {
+    private async moveElements(moves: Array<{ lineIndex: number; newRow: number; newCol: number; rowOffset: number; colOffset: number }>): Promise<void> {
         const { editor } = checkForEditorAndDocument();
-        if (!editor || lineIndex >= editor.document.lineCount) {
+        if (!editor) {
             return;
         };
-
-        const localRow = newRow - rowOffset;
-        const localCol = newCol - colOffset;
 
         // The raw source columns are always "Line spec" (38-41) / "Position spec" (41-44) — i.e.
         // row/col in that fixed order — for every record type. A subfile only swaps which of these
@@ -1119,10 +1160,21 @@ export class RecordPreviewPanel {
         const workspaceEdit = new vscode.WorkspaceEdit();
         const uri = editor.document.uri;
 
-        workspaceEdit.replace(uri, new vscode.Range(lineIndex, 38, lineIndex, 41), String(localRow).padStart(3, ' '));
-        workspaceEdit.replace(uri, new vscode.Range(lineIndex, 41, lineIndex, 44), String(localCol).padStart(3, ' '));
+        for (const move of moves) {
+            if (move.lineIndex >= editor.document.lineCount) {
+                continue;
+            };
 
-        await vscode.workspace.applyEdit(workspaceEdit);
+            const localRow = move.newRow - move.rowOffset;
+            const localCol = move.newCol - move.colOffset;
+
+            workspaceEdit.replace(uri, new vscode.Range(move.lineIndex, 38, move.lineIndex, 41), String(localRow).padStart(3, ' '));
+            workspaceEdit.replace(uri, new vscode.Range(move.lineIndex, 41, move.lineIndex, 44), String(localCol).padStart(3, ' '));
+        };
+
+        if (!(await applyWorkspaceEdit(workspaceEdit, moves.length > 1 ? 'move the elements' : 'move the element'))) {
+            return;
+        };
         this.forceReparse(editor.document);
     };
 
@@ -1151,7 +1203,9 @@ export class RecordPreviewPanel {
             return;
         };
 
-        await insertNewConstant(editor, { text, row, column: col, recordName: this.recordName });
+        if (!(await insertNewConstant(editor, { text, row, column: col, recordName: this.recordName }))) {
+            return;
+        };
         this.forceReparse(editor.document);
     };
 
@@ -1314,6 +1368,63 @@ export class RecordPreviewPanel {
     };
 
     /**
+     * Centers the selected field/constant horizontally, triggered from the preview's "Selection
+     * actions" bar (shown in the toolbar strip once something is selected — see the webview's
+     * `updateSelectionBar`). Runs the tree's own "Center" command (dspf-edit.center) against the
+     * matching tree node, so the exact same logic/validation is used regardless of which UI
+     * triggered it.
+     * @param lineIndex - Zero-based source line index of the selected field/constant
+     */
+    private async centerElement(lineIndex: number): Promise<void> {
+        const node = await this.treeProvider?.findFieldOrConstantNode(lineIndex);
+        if (!node) {
+            return;
+        };
+        await vscode.commands.executeCommand('dspf-edit.center', node);
+
+        const { editor } = checkForEditorAndDocument();
+        if (editor) {
+            this.forceReparse(editor.document);
+        };
+    };
+
+    /**
+     * Shows a compact actions menu for the selected field/constant (the "⋮ Actions" button in the
+     * "Selection actions" bar), offering the same color/attribute commands as the tree's context
+     * menu, run against the same tree node — kept short on purpose so the preview doesn't grow a
+     * second full context menu; anything not offered here is still reachable from the tree.
+     * @param lineIndex - Zero-based source line index of the selected field/constant
+     */
+    private async showElementMenu(lineIndex: number): Promise<void> {
+        const node = await this.treeProvider?.findFieldOrConstantNode(lineIndex);
+        if (!node || (node.ddsElement.kind !== 'field' && node.ddsElement.kind !== 'constant')) {
+            return;
+        };
+        const element = node.ddsElement;
+
+        const options: (vscode.QuickPickItem & { command: string })[] = [
+            { label: '$(paintcan) Add Color...', command: 'dspf-edit.add-color' },
+            { label: '$(symbol-color) Add Attribute...', command: 'dspf-edit.add-attribute' }
+        ];
+
+        const selection = await vscode.window.showQuickPick(options, {
+            title: `${element.name} — Actions`,
+            placeHolder: 'Select an action',
+            ignoreFocusOut: true
+        });
+        if (!selection) {
+            return;
+        };
+
+        await vscode.commands.executeCommand(selection.command, node);
+
+        const { editor } = checkForEditorAndDocument();
+        if (editor) {
+            this.forceReparse(editor.document);
+        };
+    };
+
+    /**
      * Rewrites the record's WINDOW(startRow startCol numRows numCols) keyword in place.
      */
     private async rewriteWindowKeyword(lineIndex: number, startRow: number, startCol: number, numRows: number, numCols: number): Promise<void> {
@@ -1334,7 +1445,9 @@ export class RecordPreviewPanel {
 
         const workspaceEdit = new vscode.WorkspaceEdit();
         workspaceEdit.replace(editor.document.uri, line.range, updatedLine);
-        await vscode.workspace.applyEdit(workspaceEdit);
+        if (!(await applyWorkspaceEdit(workspaceEdit, 'resize/move the window'))) {
+            return;
+        };
         this.forceReparse(editor.document);
     };
 
@@ -1387,7 +1500,9 @@ export class RecordPreviewPanel {
             );
         };
 
-        await vscode.workspace.applyEdit(workspaceEdit);
+        if (!(await applyWorkspaceEdit(workspaceEdit, 'change the subfile page size'))) {
+            return;
+        };
         this.forceReparse(editor.document);
     };
 
@@ -1452,7 +1567,7 @@ export class RecordPreviewPanel {
         align-items: center;
         gap: 6px;
     }
-    #actionBar button, #sflpagBar button {
+    #actionBar button, #sflpagBar button, #selectionBar button {
         background: #000000;
         color: #00ff00;
         border: 1px solid #333333;
@@ -1470,6 +1585,14 @@ export class RecordPreviewPanel {
         color: #666666;
         border-color: #222222;
         cursor: default;
+    }
+    #selectionBar {
+        display: none;
+        align-items: center;
+        gap: 6px;
+    }
+    #selectionLabel {
+        opacity: 0.7;
     }
     #indicatorBar {
         display: none;
@@ -1538,6 +1661,11 @@ export class RecordPreviewPanel {
         <button id="addConstantBtn" title="Click, then click a point in the screen to place a new constant there">+ Constant</button>
         <button id="gridDotsBtn" title="Show a dot in every empty character cell, to see spacing between fields/constants">⋅ Grid</button>
     </span>
+    <span id="selectionBar">
+        <span id="selectionLabel"></span>
+        <button id="selectionCenterBtn" title="Center horizontally">↔ Center</button>
+        <button id="selectionMenuBtn" title="More actions (color, attributes...)">⋮ Actions</button>
+    </span>
 </div>
 <div id="indicatorList"></div>
 <canvas id="screen"></canvas>
@@ -1560,6 +1688,10 @@ export class RecordPreviewPanel {
     const addConstantBtn = document.getElementById('addConstantBtn');
     const addFieldBtn = document.getElementById('addFieldBtn');
     const gridDotsBtn = document.getElementById('gridDotsBtn');
+    const selectionBar = document.getElementById('selectionBar');
+    const selectionLabel = document.getElementById('selectionLabel');
+    const selectionCenterBtn = document.getElementById('selectionCenterBtn');
+    const selectionMenuBtn = document.getElementById('selectionMenuBtn');
 
     const CHAR_W = 9;
     const CHAR_H = 18;
@@ -1590,7 +1722,7 @@ export class RecordPreviewPanel {
     let dragState = null;
     let resizeState = null;
     let moveWindowState = null;
-    let selectedLineIndex = null;
+    let selectedLineIndices = new Set();
     let currentRecordName = null;
     let placingKind = null; // null | 'constant' | 'field'
     let showGridDots = false;
@@ -1600,9 +1732,9 @@ export class RecordPreviewPanel {
     }
 
     function resolveItemRowCol(item, moveDelta) {
-        const isDragged = dragState && dragState.item === item;
-        let row = isDragged ? dragState.row : item.row;
-        let col = isDragged ? dragState.col : item.col;
+        const dragged = dragState && dragState.items.find(d => d.item === item);
+        let row = dragged ? dragged.startRow + dragState.rowDelta : item.row;
+        let col = dragged ? dragged.startCol + dragState.colDelta : item.col;
 
         // A "sameWindow" background item (the other half of an SFL/SFLCTL pair, sharing this exact
         // window) must move along with the window being dragged, same as the foreground record's
@@ -1624,9 +1756,9 @@ export class RecordPreviewPanel {
             return;
         }
 
-        const isSelected = item.lineIndex === selectedLineIndex;
+        const isSelected = selectedLineIndices.has(item.lineIndex);
         const { row, col } = resolveItemRowCol(item, moveDelta);
-        const isDragged = dragState && dragState.item === item;
+        const isDragged = Boolean(dragState && dragState.items.some(d => d.item === item));
 
         const x = (col - 1) * CHAR_W;
         const y = (row - 1) * CHAR_H;
@@ -1909,6 +2041,36 @@ export class RecordPreviewPanel {
             const centerY = menuY;
             currentCenterIconRect = drawIconButton(centerX, centerY, '↔', 'Center horizontally');
         }
+
+        updateSelectionBar();
+    }
+
+    // Selected field/constant's actions live in the toolbar strip, not floating over the canvas:
+    // a constant can be a single character (narrower than an icon button), and hovering it is also
+    // how a drag starts, so icons drawn on top of it would fight the drag gesture. Kept in sync
+    // from draw() itself, so it never goes stale (selection cleared, item edited/removed, etc.)
+    // relative to whatever was last rendered.
+    function updateSelectionBar() {
+        const items = currentItems.filter(i => selectedLineIndices.has(i.lineIndex) && i.isInteractive);
+
+        if (items.length === 0) {
+            selectionBar.style.display = 'none';
+            return;
+        }
+
+        // A multi-selection only supports moving (dragging), not centering or the actions menu —
+        // those stay single-item, so the buttons are hidden rather than made to act on a group.
+        const multi = items.length > 1;
+        if (multi) {
+            const kinds = new Set(items.map(i => i.kind));
+            const noun = kinds.size === 1 ? items[0].kind + 's' : 'fields/constants';
+            selectionLabel.textContent = items.length + ' ' + noun + ' selected';
+        } else {
+            selectionLabel.textContent = '1 ' + items[0].kind + ' selected';
+        }
+        selectionCenterBtn.style.display = multi ? 'none' : 'inline-block';
+        selectionMenuBtn.style.display = multi ? 'none' : 'inline-block';
+        selectionBar.style.display = 'inline-flex';
     }
 
     setInterval(() => {
@@ -2027,6 +2189,19 @@ export class RecordPreviewPanel {
         }
     });
 
+    // Both buttons are only shown (see updateSelectionBar) when exactly one item is selected.
+    selectionCenterBtn.addEventListener('click', () => {
+        if (selectedLineIndices.size === 1) {
+            vscode.postMessage({ type: 'centerElement', lineIndex: [...selectedLineIndices][0] });
+        }
+    });
+
+    selectionMenuBtn.addEventListener('click', () => {
+        if (selectedLineIndices.size === 1) {
+            vscode.postMessage({ type: 'elementMenu', lineIndex: [...selectedLineIndices][0] });
+        }
+    });
+
     sflpagMinusBtn.addEventListener('click', () => {
         vscode.postMessage({ type: 'sflpagDecrement' });
     });
@@ -2073,21 +2248,45 @@ export class RecordPreviewPanel {
         }
 
         const hit = findItemAt(ev);
-        selectedLineIndex = hit ? hit.lineIndex : null;
-        draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+
+        // Ctrl/Cmd+click toggles an item in/out of a multi-selection, without starting a drag —
+        // the standard desktop convention for building up a selection one item at a time.
+        if (hit && (ev.ctrlKey || ev.metaKey)) {
+            if (selectedLineIndices.has(hit.lineIndex)) {
+                selectedLineIndices.delete(hit.lineIndex);
+            } else {
+                selectedLineIndices.add(hit.lineIndex);
+            }
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+            return;
+        }
 
         if (hit) {
+            // A plain click on an item already part of a multi-selection keeps the whole group
+            // selected (in case this turns into a group drag); mouseup collapses it to just this
+            // item if no drag actually happened. Clicking a different, unselected item replaces
+            // the selection immediately, same as before multi-select existed.
+            if (!selectedLineIndices.has(hit.lineIndex)) {
+                selectedLineIndices = new Set([hit.lineIndex]);
+                draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+            }
+
             const { row, col } = cellAt(ev);
+            const draggedItems = currentItems.filter(i => selectedLineIndices.has(i.lineIndex) && i.isInteractive);
             dragState = {
-                item: hit,
+                items: draggedItems.map(i => ({ item: i, startRow: i.row, startCol: i.col })),
+                primaryLineIndex: hit.lineIndex,
                 grabRowOffset: row - hit.row,
                 grabColOffset: col - hit.col,
-                row: hit.row,
-                col: hit.col,
+                rowDelta: 0,
+                colDelta: 0,
                 moved: false
             };
             return;
         }
+
+        selectedLineIndices.clear();
+        draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
 
         // Clicked empty space inside the window's own frame (not on a field/constant): drag the window itself.
         if (isOverWindowFrame(ev)) {
@@ -2184,31 +2383,43 @@ export class RecordPreviewPanel {
         }
 
         const { row, col } = cellAt(ev);
-        const width = Math.max(dragState.item.length, dragState.item.text.length, 1);
+        const primary = dragState.items.find(d => d.item.lineIndex === dragState.primaryLineIndex);
+        const desiredRowDelta = (row - dragState.grabRowOffset) - primary.startRow;
+        const desiredColDelta = (col - dragState.grabColOffset) - primary.startCol;
 
-        // A window's own fields/constants can't be dragged past its frame; background (overlay)
-        // items, or items in a plain (non-window) record, are bounded by the whole canvas instead.
-        let minRow = 1, maxRow = currentSize.rows, minCol = 1, maxCol = currentSize.cols - width + 1;
-        if (currentWindowFrame && !dragState.item.isBackground) {
-            minRow = currentWindowFrame.row;
-            maxRow = Math.max(currentWindowFrame.row + currentWindowFrame.rows - 1, minRow);
-            // The window's own first content column can't be written to; the rest of its width,
-            // including the last column, is usable.
-            minCol = currentWindowFrame.col + 1;
-            maxCol = Math.max(currentWindowFrame.col + currentWindowFrame.cols - width, minCol);
+        // Every dragged item must stay within its own valid bounds (window frame vs. whole canvas,
+        // an SFL detail record's rows below its header, and its own width for the column limit) —
+        // computed per item, same as a single drag always did, then intersected so the group's
+        // shared delta can never push any one of them out of bounds.
+        let minRowDelta = -Infinity, maxRowDelta = Infinity, minColDelta = -Infinity, maxColDelta = Infinity;
+        for (const { item, startRow, startCol } of dragState.items) {
+            const width = Math.max(item.length, item.text.length, 1);
+            let itemMinRow = 1, itemMaxRow = currentSize.rows, itemMinCol = 1, itemMaxCol = currentSize.cols - width + 1;
+            if (currentWindowFrame && !item.isBackground) {
+                itemMinRow = currentWindowFrame.row;
+                itemMaxRow = Math.max(currentWindowFrame.row + currentWindowFrame.rows - 1, itemMinRow);
+                // The window's own first content column can't be written to; the rest of its width,
+                // including the last column, is usable.
+                itemMinCol = currentWindowFrame.col + 1;
+                itemMaxCol = Math.max(currentWindowFrame.col + currentWindowFrame.cols - width, itemMinCol);
+            }
+            // A subfile detail record's own rows can't be dragged up into its header's static content.
+            if (minDetailRow !== null && !item.isBackground) {
+                itemMinRow = Math.max(itemMinRow, minDetailRow);
+            }
+
+            minRowDelta = Math.max(minRowDelta, itemMinRow - startRow);
+            maxRowDelta = Math.min(maxRowDelta, itemMaxRow - startRow);
+            minColDelta = Math.max(minColDelta, itemMinCol - startCol);
+            maxColDelta = Math.min(maxColDelta, itemMaxCol - startCol);
         }
 
-        // A subfile detail record's own rows can't be dragged up into its header's static content.
-        if (minDetailRow !== null && !dragState.item.isBackground) {
-            minRow = Math.max(minRow, minDetailRow);
-        }
+        const newRowDelta = clamp(desiredRowDelta, minRowDelta, maxRowDelta);
+        const newColDelta = clamp(desiredColDelta, minColDelta, maxColDelta);
 
-        const newRow = clamp(row - dragState.grabRowOffset, minRow, maxRow);
-        const newCol = clamp(col - dragState.grabColOffset, minCol, maxCol);
-
-        if (newRow !== dragState.row || newCol !== dragState.col) {
-            dragState.row = newRow;
-            dragState.col = newCol;
+        if (newRowDelta !== dragState.rowDelta || newColDelta !== dragState.colDelta) {
+            dragState.rowDelta = newRowDelta;
+            dragState.colDelta = newColDelta;
             dragState.moved = true;
             draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
         }
@@ -2240,14 +2451,20 @@ export class RecordPreviewPanel {
         if (dragState.moved) {
             vscode.postMessage({
                 type: 'move',
-                lineIndex: dragState.item.lineIndex,
-                newRow: dragState.row,
-                newCol: dragState.col,
-                rowOffset: dragState.item.rowOffset,
-                colOffset: dragState.item.colOffset
+                moves: dragState.items.map(d => ({
+                    lineIndex: d.item.lineIndex,
+                    newRow: d.startRow + dragState.rowDelta,
+                    newCol: d.startCol + dragState.colDelta,
+                    rowOffset: d.item.rowOffset,
+                    colOffset: d.item.colOffset
+                }))
             });
         } else {
-            vscode.postMessage({ type: 'navigate', lineIndex: dragState.item.lineIndex });
+            // No drag happened: a plain click on an item from a multi-selection collapses it back
+            // down to just that one (the group stayed selected during mousedown only in case this
+            // turned into a group drag).
+            selectedLineIndices = new Set([dragState.primaryLineIndex]);
+            vscode.postMessage({ type: 'navigate', lineIndex: dragState.primaryLineIndex });
         }
 
         dragState = null;
@@ -2316,7 +2533,7 @@ export class RecordPreviewPanel {
         if (message.type === 'render') {
             if (message.recordName !== currentRecordName) {
                 currentRecordName = message.recordName;
-                selectedLineIndex = null;
+                selectedLineIndices.clear();
                 dragState = null;
             }
 
@@ -2364,7 +2581,7 @@ export class RecordPreviewPanel {
             info.textContent = 'Record no longer exists.';
             ctx.clearRect(0, 0, canvas.width, canvas.height);
         } else if (message.type === 'selectLine') {
-            selectedLineIndex = message.lineIndex;
+            selectedLineIndices = new Set([message.lineIndex]);
             draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
         }
     });
