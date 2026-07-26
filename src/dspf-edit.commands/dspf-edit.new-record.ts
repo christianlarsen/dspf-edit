@@ -7,8 +7,8 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { recordExists, DspsizConfig,
-    checkIfDspsizNeeded, collectDspsizConfiguration, generateDspsizLines, 
-    checkForEditorAndDocument} from '../dspf-edit.utils/dspf-edit.helper';
+    checkIfDspsizNeeded, collectDspsizConfiguration, generateDspsizLines,
+    checkForEditorAndDocument, applyWorkspaceEdit} from '../dspf-edit.utils/dspf-edit.helper';
 import { fileSizeAttributes } from '../dspf-edit.model/dspf-edit.model';
 
 // INTERFACES AND TYPES
@@ -113,7 +113,9 @@ async function handleNewRecordCommand(node: DdsNode): Promise<void> {
         const recordLines = generateRecordLines(recordConfig);
 
         // Insert the new record into the document
-        await insertNewRecord(editor, recordLines);
+        if (!(await insertNewRecord(editor, recordLines))) {
+            return;
+        };
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
 
@@ -725,7 +727,7 @@ function generateSubfileOtherLines(): string[] {
  * @param editor - The active text editor
  * @param lines - Array of DDS lines to insert
  */
-async function insertNewRecord(editor: vscode.TextEditor, lines: string[]): Promise<void> {
+async function insertNewRecord(editor: vscode.TextEditor, lines: string[]): Promise<boolean> {
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
     const insertPosition = new vscode.Position(editor.document.lineCount, 0);
@@ -735,9 +737,9 @@ async function insertNewRecord(editor: vscode.TextEditor, lines: string[]): Prom
     };
     // Create the complete record text with proper line breaks
     const recordText = lines.join('\n');
-    
+
     workspaceEdit.insert(uri, insertPosition, recordText);
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'create the new record');
 };
 
 // UTILITY FUNCTIONS

@@ -262,6 +262,13 @@ function isSubfileRecord(attributes?: DdsAttribute[]): boolean {
  * @param lastRecord - Current record name
  * @returns Parsing result with field element
  */
+/**
+ * System-defined length for DDS data types whose length is never written in the source's length
+ * columns (position 30-31) — DDS itself derives it, so those columns are legitimately left blank.
+ * Matches the defaults `edit-field.ts`'s `getSystemDefinedLength` uses when creating one of these.
+ */
+const FIXED_LENGTH_BY_TYPE: Record<string, number> = { L: 10, T: 8, Z: 26 };
+
 function parseFieldElement(
     lines: string[],
     lineIndex: number,
@@ -270,7 +277,7 @@ function parseFieldElement(
     lastRecord: string
 ) {
     const type = trimmedLine[29];
-    const length = Number(trimmedLine.substring(27, 29).trim());
+    const length = Number(trimmedLine.substring(27, 29).trim()) || FIXED_LENGTH_BY_TYPE[type] || 0;
     const decimals = trimmedLine.substring(30, 32) !== ' ' ? Number(trimmedLine.substring(30, 32).trim()) : 0;
     const usage = trimmedLine[32] !== ' ' ? trimmedLine[32] : ' ';
     const isHidden = trimmedLine[32] === 'H';
@@ -651,8 +658,13 @@ function addFieldToRecord(field: any, recordEntry: any): void {
  * @param recordEntry - Record entry to add constant to
  */
 function addConstantToRecord(constant: any, recordEntry: any): void {
-    // Remove quotes from constant name for storage
-    const constantName = constant.name.slice(1, -1);
+    // Remove quotes from constant name for storage — but only when it's actually a quoted
+    // literal. A DDS system keyword (DATE, TIME, USER, SYSNAME) can be coded bare, in the same
+    // position a quoted constant would occupy; blindly slicing it would eat its first/last letter.
+    const rawName: string = constant.name;
+    const constantName = rawName.length >= 2 && rawName.startsWith("'") && rawName.endsWith("'")
+        ? rawName.slice(1, -1)
+        : rawName;
 
     // Process attributes preserving their indicators
     const processedAttributes = constant.attributes?.map((attr: any) => ({
@@ -663,8 +675,11 @@ function addConstantToRecord(constant: any, recordEntry: any): void {
         displayFormat: attr.displayFormat
     })).filter((attr: any) => attr.value) || [];
 
-    // Avoid duplicate constants
-    if (!recordEntry.constants.some((c: any) => c.name === constantName)) {
+    // Guards against this same source line being linked twice — not against two constants sharing
+    // identical text: DDS pixel-art constructions legitimately repeat the same blank/space text
+    // (e.g. '   ' or ' ') at dozens of different positions to build a colored block pattern, and
+    // comparing by text alone (as this used to) silently dropped all but the first of each.
+    if (!recordEntry.constants.some((c: any) => c.lineIndex === constant.lineIndex)) {
         recordEntry.constants.push({
             name: constantName,
             type: undefined,

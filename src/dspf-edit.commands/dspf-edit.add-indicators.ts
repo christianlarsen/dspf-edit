@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
@@ -90,10 +90,12 @@ async function handleAddIndicatorsCommand(node: DdsNode): Promise<void> {
             if (!action) return;
 
             if (action === 'Remove all indicators') {
-                await removeIndicatorsFromElement(editor, node.ddsElement);
+                if (!(await removeIndicatorsFromElement(editor, node.ddsElement))) {
+                    return;
+                };
                 await vscode.commands.executeCommand('cursorRight');
                 await vscode.commands.executeCommand('cursorLeft');
-                
+
                 (node.ddsElement.kind === 'constant' || node.ddsElement.kind === 'field') ?
                 vscode.window.showInformationMessage(`Removed all indicators from ${node.ddsElement.name}.`) :
                 vscode.window.showInformationMessage(`Removed all indicators from attribute.`);
@@ -101,18 +103,22 @@ async function handleAddIndicatorsCommand(node: DdsNode): Promise<void> {
             };
 
             if (action === 'Replace all indicators') {
-                await removeIndicatorsFromElement(editor, node.ddsElement);
+                if (!(await removeIndicatorsFromElement(editor, node.ddsElement))) {
+                    return;
+                };
                 await vscode.commands.executeCommand('cursorRight');
                 await vscode.commands.executeCommand('cursorLeft');
-                
+
                 // Continue to add new indicators
             };
 
             if (action === 'Modify existing indicators') {
-                await modifyExistingIndicators(editor, node.ddsElement, currentIndicators);
+                if (!(await modifyExistingIndicators(editor, node.ddsElement, currentIndicators))) {
+                    return;
+                };
                 await vscode.commands.executeCommand('cursorRight');
                 await vscode.commands.executeCommand('cursorLeft');
-                
+
                 return;
             };
 
@@ -135,7 +141,9 @@ async function handleAddIndicatorsCommand(node: DdsNode): Promise<void> {
         const allIndicators = action === 'Add more indicators' ? [...currentIndicators, ...newIndicators] : newIndicators;
 
         // Apply the selected indicators to the element
-        await setIndicatorsForElement(editor, node.ddsElement, allIndicators);
+        if (!(await setIndicatorsForElement(editor, node.ddsElement, allIndicators))) {
+            return;
+        };
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
 
@@ -214,8 +222,10 @@ async function handleInlineAttributeIndicators(
     };
 
     // Move the attribute to a separate line with indicators
-    await moveInlineAttributeToSeparateLine(editor, inlineInfo, indicators);
-    
+    if (!(await moveInlineAttributeToSeparateLine(editor, inlineInfo, indicators))) {
+        return;
+    };
+
     const indicatorsSummary = formatIndicatorsSummary(indicators);
     vscode.window.showInformationMessage(
         `Moved attribute to separate line and added indicators: ${indicatorsSummary}`
@@ -232,7 +242,7 @@ async function moveInlineAttributeToSeparateLine(
     editor: vscode.TextEditor,
     inlineInfo: InlineAttributeInfo,
     indicators: IndicatorAssignment[]
-): Promise<void> {
+): Promise<boolean> {
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
     const fieldLineIndex = inlineInfo.fieldLineIndex;
@@ -260,7 +270,7 @@ async function moveInlineAttributeToSeparateLine(
         workspaceEdit.insert(uri, insertPos, '\n');
     };
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'move the attribute');
 };
 
 /**
@@ -392,8 +402,8 @@ async function modifyExistingIndicators(
     editor: vscode.TextEditor,
     element: any,
     currentIndicators: IndicatorAssignment[]
-): Promise<void> {
-    const indicatorChoices = currentIndicators.map((indicator, index) => 
+): Promise<boolean> {
+    const indicatorChoices = currentIndicators.map((indicator, index) =>
         `Position ${index + 1}: ${indicator.isNegated ? 'N' : ''}${indicator.value}`
     );
 
@@ -405,23 +415,29 @@ async function modifyExistingIndicators(
         }
     );
 
-    if (!selectedIndicator) return;
+    if (!selectedIndicator) return true;
 
     if (selectedIndicator === 'Clear all and start over') {
-        await removeIndicatorsFromElement(editor, element);
+        if (!(await removeIndicatorsFromElement(editor, element))) {
+            return false;
+        };
         const newIndicators = await collectIndicatorsFromUser(3);
         if (newIndicators.length > 0) {
-            await setIndicatorsForElement(editor, element, newIndicators);
+            if (!(await setIndicatorsForElement(editor, element, newIndicators))) {
+                return false;
+            };
         };
     } else if (selectedIndicator === 'Add new indicator') {
         if (currentIndicators.length >= 3) {
             vscode.window.showWarningMessage('Maximum of 3 indicators per field reached.');
-            return;
+            return true;
         };
         const newIndicators = await collectIndicatorsFromUser(3 - currentIndicators.length);
         if (newIndicators.length > 0) {
             const allIndicators = [...currentIndicators, ...newIndicators];
-            await setIndicatorsForElement(editor, element, allIndicators);
+            if (!(await setIndicatorsForElement(editor, element, allIndicators))) {
+                return false;
+            };
         };
     } else {
         const indicatorIndex = indicatorChoices.indexOf(selectedIndicator);
@@ -436,7 +452,9 @@ async function modifyExistingIndicators(
 
             if (action === 'Remove this indicator') {
                 const newIndicators = currentIndicators.filter((_, index) => index !== indicatorIndex);
-                await setIndicatorsForElement(editor, element, newIndicators);
+                if (!(await setIndicatorsForElement(editor, element, newIndicators))) {
+                    return false;
+                };
                 vscode.window.showInformationMessage('Indicator removed.');
             } else if (action === 'Change indicator value') {
                 const newValue = await vscode.window.showInputBox({
@@ -464,7 +482,7 @@ async function modifyExistingIndicators(
                 if (newValue) {
                     const isNegated = newValue.startsWith('N');
                     const value = newValue.replace(/^N/, '').padStart(2, '0');
-                    
+
                     currentIndicators[indicatorIndex] = {
                         position: indicatorIndex + 1,
                         indicator: newValue.toUpperCase(),
@@ -472,12 +490,15 @@ async function modifyExistingIndicators(
                         value
                     };
 
-                    await setIndicatorsForElement(editor, element, currentIndicators);
+                    if (!(await setIndicatorsForElement(editor, element, currentIndicators))) {
+                        return false;
+                    };
                     vscode.window.showInformationMessage('Indicator updated.');
                 };
             };
         };
     };
+    return true;
 };
 
 // DDS MODIFICATION FUNCTIONS
@@ -492,7 +513,7 @@ async function setIndicatorsForElement(
     editor: vscode.TextEditor,
     element: any,
     indicators: IndicatorAssignment[]
-): Promise<void> {
+): Promise<boolean> {
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
     const elementLineIndex = element.lineIndex;
@@ -502,7 +523,7 @@ async function setIndicatorsForElement(
     const newLine = setIndicatorsOnLine(elementLine.text, indicators);
     workspaceEdit.replace(uri, elementLine.range, newLine);
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'set the indicators');
 };
 
 /**
@@ -510,7 +531,7 @@ async function setIndicatorsForElement(
  * @param editor - The active text editor
  * @param element - The DDS element to remove indicators from
  */
-async function removeIndicatorsFromElement(editor: vscode.TextEditor, element: any): Promise<void> {
+async function removeIndicatorsFromElement(editor: vscode.TextEditor, element: any): Promise<boolean> {
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
     const elementLineIndex = element.lineIndex;
@@ -520,7 +541,7 @@ async function removeIndicatorsFromElement(editor: vscode.TextEditor, element: a
     const cleanedLine = removeIndicatorsFromLine(elementLine.text);
     workspaceEdit.replace(uri, elementLine.range, cleanedLine);
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'remove the indicators');
 };
 
 // LINE CREATION AND PARSING FUNCTIONS

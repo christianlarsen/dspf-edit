@@ -261,7 +261,22 @@ export interface FieldsPerRecord {
 
 export let records: string[] = [];
 export let fieldsPerRecords: FieldsPerRecord[] = [];
-export let attributesFileLevel: DdsAttribute[] = []; 
+export let attributesFileLevel: DdsAttribute[] = [];
+
+/**
+ * DDS system keywords whose on-screen text is fixed regardless of whatever else is parsed for the
+ * element they're coded on. Usable either as a field's name (in place of a regular
+ * type/length/usage definition — the system supplies the value) or coded bare, unquoted, in the
+ * position a constant's literal text would occupy (the more common real-world form). Shared by the
+ * preview (what text/width to draw) and the "Center" command (what width to center around) so both
+ * agree on these fields' real screen footprint instead of the raw, misleadingly short source name.
+ */
+export const SYSTEM_FIELD_PLACEHOLDER: Record<string, string> = {
+  DATE: 'DD-DD-DD',
+  TIME: 'TT:TT:TT',
+  USER: 'UUUUUUUUUU',
+  SYSNAME: 'SSSSSSSS'
+};
 
 // UTILITY FUNCTIONS
 

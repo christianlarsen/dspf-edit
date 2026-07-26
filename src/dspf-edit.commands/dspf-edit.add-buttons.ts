@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from './../dspf-edit.providers/dspf-edit.providers';
 import { getRecordSize, fieldsPerRecords, DdsSize, getDefaultSize } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 
 // TYPE DEFINITIONS
 
@@ -387,10 +387,12 @@ async function applyButtonsToRecord(
         currentCol += text.length + layout.spacing;
     };
 
-    await vscode.workspace.applyEdit(edit);
+    if (!(await applyWorkspaceEdit(edit, 'add the buttons'))) {
+        return;
+    };
     await vscode.commands.executeCommand('cursorRight');
     await vscode.commands.executeCommand('cursorLeft');
-    
+
     vscode.window.showInformationMessage(`Added ${buttons.length} buttons to record ${recordInfo.name}.`);
 };
 

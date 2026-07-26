@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fieldsPerRecords, FieldInfo, ConstantInfo, DdsRecord } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
@@ -85,7 +85,9 @@ async function handleSortElementsCommand(node: DdsNode): Promise<void> {
         const sortedElements = sortElementsByCriteria(elementsWithAttributes, sortCriteria);
 
         // Apply the sort to the document
-        await applySortToDocument(editor, sortedElements);
+        if (!(await applySortToDocument(editor, sortedElements))) {
+            return;
+        };
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
 
@@ -356,8 +358,8 @@ function sortElementsByCriteria(elements: ElementWithAttributes[], criteria: Sor
  * @param editor - The active text editor
  * @param sortedElements - Array of elements in the desired order
  */
-async function applySortToDocument(editor: vscode.TextEditor, sortedElements: ElementWithAttributes[]): Promise<void> {
-    if (sortedElements.length === 0) return;
+async function applySortToDocument(editor: vscode.TextEditor, sortedElements: ElementWithAttributes[]): Promise<boolean> {
+    if (sortedElements.length === 0) return true;
 
     const document = editor.document;
     const workspaceEdit = new vscode.WorkspaceEdit();
@@ -394,9 +396,9 @@ async function applySortToDocument(editor: vscode.TextEditor, sortedElements: El
         const rangeToReplace = new vscode.Range(startPosition, endPosition);
         
         workspaceEdit.replace(uri, rangeToReplace, sortedContent);
-        
-        await vscode.workspace.applyEdit(workspaceEdit);
-        
+
+        return await applyWorkspaceEdit(workspaceEdit, 'sort the elements');
+
     } catch (error) {
         console.error('Error in applySortToDocument:', error);
         throw error;

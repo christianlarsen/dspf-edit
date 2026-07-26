@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { checkForEditorAndDocument, recordExists } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, recordExists, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
@@ -94,7 +94,9 @@ async function handleCopyRecordCommand(node: DdsNode): Promise<void> {
         const modifiedLines = modifyRecordLines(recordLines, copyConfig);
 
         // Insert the copied record into the document
-        await insertCopiedRecord(editor, modifiedLines);
+        if (!(await insertCopiedRecord(editor, modifiedLines))) {
+            return;
+        };
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
 
@@ -315,7 +317,7 @@ function replaceRecordReferences(line: string, originalName: string, newName: st
  * @param editor - The active text editor
  * @param recordLines - Array of record lines to insert
  */
-async function insertCopiedRecord(editor: vscode.TextEditor, recordLines: string[]): Promise<void> {
+async function insertCopiedRecord(editor: vscode.TextEditor, recordLines: string[]): Promise<boolean> {
     if (recordLines.length === 0) {
         throw new Error('No record lines to insert');
     };
@@ -323,10 +325,10 @@ async function insertCopiedRecord(editor: vscode.TextEditor, recordLines: string
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
     const insertPosition = new vscode.Position(editor.document.lineCount, 0);
-    
+
     // Create the complete record text with proper line breaks
     const recordText = '\n' + recordLines.join('\n');
-    
+
     workspaceEdit.insert(uri, insertPosition, recordText);
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'copy the record');
 };

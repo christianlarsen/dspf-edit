@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fileSizeAttributes, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
@@ -122,7 +122,9 @@ async function handleWindowResizeCommand(node: DdsNode): Promise<void> {
         };
 
         // Apply the window resize
-        await applyWindowResize(editor, element, windowLine, newDimensions);
+        if (!(await applyWindowResize(editor, element, windowLine, newDimensions))) {
+            return;
+        };
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
 
@@ -496,7 +498,7 @@ async function applyWindowResize(
     element: any,
     windowLine : number,
     newDimensions: CurrentWindowDimensions
-): Promise<void> {
+): Promise<boolean> {
 
 /*    const windowLine = findWindowKeywordLine(editor, element);
     if (windowLine === -1) {
@@ -517,7 +519,7 @@ async function applyWindowResize(
     );
     workspaceEdit.replace(uri, line.range, updatedLine);
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'resize the window');
 };
 
 /**

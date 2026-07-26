@@ -118,11 +118,18 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.13.2** - 2026-07-25
-- Added: New "Add Commands Record" command (record context menu, shown only on subfile control (SFLCTL) records) — creates a record right after the subfile for its function-key legend (e.g. "F3=Exit"). For window subfiles, moves the SFLCTL's own `WINDOW()` (and `WDWTITLE()`/`WDWBORDER()`) onto the new record and leaves a `WINDOW(record)` reference behind, so the legend shares the subfile's window.
-- Added: New "Page rows" +/- control in the preview toolbar for SFLCTL records — adjusts `SFLPAG()`, always keeping `SFLSIZ()` one more than `SFLPAG()`.
-- Fixed: An SFL/SFLCTL pair sharing a window (the SFLCTL declaring `WINDOW()` directly) could hide the other half's content behind the window's own opaque background in the preview.
-- Fixed: Dragging a window in the preview left the paired SFL/SFLCTL record's dimmed content static until the mouse was released, instead of moving live with the window.
+**0.13.3** - 2026-07-26
+- Added: Preview: selecting a field or constant now shows a "Selection actions" bar in the toolbar strip — a one-click "↔ Center" button and a "⋮ Actions" menu (Add Color..., Add Attribute...), reusing the tree's own commands against the selected element.
+- Added: Preview/Center: the DDS system keywords `DATE`, `TIME`, `USER`, and `SYSNAME` now render with their real on-screen appearance (`DD-DD-DD`, `TT:TT:TT`, `UUUUUUUUUU`, `SSSSSSSS`), whether coded as a field's name or bare in a constant's position; "Center" now uses that real display width.
+- Added: Preview: fields and constants can now be multi-selected (Ctrl/Cmd+click) and dragged together as one group; the selection bar reads "N fields/constants selected", with "↔ Center"/"⋮ Actions" only shown for a single selection.
+- Added: "Add Field" now offers a quick flow — just kind+usage and a size — that generates the same field STRSDA itself would (including an automatic `EDTWRD()` for numeric fields with decimals); the full flow is still available behind a "More options..." entry.
+- Fixed: Preview: an output field with no explicit usage code showed its field name instead of the correct repeated-`O` placeholder text.
+- Fixed: Preview: a Date/Time/Timestamp (`L`/`T`/`Z`) field with no explicit length collapsed to a single placeholder character instead of its real fixed width (10/8/26).
+- Fixed: Parser: a bare system keyword (`DATE`, `TIME`, `USER`, `SYSNAME`) coded unquoted in a constant's position had its first and last character corrupted.
+- Fixed: Parser: two or more constants sharing identical text at different screen positions (e.g. blank "pixel" blocks building a colored logo) were silently collapsed down to just the first one found.
+- Fixed: Preview: `DSPATR(HI)` with no explicit `COLOR()` rendered in the default green instead of white, unlike a real 5250 display.
+- Fixed: Preview: an alphanumeric field with a blank data-type column showed numeric placeholder digits instead of the correct usage letter (O/B/I).
+- Fixed: Preview: a numeric field carrying an `EDTWRD()` edit word showed a plain run of digits instead of the mask's actual picture (e.g. `99999999.99`).
 
 ---
 

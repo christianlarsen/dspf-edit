@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
-import { isAttributeLine, findElementInsertionPoint, checkForEditorAndDocument, groupConsecutiveLines } from '../dspf-edit.utils/dspf-edit.helper';
+import { isAttributeLine, findElementInsertionPoint, checkForEditorAndDocument, groupConsecutiveLines, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
@@ -88,7 +88,9 @@ async function handleAddValidityCheckCommand(node: DdsNode): Promise<void> {
             };
 
             if (action === 'Replace all validity checks') {
-                await removeValidityChecksFromField(editor, node.ddsElement);
+                if (!(await removeValidityChecksFromField(editor, node.ddsElement))) {
+                    return;
+                };
                 // Continue to add new validity checks
             };
             // If "Add more validity checks", continue with current logic
@@ -110,7 +112,9 @@ async function handleAddValidityCheckCommand(node: DdsNode): Promise<void> {
         };
 
         // Apply the selected validity checks to the field
-        await addValidityChecksToField(editor, node.ddsElement, selectedValidityChecks);
+        if (!(await addValidityChecksToField(editor, node.ddsElement, selectedValidityChecks))) {
+            return;
+        };
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
 
@@ -361,7 +365,7 @@ async function addValidityChecksToField(
     editor: vscode.TextEditor,
     element: any,
     validityChecks: ValidityCheck[]
-): Promise<void> {
+): Promise<boolean> {
     const insertionPoint = findElementInsertionPoint(editor, element);
     if (insertionPoint === -1) {
         throw new Error('Could not find insertion point for validity checks');
@@ -385,7 +389,7 @@ async function addValidityChecksToField(
         };
     };
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'add the validity checks');
 };
 
 /**
@@ -412,9 +416,9 @@ function createValidityCheckLine(validityCheck: ValidityCheck): string {
  * @param editor - The active text editor
  * @param element - The DDS field to remove validity checks from
  */
-async function removeValidityChecksFromField(editor: vscode.TextEditor, element: any): Promise<void> {
+async function removeValidityChecksFromField(editor: vscode.TextEditor, element: any): Promise<boolean> {
     const validityCheckLines = findExistingValidityCheckLines(editor, element);
-    if (validityCheckLines.length === 0) return;
+    if (validityCheckLines.length === 0) return true;
 
     const document = editor.document;
     const workspaceEdit = new vscode.WorkspaceEdit();
@@ -447,7 +451,7 @@ async function removeValidityChecksFromField(editor: vscode.TextEditor, element:
         workspaceEdit.replace(uri, line.range, cleanedText);
     };
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'remove the validity checks');
 };
 
 /**

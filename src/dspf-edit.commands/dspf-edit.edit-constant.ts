@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fileSizeAttributes, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument, findEndLineIndex } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, findEndLineIndex, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 
 // TYPE DEFINITIONS
 
@@ -535,10 +535,10 @@ function validateColumnInput(value: string): string | null {
  * @param newText - The new text for the constant
  */
 export async function updateExistingConstant(
-    editor: vscode.TextEditor, 
-    element: any, 
+    editor: vscode.TextEditor,
+    element: any,
     newText: string
-): Promise<void> {
+): Promise<boolean> {
     const newValue = `'${newText}'`;
     const uri = editor.document.uri;
     const workspaceEdit = new vscode.WorkspaceEdit();
@@ -552,7 +552,7 @@ export async function updateExistingConstant(
         await updateConstantMultiLine(workspaceEdit, uri, editor, element, newValue, endLineIndex);
     };
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'update the constant');
 };
 
 /**
@@ -560,7 +560,7 @@ export async function updateExistingConstant(
  * @param editor - The active text editor
  * @param constantInfo - Information about the new constant
  */
-export async function insertNewConstant(editor: vscode.TextEditor, constantInfo: NewConstantInfo): Promise<void> {
+export async function insertNewConstant(editor: vscode.TextEditor, constantInfo: NewConstantInfo): Promise<boolean> {
     const newValue = `'${constantInfo.text}'`;
     const uri = editor.document.uri;
     const workspaceEdit = new vscode.WorkspaceEdit();
@@ -581,11 +581,14 @@ export async function insertNewConstant(editor: vscode.TextEditor, constantInfo:
         workspaceEdit.insert(uri, new vscode.Position(insertionLine, 0), '\n');        
     };
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    if (!(await applyWorkspaceEdit(workspaceEdit, 'add the constant'))) {
+        return false;
+    };
     await vscode.commands.executeCommand('cursorRight');
     await vscode.commands.executeCommand('cursorLeft');
-    
+
     vscode.window.showInformationMessage(`Constant added successfully.`);
+    return true;
 };
 
 // LINE CREATION FUNCTIONS

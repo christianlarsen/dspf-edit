@@ -123,6 +123,20 @@ const FIELD_TYPES = {
 } as const;
 
 /**
+ * The quick "Add Field" flow's kind+usage combos — mirrors what STRSDA's own shorthand
+ * (+B/+O/+I for alphanumeric, +9/+6/+3 for numeric) actually generates, as a single pick instead
+ * of a typed code: blank type for alphanumeric, 'Y' keyboard shift for numeric.
+ */
+const QUICK_FIELD_KINDS: { label: string; isNumeric: boolean; usage: 'O' | 'B' | 'I' }[] = [
+    { label: 'Alphanumeric — Output', isNumeric: false, usage: 'O' },
+    { label: 'Alphanumeric — Input/Output', isNumeric: false, usage: 'B' },
+    { label: 'Alphanumeric — Input', isNumeric: false, usage: 'I' },
+    { label: 'Numeric — Output', isNumeric: true, usage: 'O' },
+    { label: 'Numeric — Input/Output', isNumeric: true, usage: 'B' },
+    { label: 'Numeric — Input', isNumeric: true, usage: 'I' }
+];
+
+/**
  * Constants for field editing operations
  */
 const FIELD_CONSTANTS = {
@@ -269,22 +283,20 @@ async function handleAddFieldCommand(node: DdsNode): Promise<void> {
 
         const element = node.ddsElement;
 
-        // Collect complete field configuration
-        const fieldConfig = await collectNewFieldConfiguration(editor, element);
-        if (!fieldConfig) {
+        // Collect complete field configuration (the quick kind+usage+size flow, or the full
+        // usage/referenced/type flow behind its "More options..." entry)
+        const fieldResult = await collectNewFieldConfiguration(editor, element);
+        if (!fieldResult) {
             return; // User cancelled
         };
 
-        // Generate the DDS line for the new field
-        const newFieldLine = generateNewFieldLine(fieldConfig);
-
         // Insert the new field into the document
-        await insertNewField(editor, element, newFieldLine);
+        await insertNewField(editor, element, fieldResult.line);
 
         // Show success message
         if ('name' in element) {
             vscode.window.showInformationMessage(
-                `Field '${fieldConfig.name}' successfully added to record '${element.name}'.`
+                `Field '${fieldResult.name}' successfully added to record '${element.name}'.`
             );
         };
 
@@ -298,8 +310,9 @@ async function handleAddFieldCommand(node: DdsNode): Promise<void> {
 /**
  * Adds a new field to a record at an already-known screen position (used by the preview panel's
  * "+ Field" placement mode, where the position comes from a canvas click instead of the
- * absolute/relative positioning sub-flow). Collects the same name/usage/type-or-reference
- * configuration as the tree's "Add field" command, just skipping the position-picking step.
+ * absolute/relative positioning sub-flow). Collects the same name + quick kind/usage/size (or, via
+ * "More options...", the full usage/referenced/type flow) as the tree's "Add field" command, just
+ * skipping the position-picking step.
  * @param recordName - Name of the record to add the field to
  * @param position - Row/column already determined (e.g. by a preview click); ignored for usage
  * types that don't have a screen position (Hidden, Message, Program-to-system)
@@ -316,40 +329,35 @@ export async function addFieldAtPosition(recordName: string, position: FieldPosi
         const fieldName = await promptForNewFieldName(recordElement);
         if (!fieldName) return;
 
-        const usage = await collectFieldUsage(fieldName);
-        if (!usage) return;
+        const quickKind = await collectQuickFieldKind(fieldName);
+        if (quickKind === null) return;
 
-        const isReferenced = await promptForFieldReference();
-        if (isReferenced === null) return;
+        let newFieldLine: string;
 
-        let reference: FieldReference | undefined;
-        let typeConfig: FieldTypeConfig | undefined;
+        if (quickKind !== 'advanced') {
+            const size = await collectQuickFieldSize(fieldName, quickKind.isNumeric);
+            if (!size) return;
 
-        if (isReferenced) {
-            const collectedReference = await collectFieldReference(fieldName);
-            if (!collectedReference) return;
-            reference = collectedReference;
+            newFieldLine = generateQuickFieldLines(fieldName, quickKind.isNumeric, quickKind.usage, size, position);
         } else {
-            const collectedTypeConfig = await collectFieldTypeConfiguration(fieldName);
-            if (!collectedTypeConfig) return;
-            typeConfig = collectedTypeConfig;
+            const advanced = await collectAdvancedFieldDefinition(fieldName);
+            if (!advanced) return;
+
+            // These usage types don't have screen positions, same as the tree command's own flow.
+            const finalPosition: FieldPosition = (advanced.usage.type === 'H' || advanced.usage.type === 'M' || advanced.usage.type === 'P')
+                ? { row: 0, column: 0 }
+                : position;
+
+            newFieldLine = generateNewFieldLine({
+                name: fieldName,
+                position: finalPosition,
+                usage: advanced.usage,
+                isReferenced: advanced.isReferenced,
+                reference: advanced.reference,
+                typeConfig: advanced.typeConfig
+            });
         };
 
-        // These usage types don't have screen positions, same as the tree command's own flow.
-        const finalPosition: FieldPosition = (usage.type === 'H' || usage.type === 'M' || usage.type === 'P')
-            ? { row: 0, column: 0 }
-            : position;
-
-        const fieldConfig: NewFieldConfig = {
-            name: fieldName,
-            position: finalPosition,
-            usage,
-            isReferenced,
-            reference,
-            typeConfig
-        };
-
-        const newFieldLine = generateNewFieldLine(fieldConfig);
         await insertNewField(editor, recordElement, newFieldLine);
 
         vscode.window.showInformationMessage(`Field '${fieldName}' successfully added to record '${recordName}'.`);
@@ -362,56 +370,194 @@ export async function addFieldAtPosition(recordName: string, position: FieldPosi
 };
 
 /**
- * Collects complete configuration for a new field through user interaction
- * 
- * @param recordElement - The record element where the field will be added
- * @returns Complete field configuration or null if cancelled
+ * Shows the quick "Add Field" kind picker: the six common kind+usage combos (mirroring what
+ * STRSDA's own +B/+O/+I/+9/+6/+3 shorthand generates), plus a "More options..." entry that opens
+ * the full usage/referenced-field/type flow for anything outside that common case (Hidden/Message/
+ * Program-to-system usage, a referenced field, or a data type other than plain alphanumeric/numeric).
+ * @param fieldName - The field's name, shown in the picker's title
  */
-async function collectNewFieldConfiguration(editor: vscode.TextEditor, recordElement: any): Promise<NewFieldConfig | null> {
-    // Step 1: Get field name
-    const fieldName = await promptForNewFieldName(recordElement);
-    if (!fieldName) return null;
+async function collectQuickFieldKind(fieldName: string): Promise<{ isNumeric: boolean; usage: FieldUsage } | 'advanced' | null> {
+    type KindPick = vscode.QuickPickItem & { index?: number; advanced?: boolean };
 
-    // Step 2: Get field usage (I/O/B/H/M/P)
+    const items: KindPick[] = [
+        ...QUICK_FIELD_KINDS.map((kind, index) => ({ label: kind.label, index })).slice(0, 3),
+        { label: '', kind: vscode.QuickPickItemKind.Separator },
+        ...QUICK_FIELD_KINDS.map((kind, index) => ({ label: kind.label, index })).slice(3),
+        { label: '', kind: vscode.QuickPickItemKind.Separator },
+        {
+            label: 'More options...',
+            description: 'Hidden/Message/Program-to-system usage, referenced field, or another data type',
+            advanced: true
+        }
+    ];
+
+    const selection = await vscode.window.showQuickPick(items, {
+        title: `Add field '${fieldName}' — Kind`,
+        placeHolder: 'Select the field kind, or "More options..." for the full flow',
+        ignoreFocusOut: true
+    });
+
+    if (!selection) return null;
+    if (selection.advanced) return 'advanced';
+    if (typeof selection.index !== 'number') return null;
+
+    const kind = QUICK_FIELD_KINDS[selection.index];
+    return {
+        isNumeric: kind.isNumeric,
+        usage: { type: kind.usage, description: FIELD_USAGE_TYPES[kind.usage].description }
+    };
+};
+
+/**
+ * Collects the size for the quick "Add Field" flow: just a length for an alphanumeric field, or
+ * N/N,D (total digits/decimal places) for a numeric one — reusing the same size format and
+ * validation as the full flow's own numeric size prompt.
+ * @param fieldName - The field's name, shown in the prompt's title
+ * @param isNumeric - Whether the chosen kind was numeric
+ */
+async function collectQuickFieldSize(fieldName: string, isNumeric: boolean): Promise<FieldSize | null> {
+    if (isNumeric) {
+        const sizeInput = await vscode.window.showInputBox({
+            title: `Size for field '${fieldName}'`,
+            prompt: "Enter size as: N (for integer) or N,D (for decimal where N=total digits, D=decimal places)",
+            placeHolder: "10,2",
+            validateInput: validateFieldSize
+        });
+        if (!sizeInput) return null;
+        return parseSize(sizeInput);
+    };
+
+    const lengthInput = await vscode.window.showInputBox({
+        title: `Length for field '${fieldName}'`,
+        prompt: "Enter field length (1-32766)",
+        placeHolder: "10",
+        validateInput: validateFieldLength
+    });
+    if (!lengthInput) return null;
+    return { length: Number(lengthInput), decimals: 0 };
+};
+
+/**
+ * Builds the DDS line for a field created via the quick kind+usage+size flow: the data type
+ * column stays blank for alphanumeric (DDS's own default) and gets keyboard shift 'Y' for numeric —
+ * exactly what STRSDA itself generates for +B/+O/+I and +9/+6/+3. A numeric field with decimals
+ * also gets an auto-generated EDTWRD() appended right on the same line, so the decimal point
+ * actually shows, matching STRSDA's own behavior instead of leaving the user to add it by hand.
+ * @param name - The field's name
+ * @param isNumeric - Whether the chosen kind was numeric
+ * @param usage - The field's usage (O/B/I)
+ * @param size - The field's length and (for numeric) decimal places
+ * @param position - The field's screen row/column
+ */
+function generateQuickFieldLines(name: string, isNumeric: boolean, usage: FieldUsage, size: FieldSize, position: FieldPosition): string {
+    let line = ' '.repeat(80);
+    line = replaceAt(line, 5, 'A');
+    line = replaceAt(line, 18, name.padEnd(10, ' '));
+    line = replaceAt(line, 32, size.length.toString().padStart(2, ' '));
+
+    if (isNumeric) {
+        line = replaceAt(line, 34, 'Y');
+        if (size.decimals) {
+            line = replaceAt(line, 35, size.decimals.toString().padStart(2, ' '));
+        };
+    };
+
+    if (usage.type !== 'O') {
+        line = replaceAt(line, 37, usage.type);
+    };
+
+    line = replaceAt(line, 38, position.row.toString().padStart(3, ' '));
+    line = replaceAt(line, 41, position.column.toString().padStart(3, ' '));
+
+    if (isNumeric && size.decimals) {
+        const mask = ' '.repeat(size.length - size.decimals) + '.' + ' '.repeat(size.decimals);
+        line = replaceAt(line, 44, `EDTWRD('${mask}')`);
+    };
+
+    return line.trimEnd();
+};
+
+/**
+ * Collects a field's full definition via the original, exhaustive flow — usage including Hidden/
+ * Message/Program-to-system, the referenced-field option, and the complete list of DDS field
+ * types — reached through the quick kind picker's "More options..." entry.
+ * @param fieldName - The field's name, shown in the various prompts' titles
+ */
+async function collectAdvancedFieldDefinition(fieldName: string): Promise<{
+    usage: FieldUsage;
+    isReferenced: boolean;
+    reference?: FieldReference;
+    typeConfig?: FieldTypeConfig;
+} | null> {
     const usage = await collectFieldUsage(fieldName);
     if (!usage) return null;
 
-    // Step 3: Check if field is referenced
     const isReferenced = await promptForFieldReference();
     if (isReferenced === null) return null;
 
-    // Step 4: Get reference or type configuration
-    let reference: FieldReference | undefined | null;
-    let typeConfig: FieldTypeConfig | undefined | null;
+    let reference: FieldReference | undefined;
+    let typeConfig: FieldTypeConfig | undefined;
 
     if (isReferenced) {
-        reference = await collectFieldReference(fieldName);
-        if (!reference) return null;
+        const collectedReference = await collectFieldReference(fieldName);
+        if (!collectedReference) return null;
+        reference = collectedReference;
     } else {
-        typeConfig = await collectFieldTypeConfiguration(fieldName);
-        if (!typeConfig) return null;
+        const collectedTypeConfig = await collectFieldTypeConfiguration(fieldName);
+        if (!collectedTypeConfig) return null;
+        typeConfig = collectedTypeConfig;
     };
 
-    // Step 5: Get field position (skip for Hidden, Message, and Program-to-system fields)
+    return { usage, isReferenced, reference, typeConfig };
+};
+
+/**
+ * Collects complete configuration for a new field through user interaction, and returns the DDS
+ * line ready to insert: the quick kind+usage+size flow in the common case, or (via its
+ * "More options..." entry) the full usage/referenced-field/type flow for anything else.
+ * @param recordElement - The record element where the field will be added
+ * @returns The field's name (for the success message) and its generated source line, or null if cancelled
+ */
+async function collectNewFieldConfiguration(editor: vscode.TextEditor, recordElement: any): Promise<{ name: string; line: string } | null> {
+    const fieldName = await promptForNewFieldName(recordElement);
+    if (!fieldName) return null;
+
+    const quickKind = await collectQuickFieldKind(fieldName);
+    if (quickKind === null) return null;
+
+    if (quickKind !== 'advanced') {
+        const size = await collectQuickFieldSize(fieldName, quickKind.isNumeric);
+        if (!size) return null;
+
+        const position = await collectFieldPosition(editor, fieldName, recordElement, size);
+        if (!position) return null;
+
+        return { name: fieldName, line: generateQuickFieldLines(fieldName, quickKind.isNumeric, quickKind.usage, size, position) };
+    };
+
+    const advanced = await collectAdvancedFieldDefinition(fieldName);
+    if (!advanced) return null;
+
+    // Hidden/Message/Program-to-system usage doesn't have a screen position.
     let position: FieldPosition;
-    if (usage.type === 'H' || usage.type === 'M' || usage.type === 'P') {
-        // These field types don't have screen positions
+    if (advanced.usage.type === 'H' || advanced.usage.type === 'M' || advanced.usage.type === 'P') {
         position = { row: 0, column: 0 };
     } else {
-        const fieldPosition = await collectFieldPosition(editor, fieldName, recordElement, typeConfig?.size);
+        const fieldPosition = await collectFieldPosition(editor, fieldName, recordElement, advanced.typeConfig?.size);
         if (!fieldPosition) return null;
         position = fieldPosition;
     };
-    if (reference === null) reference = undefined;
-    if (typeConfig === null) typeConfig = undefined;
-    
+
     return {
         name: fieldName,
-        position,
-        usage,
-        isReferenced,
-        reference,
-        typeConfig
+        line: generateNewFieldLine({
+            name: fieldName,
+            position,
+            usage: advanced.usage,
+            isReferenced: advanced.isReferenced,
+            reference: advanced.reference,
+            typeConfig: advanced.typeConfig
+        })
     };
 };
 

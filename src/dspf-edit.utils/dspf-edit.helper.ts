@@ -6,6 +6,7 @@
 
 
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import { DdsElement, DdsIndicator, DdsAttribute, records, FieldsPerRecord, ConstantInfo, FieldInfo, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
 import { parseDocument } from '../dspf-edit.parser/dspf-edit.parser';
@@ -558,20 +559,20 @@ export function generateDspsizLines(dspsizConfig: DspsizConfig): string[] {
  * @param editor - The active text editor
  * @param dspsizLines - Array of DSPSIZ lines to insert
  */
-export async function insertDspsizLines(editor: vscode.TextEditor, dspsizLines: string[]): Promise<void> {
-    if (dspsizLines.length === 0) return;
+export async function insertDspsizLines(editor: vscode.TextEditor, dspsizLines: string[]): Promise<boolean> {
+    if (dspsizLines.length === 0) return true;
 
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
-    
+
     // Find the correct insertion point (before first record, after any existing file-level attributes)
     const insertionPoint = findDspsizInsertionPoint(editor);
-    
+
     // Create the complete DSPSIZ text with proper line breaks
     const dspsizText = dspsizLines.join('\n') + '\n';
-    
+
     workspaceEdit.insert(uri, new vscode.Position(insertionPoint, 0), dspsizText);
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'add the DSPSIZ specification');
 };
 
 /**
@@ -634,7 +635,9 @@ export async function handleDspsizWorkflow(editor: vscode.TextEditor, operationN
 
     // Generate and insert DSPSIZ lines
     const dspsizLines = generateDspsizLines(dspsizConfig);
-    await insertDspsizLines(editor, dspsizLines);
+    if (!(await insertDspsizLines(editor, dspsizLines))) {
+        return null;
+    };
 
     // Show informational message
     const sizesText = dspsizConfig.sizes.map(s => `${s.rows}x${s.cols}`).join(', ');
@@ -683,6 +686,66 @@ export function checkForEditorAndDocument() : { editor : vscode.TextEditor | und
     };
 
     return { editor, document };
+};
+
+/**
+ * Whether a URI points at a file the current user can't write to. `vscode.workspace.fs.stat()`'s
+ * `permissions` field is unreliable for this: local disk providers commonly leave it unset even
+ * for an OS-level read-only file (confirmed — VS Code doesn't even show its own lock icon on such
+ * a file's tab), since it's only *required* to be populated by providers that want to opt into
+ * VS Code's read-only UI, not a live reflection of OS permission bits. For a `file:` URI, checking
+ * the OS permission bits directly via Node's `fs` is the only reliable signal. For anything else
+ * (a virtual filesystem provider — e.g. an IBM i source member opened through Code for IBM i),
+ * `stat()` is the only option available, so it's used as a best-effort fallback.
+ * @param uri - The document URI to check
+ */
+async function isReadOnlyFile(uri: vscode.Uri): Promise<boolean> {
+    if (uri.scheme === 'file') {
+        try {
+            await fs.promises.access(uri.fsPath, fs.constants.W_OK);
+            return false;
+        } catch {
+            return true;
+        };
+    };
+
+    try {
+        const stat = await vscode.workspace.fs.stat(uri);
+        return Boolean((stat.permissions ?? 0) & vscode.FilePermission.Readonly);
+    } catch {
+        return false;
+    };
+};
+
+/**
+ * Applies a WorkspaceEdit and reports whether it actually succeeded. Checked in two layers:
+ *
+ * 1. Proactively, via `isReadOnlyFile()`: a file that's read-only still lets VS Code apply the
+ *    edit to the in-memory buffer — it only fails later, silently from this extension's point of
+ *    view, when the user tries to save and gets VS Code's own permission-denied error. Catching it
+ *    here means the user finds out immediately, from the edit they just made, instead of
+ *    discovering it minutes later at save time.
+ * 2. Reactively, via `applyEdit`'s own return value: VS Code returns `false` (rather than
+ *    throwing) when it rejects an edit for any other reason, which a caller that just `await`s the
+ *    call and moves on would otherwise miss entirely.
+ *
+ * Callers should check the returned boolean and skip their own follow-up (success toast,
+ * forceReparse, etc.) when it's `false`.
+ * @param workspaceEdit - The edit to apply
+ * @param context - Short description of what was being done, used in the failure message (e.g. "add the field")
+ */
+export async function applyWorkspaceEdit(workspaceEdit: vscode.WorkspaceEdit, context: string): Promise<boolean> {
+    const [uri] = workspaceEdit.entries()[0] ?? [];
+    if (uri && (await isReadOnlyFile(uri))) {
+        vscode.window.showErrorMessage(`Could not ${context} — the document is read-only.`);
+        return false;
+    };
+
+    const success = await vscode.workspace.applyEdit(workspaceEdit);
+    if (!success) {
+        vscode.window.showErrorMessage(`Could not ${context} — the document may be read-only.`);
+    };
+    return success;
 };
 
 /**

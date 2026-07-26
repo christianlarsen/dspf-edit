@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fileSizeAttributes, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument, findEndLineIndex } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, findEndLineIndex, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 
 /**
  * Gets the maximum columns value from fileSizeAttributes
@@ -136,7 +136,9 @@ async function handleMoveFieldCommand(node: DdsNode, offset: number): Promise<vo
         }
 
         // Apply the field update with new position
-        await moveFieldToNewPosition(editor, element, newPosition);
+        if (!(await moveFieldToNewPosition(editor, element, newPosition))) {
+            return;
+        };
 
         // Set focus on the editor and position cursor on the field
         await vscode.window.showTextDocument(editor.document, {
@@ -177,7 +179,7 @@ async function moveFieldToNewPosition(
     editor: vscode.TextEditor,
     element: any,
     newPosition: number
-): Promise<void> {
+): Promise<boolean> {
     const uri = editor.document.uri;
     const workspaceEdit = new vscode.WorkspaceEdit();
 
@@ -192,5 +194,5 @@ async function moveFieldToNewPosition(
 
     workspaceEdit.replace(uri, range, formattedPos);
 
-    await vscode.workspace.applyEdit(workspaceEdit);
+    return applyWorkspaceEdit(workspaceEdit, 'move the field');
 }

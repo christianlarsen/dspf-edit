@@ -68,8 +68,10 @@ async function handleFillConstantCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        // Fill the constant with the collected information 
-        await fillElement(editor, node.ddsElement, fillInformation);
+        // Fill the constant with the collected information
+        if (!(await fillElement(editor, node.ddsElement, fillInformation))) {
+            return;
+        };
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
 
@@ -151,20 +153,19 @@ async function fillElement(
     editor: vscode.TextEditor,
     constant: DdsConstant,
     fillInformation: FillInformation
-): Promise<void> {
+): Promise<boolean> {
     const replacementPoint = constant.lineIndex;
     const constantToFill = constant.name.slice(1, -1);
-    
+
     if (replacementPoint <= 0 || replacementPoint > editor.document.lineCount) {
         throw new Error('Could not find position of the constant.');
     };
-    
+
     // Fill the constant.
     const filledConstant = fillConstantWithInfo(constantToFill, fillInformation);
-    
-    // Apply the constant update
-    await updateExistingConstant(editor, constant, filledConstant);    
 
+    // Apply the constant update
+    return updateExistingConstant(editor, constant, filledConstant);
 };
 
 // HELPER FUNCTIONS
