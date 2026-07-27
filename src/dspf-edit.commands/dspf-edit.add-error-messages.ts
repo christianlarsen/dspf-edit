@@ -506,8 +506,8 @@ function findExistingErrorMessageLines(editor: vscode.TextEditor, field: any): n
         // Skip empty lines
         if (!trimmedLine) continue;
 
-        // Skip comment lines (A*)
-        if (trimmedLine.startsWith('A*')) continue;
+        // Skip comment lines (column 7 = '*', regardless of column 6 being 'A' or blank)
+        if (lineText.length > 6 && lineText.charAt(6) === '*') continue;
 
         // Stop if we find a line that doesn't start with 'A ' or isn't an attribute line
         if (!trimmedLine.startsWith('A ') || !isAttributeLine(lineText)) {
