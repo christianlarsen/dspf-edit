@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [0.13.4] - 2026-07-27
+### Fixed
+- Parser: DDS comment lines with column 6 left blank (e.g. decorative `***...` banner blocks — the more common comment style, as opposed to `A*...`) were not recognized as comments. Such a line was misparsed as a field, and any file-level keyword coming after it (most notably `DSPSIZ()`) got attached to that phantom field instead of the file, silently falling back to the default screen size (24x80/*DS3) instead of the one actually declared. The same comment-detection fix was applied everywhere else it was used: locating insertion points for key commands, error messages, and file-level attributes.
+
 ## [0.13.3] - 2026-07-26
 ### Added
 - Preview: selecting a field or constant now shows a "Selection actions" bar in the toolbar strip (not floating over the canvas, so it never fights the drag gesture or gets cramped by a single-character constant) — a one-click "↔ Center" button and a "⋮ Actions" menu (Add Color..., Add Attribute...), reusing the tree's own commands against the selected element.

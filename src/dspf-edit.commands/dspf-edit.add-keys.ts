@@ -666,8 +666,8 @@ function findExistingKeyCommandLines(editor: vscode.TextEditor, element: any): n
             continue;
         };
 
-        // Skip comment lines (A*)
-        if (trimmedLine.startsWith('A*')) {
+        // Skip comment lines (column 7 = '*', regardless of column 6 being 'A' or blank)
+        if (lineText.length > 6 && lineText.charAt(6) === '*') {
             continue;
         };
 
@@ -700,8 +700,8 @@ function findExistingKeyCommandLinesInFile(editor: vscode.TextEditor): number[] 
             continue;
         };
 
-        // Skip comment lines (A*)
-        if (lineText.trimStart().startsWith('A*')) {
+        // Skip comment lines (column 7 = '*', regardless of column 6 being 'A' or blank)
+        if (lineText.length > 6 && lineText.charAt(6) === '*') {
             continue;
         };
 

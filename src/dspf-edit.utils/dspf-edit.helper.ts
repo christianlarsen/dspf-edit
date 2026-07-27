@@ -291,8 +291,8 @@ export function findElementInsertionPoint(editor: vscode.TextEditor, element: an
     while (insertionPoint < editor.document.lineCount) {
         const line = editor.document.lineAt(insertionPoint).text;
 
-        // Skip commented lines
-        if (line.startsWith('     A*')) {
+        // Skip commented lines (column 7 = '*', regardless of column 6 being 'A' or blank)
+        if (line.length > 6 && line.charAt(6) === '*') {
             insertionPoint++;
             continue;
         };
@@ -332,7 +332,7 @@ export function findElementInsertionPointRecordFirstLine(editor: vscode.TextEdit
     // Skip existing attribute lines (lines that start with "     A" and have attributes)
     while (insertionPoint < editor.document.lineCount) {
         const line = editor.document.lineAt(insertionPoint).text;
-        if (line.trim().startsWith('A*')) {
+        if (line.length > 6 && line.charAt(6) === '*') {
             insertionPoint ++;
             continue;
         };
@@ -358,7 +358,7 @@ export function findElementInsertionPointFileFirstLine(editor: vscode.TextEditor
     // Skip existing attribute lines (lines that start with "     A" and have attributes)
     while (insertionPoint < editor.document.lineCount) {
         const line = editor.document.lineAt(insertionPoint).text;
-        if (line.trim().startsWith('A*')) {
+        if (line.length > 6 && line.charAt(6) === '*') {
             insertionPoint ++;
             continue;
         };
@@ -589,8 +589,8 @@ function findDspsizInsertionPoint(editor: vscode.TextEditor): number {
         const lineText = editor.document.lineAt(i).text;
         const trimmedLine = lineText.trim();
 
-        // Skip empty lines and comments
-        if (!trimmedLine || trimmedLine.startsWith('A*')) {
+        // Skip empty lines and comments (column 7 = '*', regardless of column 6 being 'A' or blank)
+        if (!trimmedLine || (lineText.length > 6 && lineText.charAt(6) === '*')) {
             continue;
         };
 

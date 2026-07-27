@@ -130,8 +130,8 @@ function parseSingleDdsLine(
     const line = lines[lineIndex];
     const trimmedLine = line.substring(5); // Skip sequence number area
 
-    // Skip comment lines
-    if (trimmedLine.startsWith('A*')) {
+    // Skip comment lines (column 7 = '*', regardless of whether column 6 is 'A' or blank)
+    if (trimmedLine.charAt(1) === '*') {
         return { element: undefined, nextIndex: lineIndex, lastRecord };
     };
 
