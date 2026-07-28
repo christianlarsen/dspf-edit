@@ -213,6 +213,8 @@ export interface FieldInfo {
   row: number;
   col: number;
   length: number;
+  /** True for a referenced field (REFFLD/position-29 `R`): its type/length live in the external database field, not in this source. */
+  referenced?: boolean;
   attributes: AttributeWithIndicators[];
   indicators?: DdsIndicator[];
   lineIndex: number;

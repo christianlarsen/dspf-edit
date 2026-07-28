@@ -118,8 +118,10 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.13.4** - 2026-07-27
-- Fixed: Parser: DDS comment lines with column 6 left blank (e.g. decorative `***...` banner blocks) were not recognized as comments, causing file-level keywords like `DSPSIZ()` placed after them to be silently dropped and the display to fall back to the default size (24x80/*DS3) instead of the one actually declared.
+**0.13.5** - 2026-07-28
+- Fixed: Add/Edit Field: a field length of 100 or more corrupted the generated DDS line, since the length column was only reserved 2 characters wide instead of the 5 DDS itself uses; the parser also only read back the last 2 digits of that column, showing the wrong length in the tree and preview.
+- Fixed: Add Field: a referenced field generated an invalid `REFFLD(library/file.field)` specification instead of the correct `REFFLD(field [library/]file)` format; the library is now optional, matching DDS itself (defaults to `*LIBL`).
+- Added: Preview: a referenced field now renders as a single marker character in a distinct color with a dashed box, instead of a guessed-width placeholder.
 
 ---
 

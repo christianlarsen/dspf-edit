@@ -48,6 +48,13 @@ interface PreviewItem {
      * must be drawn on top of that frame fill, since they're part of the window's own content.
      */
     sameWindow?: boolean;
+    /**
+     * True for a referenced field (REFFLD/position-29 `R`): its real type/length live in the
+     * external database field, which dspf-edit has no way to read, so it can't be previewed at its
+     * real width. Rendered as a single placeholder character in a distinct color with a dashed box,
+     * instead of pretending to know its size.
+     */
+    isReferenced?: boolean;
 };
 
 /** A rectangle in the coordinates of the canvas being drawn (the full display size). */
@@ -128,6 +135,9 @@ const DEFAULT_COLOR = '#00ff00';
 
 /** What DSPATR(HI) alone (no explicit COLOR()) renders as — matching a real 5250 display. */
 const HIGH_INTENSITY_COLOR = '#ffffff';
+
+/** Marker color for a referenced field (REFFLD), distinct from every DDS_COLOR_MAP value. */
+const REFERENCED_FIELD_COLOR = '#ff8800';
 
 /** Maps DDS COLOR() keyword codes to their on-screen color. */
 const DDS_COLOR_MAP: Record<string, string> = {
@@ -761,12 +771,18 @@ export class RecordPreviewPanel {
             if (trueRow > 0 && trueCol > 0) {
                 const activeAttrs = this.getActiveAttributes(field.attributes, useLiveIndicators);
                 const usageCode = (field.usage || '').trim().toUpperCase();
+                // A referenced field (REFFLD/position-29 `R`) has no type/length of its own in the
+                // source — they live in the external database field, which dspf-edit can't read —
+                // so it's shown as a single marker character instead of a guessed-width placeholder.
+                const isReferenced = field.referenced === true;
                 // The displayed text's own length drives the item's width/hit-box (below), not the
                 // parsed field length: a system keyword field (DATE, USER...) always renders at a
                 // fixed width of its own, regardless of whatever the source's length column holds
                 // — and an edited numeric field (EDTWRD) is one character wider per insert
                 // character (its decimal point, typically), which text.length already reflects.
-                const text = getFieldPlaceholderText(field.name, field.type, field.usage, field.length, getEditWordMask(activeAttrs));
+                const text = isReferenced
+                    ? getFieldPlaceholderText(field.name, field.type, field.usage, 1)
+                    : getFieldPlaceholderText(field.name, field.type, field.usage, field.length, getEditWordMask(activeAttrs));
                 items.push({
                     kind: 'field',
                     name: field.name,
@@ -775,7 +791,7 @@ export class RecordPreviewPanel {
                     col: trueCol + colOffset,
                     length: text.length,
                     lineIndex: field.lineIndex,
-                    color: getDisplayColor(activeAttrs, hasDisplayAttribute(activeAttrs, 'HI')),
+                    color: isReferenced ? REFERENCED_FIELD_COLOR : getDisplayColor(activeAttrs, hasDisplayAttribute(activeAttrs, 'HI')),
                     highIntensity: hasDisplayAttribute(activeAttrs, 'HI'),
                     reverseImage: hasDisplayAttribute(activeAttrs, 'RI') || this.hasActiveErrorMessage(field.attributes, useLiveIndicators),
                     blink: hasDisplayAttribute(activeAttrs, 'BL'),
@@ -786,7 +802,8 @@ export class RecordPreviewPanel {
                     colOffset,
                     isBackground,
                     isInteractive: !isBackground,
-                    isInputCapable: usageCode === 'I' || usageCode === 'B'
+                    isInputCapable: usageCode === 'I' || usageCode === 'B',
+                    isReferenced
                 });
             };
         };
@@ -1793,6 +1810,14 @@ export class RecordPreviewPanel {
             ctx.moveTo(x, y + CHAR_H - 2.5);
             ctx.lineTo(x + w, y + CHAR_H - 2.5);
             ctx.stroke();
+        }
+
+        if (item.isReferenced) {
+            ctx.save();
+            ctx.strokeStyle = item.color;
+            ctx.setLineDash([2, 2]);
+            ctx.strokeRect(x + 0.5, y + 0.5, w - 1, CHAR_H - 1);
+            ctx.restore();
         }
 
         if (item.columnSeparator) {

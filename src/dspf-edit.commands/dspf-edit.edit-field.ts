@@ -143,7 +143,7 @@ const FIELD_CONSTANTS = {
     MAX_NAME_LENGTH: 10,
     NAME_COLUMN_START: 18,
     NAME_COLUMN_END: 28,
-    SIZE_COLUMN_START: 32,
+    SIZE_COLUMN_START: 29,
     SIZE_COLUMN_END: 34,
     TYPE_COLUMN: 34,
     DECIMAL_COLUMN_START: 35,
@@ -453,7 +453,7 @@ function generateQuickFieldLines(name: string, isNumeric: boolean, usage: FieldU
     let line = ' '.repeat(80);
     line = replaceAt(line, 5, 'A');
     line = replaceAt(line, 18, name.padEnd(10, ' '));
-    line = replaceAt(line, 32, size.length.toString().padStart(2, ' '));
+    line = replaceAt(line, FIELD_CONSTANTS.SIZE_COLUMN_START, size.length.toString().padStart(5, ' '));
 
     if (isNumeric) {
         line = replaceAt(line, 34, 'Y');
@@ -646,14 +646,14 @@ async function collectFieldUsage(fieldName: string): Promise<FieldUsage | null> 
 };
 
 async function collectFieldReference(fieldName: string): Promise<FieldReference | null> {
-    // Get library name
+    // Get library name (optional — DDS uses the current library list, *LIBL, when omitted)
     const library = await vscode.window.showInputBox({
         title: `Reference for field '${fieldName}' - Step 1/3`,
-        prompt: "Enter library name (max 10 characters)",
-        placeHolder: "LIBRARY",
-        validateInput: (value) => validateLibraryFileName(value, "Library")
+        prompt: "Enter library name (max 10 characters), or leave empty to use the library list (*LIBL)",
+        placeHolder: "LIBRARY (optional)",
+        validateInput: (value) => validateLibraryFileName(value, "Library", false)
     });
-    if (!library) return null;
+    if (library === undefined) return null;
 
     // Get file name
     const file = await vscode.window.showInputBox({
@@ -684,13 +684,13 @@ async function collectFieldReference(fieldName: string): Promise<FieldReference 
 /**
  * Validates library and file names
  */
-function validateLibraryFileName(value: string, type: string): string | null {
+function validateLibraryFileName(value: string, type: string, required: boolean = true): string | null {
     const trimmedValue = value.trim();
-    
+
     if (trimmedValue === '') {
-        return `${type} name cannot be empty.`;
+        return required ? `${type} name cannot be empty.` : null;
     };
-    
+
     if (trimmedValue.length > 10) {
         return `${type} name must be 10 characters or fewer.`;
     };
@@ -1165,8 +1165,9 @@ function generateNewFieldLine(config: NewFieldConfig): string {
         // Referenced field - use R and reference specification
         line = replaceAt(line, 28, 'R');
         
-        // Reference specification: REFFLD(library/file.field)
-        const refSpec = `REFFLD(${config.reference.library}/${config.reference.file}.${config.reference.field})`;
+        // Reference specification: REFFLD(referenced-field-name [library-name/]database-file-name)
+        const qualifiedFile = config.reference.library ? `${config.reference.library}/${config.reference.file}` : config.reference.file;
+        const refSpec = `REFFLD(${config.reference.field} ${qualifiedFile})`;
         line = replaceAt(line, 44, refSpec);
     } else if (config.typeConfig) {
         // New field with type specification
@@ -1175,8 +1176,8 @@ function generateNewFieldLine(config: NewFieldConfig): string {
         
         // Only specify length for fields that require it
         if (fieldType.hasLength) {
-            const sizeStr = config.typeConfig.size.length.toString().padStart(2, ' ');
-            line = replaceAt(line, 32, sizeStr);
+            const sizeStr = config.typeConfig.size.length.toString().padStart(5, ' ');
+            line = replaceAt(line, FIELD_CONSTANTS.SIZE_COLUMN_START, sizeStr);
         }
         
         line = replaceAt(line, 34, fieldType.keyboardShift);
@@ -1495,7 +1496,7 @@ function buildUpdatedLine(originalLine: string, newName: string, newSize: FieldS
            paddedName + 
            line.substring(FIELD_CONSTANTS.NAME_COLUMN_END);
     
-    const sizeString = newSize.length.toString().padStart(2, ' ').substring(0, 2);
+    const sizeString = newSize.length.toString().padStart(5, ' ').substring(0, 5);
     line = line.substring(0, FIELD_CONSTANTS.SIZE_COLUMN_START) + 
            sizeString + 
            line.substring(FIELD_CONSTANTS.SIZE_COLUMN_END);
