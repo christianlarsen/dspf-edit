@@ -264,7 +264,7 @@ function isSubfileRecord(attributes?: DdsAttribute[]): boolean {
  */
 /**
  * System-defined length for DDS data types whose length is never written in the source's length
- * columns (position 30-31) — DDS itself derives it, so those columns are legitimately left blank.
+ * columns (position 30-34) — DDS itself derives it, so those columns are legitimately left blank.
  * Matches the defaults `edit-field.ts`'s `getSystemDefinedLength` uses when creating one of these.
  */
 const FIXED_LENGTH_BY_TYPE: Record<string, number> = { L: 10, T: 8, Z: 26 };
@@ -277,7 +277,7 @@ function parseFieldElement(
     lastRecord: string
 ) {
     const type = trimmedLine[29];
-    const length = Number(trimmedLine.substring(27, 29).trim()) || FIXED_LENGTH_BY_TYPE[type] || 0;
+    const length = Number(trimmedLine.substring(24, 29).trim()) || FIXED_LENGTH_BY_TYPE[type] || 0;
     const decimals = trimmedLine.substring(30, 32) !== ' ' ? Number(trimmedLine.substring(30, 32).trim()) : 0;
     const usage = trimmedLine[32] !== ' ' ? trimmedLine[32] : ' ';
     const isHidden = trimmedLine[32] === 'H';
@@ -643,6 +643,7 @@ function addFieldToRecord(field: any, recordEntry: any): void {
             row: field.row || 0,
             col: field.column || 0,
             length: field.length || 0,
+            referenced: field.referenced,
             attributes: processedAttributes,
             indicators: field.indicators || [],
             lineIndex: field.lineIndex,

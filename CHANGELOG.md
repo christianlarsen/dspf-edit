@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [0.13.5] - 2026-07-28
+### Added
+- Preview: a referenced field (`REFFLD`/position-29 `R`) now renders as a single marker character in a distinct color with a dashed box, instead of a guessed-width placeholder — its real type/length live in the external database field, which dspf-edit has no way to read.
+### Fixed
+- Add/Edit Field: problems with fields with length of 100 or more.
+- Parser: field length was read back from only the last 2 characters of the length column. It has been fixed.
+- Add Field: a referenced field (library/file/field) generated an invalid `REFFLD(library/file.field)` specification. Now generates the correct `REFFLD(field [library/]file)` format.
+- Add Field: referencing a field required a library name, even though DDS itself makes it optional (falls back to the library list, `*LIBL`, when omitted). The prompt now accepts an empty library.
+
 ## [0.13.4] - 2026-07-27
 ### Fixed
 - Parser: DDS comment lines with column 6 left blank (e.g. decorative `***...` banner blocks — the more common comment style, as opposed to `A*...`) were not recognized as comments. Such a line was misparsed as a field, and any file-level keyword coming after it (most notably `DSPSIZ()`) got attached to that phantom field instead of the file, silently falling back to the default screen size (24x80/*DS3) instead of the one actually declared. The same comment-detection fix was applied everywhere else it was used: locating insertion points for key commands, error messages, and file-level attributes.
