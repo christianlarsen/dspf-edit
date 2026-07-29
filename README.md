@@ -64,6 +64,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
     - Add editing keywords.
     - Add error messages.
     - Add / Remove / Change indicators.
+    - Resolve Referenced Field (for referenced fields only): fetches the real type/length/decimals from the connected IBM i, via the [Code for i](https://marketplace.visualstudio.com/items?itemName=HalcyonTechLtd.code-for-ibmi) extension. Also available as "Resolve All Referenced Fields" from the status bar, for every pending referenced field in the document at once.
 
 - **Attributes**
     - Add / Remove / Change indicators.
@@ -118,10 +119,11 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.13.5** - 2026-07-28
-- Fixed: Add/Edit Field: a field length of 100 or more corrupted the generated DDS line, since the length column was only reserved 2 characters wide instead of the 5 DDS itself uses; the parser also only read back the last 2 digits of that column, showing the wrong length in the tree and preview.
-- Fixed: Add Field: a referenced field generated an invalid `REFFLD(library/file.field)` specification instead of the correct `REFFLD(field [library/]file)` format; the library is now optional, matching DDS itself (defaults to `*LIBL`).
-- Added: Preview: a referenced field now renders as a single marker character in a distinct color with a dashed box, instead of a guessed-width placeholder.
+**0.14.0** - 2026-07-28
+- Added: "Resolve Referenced Field" action (and "Resolve All Referenced Fields", from a new status bar item) fetches a referenced field's real type/length/decimals from the connected IBM i, via the [Code for i](https://marketplace.visualstudio.com/items?itemName=HalcyonTechLtd.code-for-ibmi) extension. Resolved fields show their real type/length in both the tree and the preview.
+- Fixed: Performance: re-parsing a document (e.g. after moving a field in the preview) got dramatically slower as it grew larger, due to two O(n²) hotspots in the parser. Both are now linear.
+- Fixed: Performance: checking whether a file is read-only before applying an edit did a live round-trip to the IBM i on every single edit while connected via Code for i. It's now cached per document.
+- Fixed: Referenced fields were missing the usual field context menu/inline actions (delete, copy, rename, etc.).
 
 ---
 

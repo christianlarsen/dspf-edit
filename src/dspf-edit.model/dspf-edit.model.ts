@@ -98,6 +98,9 @@ export interface DdsField {
   column?: number;
   hidden?: boolean;
   referenced?: boolean;
+  /** For a referenced field: the field/file/library its type/length/decimals are borrowed from,
+   * parsed from its REFFLD() keyword (or, absent one, its own name in an R-flagged field). */
+  refTarget?: { fieldName: string; file?: string; library?: string };
   lineIndex: number;
   recordname: string;
   attribute?: string;

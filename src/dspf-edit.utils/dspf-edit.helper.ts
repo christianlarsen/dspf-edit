@@ -11,6 +11,7 @@ import { DdsElement, DdsIndicator, DdsAttribute, records, FieldsPerRecord, Const
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
 import { parseDocument } from '../dspf-edit.parser/dspf-edit.parser';
 import { ExtensionState } from '../dspf-edit.states/state';
+import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 
 
 // FIELD DESCRIPTION FUNCTIONS
@@ -20,27 +21,31 @@ import { ExtensionState } from '../dspf-edit.states/state';
  * @param field - The DDS element to describe
  * @returns A formatted string describing the field's properties
  */
+function formatFieldSize(length?: number, decimals?: number): string {
+    return decimals && decimals > 0 ? `(${length}:${decimals})` : `(${length})`;
+};
+
 export function describeDdsField(field: DdsElement): string {
     if (field.kind !== 'field') return 'Not a field.';
 
-    const length = field.length;
-    const decimals = field.decimals;
-
-    // Format size string with decimals if present
-    const sizeText = decimals && decimals > 0 ? `(${length}:${decimals})` : `(${length})`;
-    const type = field.type;
+    const row = field.row?.toString().padStart(2, '0') ?? '--';
+    const col = field.column?.toString().padStart(2, '0') ?? '--';
 
     if (field.hidden) {
-        return `${sizeText}${type} (Hidden)`;
-    } else if (field.referenced) {
-        const row = field.row?.toString().padStart(2, '0') ?? '--';
-        const col = field.column?.toString().padStart(2, '0') ?? '--';
-        return `(Referenced) [${col},${row}]`;
-    } else {
-        const row = field.row?.toString().padStart(2, '0') ?? '--';
-        const col = field.column?.toString().padStart(2, '0') ?? '--';
-        return `${sizeText}${type} [${col},${row}]`;
+        return `${formatFieldSize(field.length, field.decimals)}${field.type} (Hidden)`;
     };
+
+    if (field.referenced) {
+        const documentUri = ExtensionState.lastDdsDocument?.uri.toString();
+        const resolved = documentUri ? getResolvedRef(documentUri, field.recordname, field.name) : undefined;
+
+        if (resolved) {
+            return `${formatFieldSize(resolved.length, resolved.decimals)}${resolved.type} [${col},${row}] (Ref)`;
+        };
+        return `⏳ Referenced, pending [${col},${row}]`;
+    };
+
+    return `${formatFieldSize(field.length, field.decimals)}${field.type} [${col},${row}]`;
 };
 
 /**
@@ -689,6 +694,21 @@ export function checkForEditorAndDocument() : { editor : vscode.TextEditor | und
 };
 
 /**
+ * Per-document cache of the remote (non-`file:`) read-only stat — e.g. an IBM i source member
+ * opened through Code for IBM i, where `vscode.workspace.fs.stat()` means a live round-trip over
+ * the connection. Without this, every single edit (each field move/drop, etc.) pays that round-trip
+ * again via `isReadOnlyFile()`/`applyWorkspaceEdit()` below, which is fine for a local `file:` (an
+ * instant OS call) but was a real, repeated source of latency while connected. Cleared when the
+ * document closes, so a freshly (re)opened document always re-checks.
+ */
+const remoteReadOnlyCache: Map<string, boolean> = new Map();
+
+/** Clears a document's cached remote read-only status (e.g. when it's closed). */
+export function clearReadOnlyCache(documentUri: string): void {
+    remoteReadOnlyCache.delete(documentUri);
+};
+
+/**
  * Whether a URI points at a file the current user can't write to. `vscode.workspace.fs.stat()`'s
  * `permissions` field is unreliable for this: local disk providers commonly leave it unset even
  * for an OS-level read-only file (confirmed — VS Code doesn't even show its own lock icon on such
@@ -696,7 +716,8 @@ export function checkForEditorAndDocument() : { editor : vscode.TextEditor | und
  * VS Code's read-only UI, not a live reflection of OS permission bits. For a `file:` URI, checking
  * the OS permission bits directly via Node's `fs` is the only reliable signal. For anything else
  * (a virtual filesystem provider — e.g. an IBM i source member opened through Code for IBM i),
- * `stat()` is the only option available, so it's used as a best-effort fallback.
+ * `stat()` is the only option available, so it's used as a best-effort fallback — and cached per
+ * document (see `remoteReadOnlyCache` above), since it's the one that's actually expensive.
  * @param uri - The document URI to check
  */
 async function isReadOnlyFile(uri: vscode.Uri): Promise<boolean> {
@@ -709,12 +730,22 @@ async function isReadOnlyFile(uri: vscode.Uri): Promise<boolean> {
         };
     };
 
+    const cacheKey = uri.toString();
+    const cached = remoteReadOnlyCache.get(cacheKey);
+    if (cached !== undefined) {
+        return cached;
+    };
+
+    let isReadOnly: boolean;
     try {
         const stat = await vscode.workspace.fs.stat(uri);
-        return Boolean((stat.permissions ?? 0) & vscode.FilePermission.Readonly);
+        isReadOnly = Boolean((stat.permissions ?? 0) & vscode.FilePermission.Readonly);
     } catch {
-        return false;
+        isReadOnly = false;
     };
+
+    remoteReadOnlyCache.set(cacheKey, isReadOnly);
+    return isReadOnly;
 };
 
 /**

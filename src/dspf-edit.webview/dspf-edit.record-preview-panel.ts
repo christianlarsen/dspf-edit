@@ -8,6 +8,8 @@ import * as vscode from 'vscode';
 import { FieldsPerRecord, DdsSize, DdsAttribute, AttributeWithIndicators, DdsIndicator, fieldsPerRecords, records, getDefaultSize, getAvailableDisplayFormats, getSizeForFormat, SYSTEM_FIELD_PLACEHOLDER } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, updateTreeProvider, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
+import { ExtensionState } from '../dspf-edit.states/state';
+import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 import { resolveRecordSizeForFormat } from '../dspf-edit.parser/dspf-edit.parser';
 import { editWindowTitleForRecord } from '../dspf-edit.commands/dspf-edit.window-title';
 import { getConstantTextFromUser, insertNewConstant } from '../dspf-edit.commands/dspf-edit.edit-constant';
@@ -756,6 +758,7 @@ export class RecordPreviewPanel {
         // background record always uses the resting state (every indicator OFF), regardless of
         // what's toggled for the foreground record.
         const useLiveIndicators = this.indicatorsEnabled && !isBackground;
+        const documentUri = ExtensionState.lastDdsDocument?.uri.toString();
 
         for (const field of recordInfo.fields) {
             if (this.activeDisplayFormat && field.displayFormat && field.displayFormat !== this.activeDisplayFormat) {
@@ -772,9 +775,13 @@ export class RecordPreviewPanel {
                 const activeAttrs = this.getActiveAttributes(field.attributes, useLiveIndicators);
                 const usageCode = (field.usage || '').trim().toUpperCase();
                 // A referenced field (REFFLD/position-29 `R`) has no type/length of its own in the
-                // source — they live in the external database field, which dspf-edit can't read —
-                // so it's shown as a single marker character instead of a guessed-width placeholder.
-                const isReferenced = field.referenced === true;
+                // source — they live in the external database field, which dspf-edit can't read on
+                // its own — so it's shown as a single marker character instead of a guessed-width
+                // placeholder, unless its real type/length has already been resolved (via the
+                // "Resolve Referenced Field" tree command), in which case it renders like any other
+                // field, just tinted the reference color when it carries no COLOR()/DSPATR() of its own.
+                const resolvedRef = field.referenced && documentUri ? getResolvedRef(documentUri, recordInfo.record, field.name) : undefined;
+                const isReferenced = field.referenced === true && !resolvedRef;
                 // The displayed text's own length drives the item's width/hit-box (below), not the
                 // parsed field length: a system keyword field (DATE, USER...) always renders at a
                 // fixed width of its own, regardless of whatever the source's length column holds
@@ -782,7 +789,10 @@ export class RecordPreviewPanel {
                 // character (its decimal point, typically), which text.length already reflects.
                 const text = isReferenced
                     ? getFieldPlaceholderText(field.name, field.type, field.usage, 1)
-                    : getFieldPlaceholderText(field.name, field.type, field.usage, field.length, getEditWordMask(activeAttrs));
+                    : getFieldPlaceholderText(field.name, resolvedRef?.type ?? field.type, field.usage, resolvedRef?.length ?? field.length, getEditWordMask(activeAttrs));
+                const color = isReferenced || (field.referenced && activeAttrs.length === 0)
+                    ? REFERENCED_FIELD_COLOR
+                    : getDisplayColor(activeAttrs, hasDisplayAttribute(activeAttrs, 'HI'));
                 items.push({
                     kind: 'field',
                     name: field.name,
@@ -791,7 +801,7 @@ export class RecordPreviewPanel {
                     col: trueCol + colOffset,
                     length: text.length,
                     lineIndex: field.lineIndex,
-                    color: isReferenced ? REFERENCED_FIELD_COLOR : getDisplayColor(activeAttrs, hasDisplayAttribute(activeAttrs, 'HI')),
+                    color,
                     highIntensity: hasDisplayAttribute(activeAttrs, 'HI'),
                     reverseImage: hasDisplayAttribute(activeAttrs, 'RI') || this.hasActiveErrorMessage(field.attributes, useLiveIndicators),
                     blink: hasDisplayAttribute(activeAttrs, 'BL'),

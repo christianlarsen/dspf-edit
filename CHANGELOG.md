@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [0.14.0] - 2026-07-28
+### Added
+- New "Resolve Referenced Field" action for referenced fields (`REFFLD`/position-29 `R`, which carry no type/length in the source): a button on the field — and a "Resolve All Referenced Fields" command, also reachable from a new status bar item — queries the connected IBM i, via the [Code for i](https://marketplace.visualstudio.com/items?itemName=HalcyonTechLtd.code-for-ibmi) extension, for the referenced database field's real type/length/decimals. Works for both native physical/logical files and SQL-created tables (which can have different long and short column names). Once resolved, the field shows its real type/length in both the tree and the preview (rendered like a normal field, tinted the reference color only when it carries no `COLOR()`/`DSPATR()` of its own). Cached per document until it's closed, or re-resolved on demand from the same button. Requires Code for i to be installed and connected; shows a clear message otherwise.
+- A status bar item shows how many referenced fields in the current document are still pending resolution.
+### Fixed
+- Performance: two O(n²) hotspots in the parser (linking fields/constants to their record, and duplicate-field detection) made re-parsing a document — e.g. after moving a field in the preview — get dramatically slower as it grew larger. Both are now linear.
+- Performance: checking whether a file is read-only before applying an edit did a live round-trip to the IBM i on every single edit while connected via Code for i. It's now cached per document.
+- Referenced fields were missing the usual field context menu/inline actions (delete, copy, rename, etc.), due to a stricter internal check that didn't account for their new "pending"/"resolved" state.
+
 ## [0.13.5] - 2026-07-28
 ### Added
 - Preview: a referenced field (`REFFLD`/position-29 `R`) now renders as a single marker character in a distinct color with a dashed box, instead of a guessed-width placeholder — its real type/length live in the external database field, which dspf-edit has no way to read.

@@ -269,6 +269,35 @@ function isSubfileRecord(attributes?: DdsAttribute[]): boolean {
  */
 const FIXED_LENGTH_BY_TYPE: Record<string, number> = { L: 10, T: 8, Z: 26 };
 
+/**
+ * Extracts a referenced field's REFFLD() target: the field name (and, optionally, its qualified
+ * database file) whose type/length/decimals this field borrows. Matches the format dspf-edit
+ * itself generates (see `generateNewFieldLine` in edit-field.ts): REFFLD(field-name {library/}file-name).
+ * Falls back to the field's own name when there's no REFFLD (a bare "R" referencing a file/record
+ * -level REF() under the same field name).
+ * @param attributes - The field's own DDS attributes
+ * @param ownName - The field's own name, used as the fallback reference target
+ */
+function parseReffldTarget(attributes: DdsAttribute[] | undefined, ownName: string): { fieldName: string; file?: string; library?: string } {
+    const attr = attributes?.find(a => a.value.toUpperCase().startsWith('REFFLD('));
+    if (!attr) {
+        return { fieldName: ownName };
+    };
+
+    const match = attr.value.match(/^REFFLD\(\s*(\S+)(?:\s+(\S+))?\s*\)$/i);
+    if (!match) {
+        return { fieldName: ownName };
+    };
+
+    const [, fieldName, qualifiedFile] = match;
+    if (!qualifiedFile) {
+        return { fieldName };
+    };
+
+    const [library, file] = qualifiedFile.includes('/') ? qualifiedFile.split('/') : [undefined, qualifiedFile];
+    return { fieldName, file, library };
+};
+
 function parseFieldElement(
     lines: string[],
     lineIndex: number,
@@ -284,6 +313,7 @@ function parseFieldElement(
     const isReferenced = trimmedLine[23] === 'R';
 
     const { attributes, nextIndex } = extractAttributes('F', lines, lineIndex, true, components.indicators, components.displayFormat);
+    const refTarget = isReferenced ? parseReffldTarget(attributes, components.fieldName) : undefined;
 
     // Check if the current record (lastRecord) is a subfile by looking at its attributes
     const currentRecordEntry = fieldsPerRecords.find(r => r.record === lastRecord);
@@ -311,6 +341,7 @@ function parseFieldElement(
         column: isHidden ? undefined : finalCol,
         hidden: isHidden,
         referenced: isReferenced,
+        refTarget: refTarget,
         lineIndex: lineIndex,
         recordname: lastRecord,
         attributes: attributes || [],
@@ -593,25 +624,41 @@ function linkAttributesToParents(ddsElements: DdsElement[]): void {
  * @param ddsElements - Array of all parsed DDS elements
  */
 function linkFieldsAndConstantsToRecords(ddsElements: DdsElement[]): void {
+    // ddsElements is already in source line order (parseAllLines pushes each element as it parses
+    // lines top to bottom), so the nearest preceding record is simply the last 'record' element
+    // seen so far in a single forward pass — no need to rescan the whole array per field/constant.
+    let currentRecord: DdsRecord | undefined;
+
+    // Per-record dedup sets, keyed by the record's own fieldsPerRecords entry (a stable object
+    // reference for its lifetime here) — an O(1) alternative to rescanning recordEntry.fields/
+    // .constants (which only grow) on every single field/constant, an O(n²) hotspot at scale.
+    const seenFieldNames = new Map<any, Set<string>>();
+    const seenConstantLines = new Map<any, Set<number>>();
+
     for (const element of ddsElements) {
-        if ((element.kind === 'field') || element.kind === 'constant') {
-            // Find parent record for this field/constant
-            const parentRecord = [...ddsElements]
-                .reverse()
-                .find(p =>
-                    p.lineIndex < element.lineIndex &&
-                    p.kind === 'record'
-                ) as DdsRecord | undefined;
+        if (element.kind === 'record') {
+            currentRecord = element;
+            continue;
+        };
 
-            if (parentRecord) {
-                const recordEntry = fieldsPerRecords.find(r => r.record === parentRecord.name);
+        if ((element.kind === 'field' || element.kind === 'constant') && currentRecord) {
+            const recordEntry = fieldsPerRecords.find(r => r.record === currentRecord!.name);
 
-                if (recordEntry) {
-                    if (element.kind === 'field') {
-                        addFieldToRecord(element, recordEntry);
-                    } else if (element.kind === 'constant') {
-                        addConstantToRecord(element, recordEntry);
+            if (recordEntry) {
+                if (element.kind === 'field') {
+                    let names = seenFieldNames.get(recordEntry);
+                    if (!names) {
+                        names = new Set();
+                        seenFieldNames.set(recordEntry, names);
                     };
+                    addFieldToRecord(element, recordEntry, names);
+                } else {
+                    let lines = seenConstantLines.get(recordEntry);
+                    if (!lines) {
+                        lines = new Set();
+                        seenConstantLines.set(recordEntry, lines);
+                    };
+                    addConstantToRecord(element, recordEntry, lines);
                 };
             };
         };
@@ -619,14 +666,17 @@ function linkFieldsAndConstantsToRecords(ddsElements: DdsElement[]): void {
 };
 
 /**
- * Adds a field element to its parent record entry
+ * Adds a field element to its parent record entry, unless a field of the same name was already
+ * added to it (tracked via `seenFieldNames`, an O(1) alternative to rescanning recordEntry.fields).
  * @param field - Field element to add
  * @param recordEntry - Record entry to add field to
+ * @param seenFieldNames - Field names already added to this record entry
  */
-function addFieldToRecord(field: any, recordEntry: any): void {
+function addFieldToRecord(field: any, recordEntry: any, seenFieldNames: Set<string>): void {
     // Avoid duplicate fields
-    if (!recordEntry.fields.some((f: any) => f.name === field.name)) {
-        
+    if (!seenFieldNames.has(field.name)) {
+        seenFieldNames.add(field.name);
+
         // Process attributes preserving their indicators
         const processedAttributes = field.attributes?.map((attr: any) => ({
             value: attr.value,
@@ -654,11 +704,13 @@ function addFieldToRecord(field: any, recordEntry: any): void {
 };
 
 /**
- * Adds a constant element to its parent record entry
+ * Adds a constant element to its parent record entry, unless this exact source line was already
+ * added to it (tracked via `seenLineIndexes`, an O(1) alternative to rescanning recordEntry.constants).
  * @param constant - Constant element to add
  * @param recordEntry - Record entry to add constant to
+ * @param seenLineIndexes - Line indexes already added to this record entry
  */
-function addConstantToRecord(constant: any, recordEntry: any): void {
+function addConstantToRecord(constant: any, recordEntry: any, seenLineIndexes: Set<number>): void {
     // Remove quotes from constant name for storage — but only when it's actually a quoted
     // literal. A DDS system keyword (DATE, TIME, USER, SYSNAME) can be coded bare, in the same
     // position a quoted constant would occupy; blindly slicing it would eat its first/last letter.
@@ -680,7 +732,8 @@ function addConstantToRecord(constant: any, recordEntry: any): void {
     // identical text: DDS pixel-art constructions legitimately repeat the same blank/space text
     // (e.g. '   ' or ' ') at dozens of different positions to build a colored block pattern, and
     // comparing by text alone (as this used to) silently dropped all but the first of each.
-    if (!recordEntry.constants.some((c: any) => c.lineIndex === constant.lineIndex)) {
+    if (!seenLineIndexes.has(constant.lineIndex)) {
+        seenLineIndexes.add(constant.lineIndex);
         recordEntry.constants.push({
             name: constantName,
             type: undefined,

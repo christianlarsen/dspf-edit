@@ -9,6 +9,7 @@ import * as path from 'path';
 import { DdsElement, DdsGroup } from '../dspf-edit.model/dspf-edit.model';
 import { describeDdsField, describeDdsConstant, describeDdsRecord, describeDdsFile, formatDdsIndicators } from '../dspf-edit.utils/dspf-edit.helper';
 import { ExtensionState } from '../dspf-edit.states/state';
+import { getResolvedRef, getPendingReferencedFields } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 
 /**
  * Estructura para guardar los filtros de un documento específico
@@ -53,9 +54,20 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 	// Status bar item to show active filters
 	private statusBarItem: vscode.StatusBarItem | undefined;
 
+	// Status bar item showing how many referenced fields are still pending resolution
+	private pendingRefStatusBarItem: vscode.StatusBarItem | undefined;
+
 	// Refresh the tree view
 	refresh(): void {
 		this._onDidChangeTreeData.fire();
+		this.updatePendingRefStatusBar();
+	}
+
+	/**
+	 * Gets the currently loaded DDS elements (the parsed tree for the active document).
+	 */
+	getElements(): DdsElement[] {
+		return this.elements;
 	}
 
 	// Set all DDS elements, initialize record filter if empty for current document
@@ -105,6 +117,8 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 
 		// Actualizar el status bar después de establecer los elementos
 		// con un pequeño delay para evitar parpadeos
+		// (el status bar de campos referenciados pendientes no lo necesita: ya se actualiza en
+		// refresh(), que todo llamador de setElements() invoca justo a continuación)
 		setTimeout(() => this.updateStatusBar(), 50);
 	}
 
@@ -240,6 +254,37 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 
 		this.statusBarItem.text = `$(filter) ${statusText}`;
 		this.statusBarItem.show();
+	}
+
+	/**
+	 * Initializes the pending-referenced-fields StatusBarItem if it hasn't been created yet.
+	 */
+	private initPendingRefStatusBar() {
+		if (!this.pendingRefStatusBarItem) {
+			this.pendingRefStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
+			this.pendingRefStatusBarItem.command = 'dspf-edit.resolve-all-referenced-fields';
+			this.pendingRefStatusBarItem.tooltip = 'Click to resolve all pending referenced fields from the connected IBM i';
+		}
+	}
+
+	/**
+	 * Updates the pending-referenced-fields StatusBarItem for the current document. Hidden when
+	 * there are none (nothing pending, or no document loaded).
+	 */
+	private updatePendingRefStatusBar() {
+		if (!this.pendingRefStatusBarItem) this.initPendingRefStatusBar();
+		if (!this.pendingRefStatusBarItem) return;
+
+		const documentUri = this.getCurrentDocumentUri();
+		const pending = documentUri ? getPendingReferencedFields(documentUri, this.elements) : [];
+
+		if (pending.length === 0) {
+			this.pendingRefStatusBarItem.hide();
+			return;
+		}
+
+		this.pendingRefStatusBarItem.text = `$(cloud-download) ${pending.length} referenced field${pending.length > 1 ? 's' : ''} pending`;
+		this.pendingRefStatusBarItem.show();
 	}
 
 	/**
@@ -727,6 +772,21 @@ function isSflCtlElement(ddsElement: DdsElement): boolean {
 };
 
 /**
+ * Extra contextValue word for a referenced field, distinguishing whether its real type/length has
+ * already been resolved from the IBM i (consumed by package.json's view/item/context "when" clauses
+ * via a `viewItem =~ /\bword\b/` regex, same convention as the existing "record sflctl" combo).
+ */
+function referencedFieldContextSuffix(ddsElement: DdsElement): string {
+	if (ddsElement.kind !== 'field' || !ddsElement.referenced) {
+		return '';
+	};
+
+	const documentUri = ExtensionState.lastDdsDocument?.uri.toString();
+	const resolved = documentUri ? getResolvedRef(documentUri, ddsElement.recordname, ddsElement.name) : undefined;
+	return resolved ? ' referenced-resolved' : ' referenced-pending';
+};
+
+/**
  * DDS NODE CLASS
  * Represents each node in the TreeView. Configures label, tooltip, description,
  * context menu value, and navigation command to go to the line in the editor.
@@ -738,7 +798,7 @@ export class DdsNode extends vscode.TreeItem {
 		this.description = this.getDescription(ddsElement);
 		this.contextValue = label.includes('📂 Records')
 			? 'group:records'
-			: isSflCtlElement(ddsElement) ? 'record sflctl' : ddsElement.kind;
+			: isSflCtlElement(ddsElement) ? 'record sflctl' : `${ddsElement.kind}${referencedFieldContextSuffix(ddsElement)}`;
 
 		if (this.shouldHaveNavigationCommand(ddsElement)) {
 			this.command = { command: 'ddsEdit.goToLine', title: `Go to ${ddsElement.kind}`, arguments: [ddsElement.lineIndex + 1] };
