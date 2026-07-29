@@ -24,6 +24,15 @@ import {
 export let currentDdsElements: DdsElement[] = [];
 
 /**
+ * Tracks the last resolved (row, col, length) of a positioned field/constant within the current
+ * record, in source order. Needed to resolve DDS's relative record format: a blank Line (row)
+ * field means "continue on the same row as the preceding field/constant", and a Position (col)
+ * field written as "+n" means "n blank positions after the end of that preceding field/constant" —
+ * both defined relative to whatever came immediately before in this record, not to any fixed origin.
+ */
+let lastPositionInRecord: { row: number; col: number; length: number } | undefined;
+
+/**
  * Main parser function that processes DDS document text and returns structured elements
  * @param text - Raw DDS document text to parse
  * @returns Array of parsed DDS elements
@@ -71,6 +80,7 @@ function clearGlobalState(): void {
     records.length = 0;
     fieldsPerRecords.length = 0;
     attributesFileLevel.length = 0;
+    lastPositionInRecord = undefined;
 
     // Reset both display-size slots so switching to a document with fewer (or no) DSPSIZ formats
     // doesn't leak a stale second size (e.g. *DS4) left over from a previously parsed document —
@@ -170,9 +180,47 @@ function extractLineComponents(trimmedLine: string) {
     const rowText = trimmedLine.substring(33, 36).trim();
     const colText = trimmedLine.substring(36, 39).trim();
     const row = rowText ? Number(rowText) : undefined;
+    // A Position entry of "+n" (DDS relative record format) is placed n blank positions after the
+    // end of the preceding field/constant, rather than at absolute column n. Number("+1") already
+    // evaluates to 1, so the magnitude is captured the same way — this flag is what tells
+    // resolvePosition to treat it as an offset instead of an absolute column.
+    const colRelative = colText.startsWith('+');
     const col = colText ? Number(colText) : undefined;
 
-    return { indicators, fieldName, row, col, displayFormat };
+    return { indicators, fieldName, row, col, colRelative, displayFormat };
+};
+
+/**
+ * Resolves a field/constant's actual (row, col) from the raw values read off the DDS source,
+ * applying the DDS relative record format rules (see extractLineComponents): a blank Line (row)
+ * continues on the same row as the immediately preceding positioned field/constant in this record,
+ * and a Position (col) written as "+n" is placed n blank positions after that preceding element's
+ * end column. Falls back to treating "+n" as an absolute column when there is no preceding element
+ * to be relative to (malformed source).
+ * @param row - Row read from columns 39-41; undefined means the field was left blank
+ * @param col - Col read from columns 42-44; undefined means the field was left blank
+ * @param colRelative - True when the Position field was written as "+n"
+ */
+function resolvePosition(
+    row: number | undefined,
+    col: number | undefined,
+    colRelative: boolean
+): { row: number | undefined; col: number | undefined } {
+    if (row === undefined && col === undefined) {
+        return { row, col };
+    };
+
+    const resolvedRow = row !== undefined ? row : lastPositionInRecord?.row;
+
+    let resolvedCol = col;
+    if (colRelative && col !== undefined) {
+        const previousEndCol = lastPositionInRecord
+            ? lastPositionInRecord.col + lastPositionInRecord.length
+            : 0;
+        resolvedCol = previousEndCol + col;
+    };
+
+    return { row: resolvedRow, col: resolvedCol };
 };
 
 /**
@@ -194,12 +242,14 @@ function isFieldLine(fieldName: string): boolean {
 };
 
 /**
- * Checks if the line represents a constant definition
+ * Checks if the line represents a constant definition. The Line (row) entry is legitimately blank
+ * under the DDS relative record format — it means "same row as the preceding field/constant" — so
+ * only the Position (col) entry is required here; row is resolved later via resolvePosition.
  * @param components - Extracted line components
  * @returns True if line is a constant definition
  */
 function isConstantLine(components: { fieldName: string; row?: number; col?: number }): boolean {
-    return !components.fieldName && Boolean(components.row) && Boolean(components.col);
+    return !components.fieldName && Boolean(components.col);
 };
 
 /**
@@ -218,6 +268,10 @@ function parseRecordElement(
 ) {
     const name = trimmedLine.substring(13, 23).trim();
     const { attributes, nextIndex } = extractAttributes('R', lines, lineIndex, false);
+
+    // A new record always starts with an explicit absolute position — relative "+n"/blank-row
+    // notation is only relative to a preceding field/constant within the same record.
+    lastPositionInRecord = undefined;
 
     // Update global state
     records.push(name);
@@ -288,16 +342,24 @@ function parseFieldElement(
     // Check if the current record (lastRecord) is a subfile by looking at its attributes
     const currentRecordEntry = fieldsPerRecords.find(r => r.record === lastRecord);
     const isSubfile = currentRecordEntry ? isSubfileRecord(currentRecordEntry.attributes) : false;
-    
+
+    // Resolve DDS relative record format ("+n" position, blank line) against the preceding
+    // field/constant in this record, using the raw (pre-subfile-swap) row/col as written in source.
+    const { row: resolvedRow, col: resolvedCol } = resolvePosition(components.row, components.col, components.colRelative);
+
     // For subfiles, swap row and column positions
-    let finalRow = components.row;
-    let finalCol = components.col;
-    
+    let finalRow = resolvedRow;
+    let finalCol = resolvedCol;
+
     if (isSubfile && !isHidden) {
         // In subfiles, the positions are swapped: what appears in the "row" position is actually the column,
         // and what appears in the "column" position is actually the row
-        finalRow = components.col;
-        finalCol = components.row;
+        finalRow = resolvedCol;
+        finalCol = resolvedRow;
+    };
+
+    if (!isHidden && resolvedRow !== undefined && resolvedCol !== undefined) {
+        lastPositionInRecord = { row: resolvedRow, col: resolvedCol, length };
     };
 
     const element = {
@@ -344,21 +406,31 @@ function parseConstantElement(
     // Check if the current record (lastRecord) is a subfile by looking at its attributes
     const currentRecordEntry = fieldsPerRecords.find(r => r.record === lastRecord);
     const isSubfile = currentRecordEntry ? isSubfileRecord(currentRecordEntry.attributes) : false;
-        
+
+    // Resolve DDS relative record format ("+n" position, blank line) against the preceding
+    // field/constant in this record, using the raw (pre-subfile-swap) row/col as written in source.
+    const { row: resolvedRow, col: resolvedCol } = resolvePosition(components.row, components.col, components.colRelative);
+
     // For subfiles, swap row and column positions
-    let finalRow = components.row;
-    let finalCol = components.col;
-        
+    let finalRow = resolvedRow;
+    let finalCol = resolvedCol;
+
     if (isSubfile) {
-        finalRow = components.col;
-        finalCol = components.row;
+        finalRow = resolvedCol;
+        finalCol = resolvedRow;
     };
-    
+
+    if (resolvedRow !== undefined && resolvedCol !== undefined) {
+        lastPositionInRecord = { row: resolvedRow, col: resolvedCol, length: stripConstantQuotes(fullValue).length };
+    };
+
     const element = {
         kind: 'constant' as const,
         name: fullValue,
-        row: finalRow,
-        column: finalCol,
+        // Falls back to 0 only for malformed source (blank Line with no preceding field/constant
+        // in this record to inherit a row from) — DdsConstant.row/column are non-optional.
+        row: finalRow ?? 0,
+        column: finalCol ?? 0,
         lineIndex: lineIndex,
         lastLineIndex: lastLineIndex,
         recordname: lastRecord,
@@ -654,18 +726,24 @@ function addFieldToRecord(field: any, recordEntry: any): void {
 };
 
 /**
+ * Removes quotes from a constant's raw name for storage/length purposes — but only when it's
+ * actually a quoted literal. A DDS system keyword (DATE, TIME, USER, SYSNAME) can be coded bare, in
+ * the same position a quoted constant would occupy; blindly slicing it would eat its first/last letter.
+ * @param rawName - Raw constant text as read from the source (may or may not be quoted)
+ */
+function stripConstantQuotes(rawName: string): string {
+    return rawName.length >= 2 && rawName.startsWith("'") && rawName.endsWith("'")
+        ? rawName.slice(1, -1)
+        : rawName;
+};
+
+/**
  * Adds a constant element to its parent record entry
  * @param constant - Constant element to add
  * @param recordEntry - Record entry to add constant to
  */
 function addConstantToRecord(constant: any, recordEntry: any): void {
-    // Remove quotes from constant name for storage — but only when it's actually a quoted
-    // literal. A DDS system keyword (DATE, TIME, USER, SYSNAME) can be coded bare, in the same
-    // position a quoted constant would occupy; blindly slicing it would eat its first/last letter.
-    const rawName: string = constant.name;
-    const constantName = rawName.length >= 2 && rawName.startsWith("'") && rawName.endsWith("'")
-        ? rawName.slice(1, -1)
-        : rawName;
+    const constantName = stripConstantQuotes(constant.name);
 
     // Process attributes preserving their indicators
     const processedAttributes = constant.attributes?.map((attr: any) => ({

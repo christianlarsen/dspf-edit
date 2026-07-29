@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [0.13.6] - 2026-07-29
+### Fixed
+- Parser: fields and constants positioned using DDS's relative record format (`+n` in the Position field, or a blank Line/Row meaning "same row as the previous field/constant") were misparsed as attributes and silently dropped, instead of being resolved to their actual screen position relative to the preceding field/constant.
+- Move Field/Constant Left/Right (tree buttons): when a field/constant's row was inherited via the relative record format above, moving it horizontally updated the column but left the row blank in the source instead of writing it explicitly — unlike dragging in the preview panel, which already materializes both. Moving with the tree buttons now writes the row too.
+
 ## [0.13.5] - 2026-07-28
 ### Added
 - Preview: a referenced field (`REFFLD`/position-29 `R`) now renders as a single marker character in a distinct color with a dashed box, instead of a guessed-width placeholder — its real type/length live in the external database field, which dspf-edit has no way to read.

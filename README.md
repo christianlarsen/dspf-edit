@@ -104,6 +104,8 @@ The extension provides a **navigable schema view** of the DDS source file that i
 This extension is currently in **preview**.  
 Some features may not work as expected. Please leave an issue if something is not working fine!
 
+- DDS indicator **OR conditioning** is not yet supported: DDS lets you OR several indicator-only continuation lines (marked with `O` in column 7) together, with the actual keyword coded on the last line of the group. Only the indicators on that last line are currently read — the preceding OR'd indicator-only lines are ignored.
+
 ---
 
 ## 📝 To Do
@@ -118,10 +120,9 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.13.5** - 2026-07-28
-- Fixed: Add/Edit Field: a field length of 100 or more corrupted the generated DDS line, since the length column was only reserved 2 characters wide instead of the 5 DDS itself uses; the parser also only read back the last 2 digits of that column, showing the wrong length in the tree and preview.
-- Fixed: Add Field: a referenced field generated an invalid `REFFLD(library/file.field)` specification instead of the correct `REFFLD(field [library/]file)` format; the library is now optional, matching DDS itself (defaults to `*LIBL`).
-- Added: Preview: a referenced field now renders as a single marker character in a distinct color with a dashed box, instead of a guessed-width placeholder.
+**0.13.6** - 2026-07-29
+- Fixed: Parser: fields and constants positioned using DDS's relative record format (`+n` in the Position field, or a blank Line/Row meaning "same row as the previous field/constant") were misparsed as attributes and silently dropped, instead of being resolved to their actual screen position.
+- Fixed: Move Field/Constant Left/Right (tree buttons): moving a field/constant whose row was inherited via the relative record format above left the row blank in the source instead of writing it explicitly, unlike dragging in the preview panel. Both now behave the same way.
 
 ---
 
