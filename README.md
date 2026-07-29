@@ -105,6 +105,8 @@ The extension provides a **navigable schema view** of the DDS source file that i
 This extension is currently in **preview**.  
 Some features may not work as expected. Please leave an issue if something is not working fine!
 
+- DDS indicator **OR conditioning** is not yet supported: DDS lets you OR several indicator-only continuation lines (marked with `O` in column 7) together, with the actual keyword coded on the last line of the group. Only the indicators on that last line are currently read — the preceding OR'd indicator-only lines are ignored.
+
 ---
 
 ## 📝 To Do
@@ -119,7 +121,7 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.14.0** - 2026-07-28
+**0.14.0** - 2026-07-29
 - Added: "Resolve Referenced Field" action (and "Resolve All Referenced Fields", from a new status bar item) fetches a referenced field's real type/length/decimals from the connected IBM i, via the [Code for i](https://marketplace.visualstudio.com/items?itemName=HalcyonTechLtd.code-for-ibmi) extension. Resolved fields show their real type/length in both the tree and the preview.
 - Fixed: Performance: re-parsing a document (e.g. after moving a field in the preview) got dramatically slower as it grew larger, due to two O(n²) hotspots in the parser. Both are now linear.
 - Fixed: Performance: checking whether a file is read-only before applying an edit did a live round-trip to the IBM i on every single edit while connected via Code for i. It's now cached per document.
