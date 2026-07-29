@@ -135,8 +135,17 @@ async function handleMoveConstantCommand(node: DdsNode, offset: number): Promise
             return;
         }
 
+        // The row spec (raw source columns 38-41) is written alongside the column move even though
+        // this command never changes it. Under DDS's relative record format that spec can be blank
+        // in the source (row inherited from the preceding field/constant) — leaving it blank here
+        // would be fine positionally (the parser re-derives the same inherited row on reparse), but
+        // it also means the tree can show a stale/empty row until that reparse lands, and it silently
+        // drops the relative-format hint. Materializing it as an explicit number keeps the source
+        // and the tree in sync immediately and matches what dragging in the preview panel already does.
+        const rawRow = isSflRecord ? element.column : element.row;
+
         // Apply the constant update with new position
-        if (!(await moveConstantToNewPosition(editor, element, newPosition))) {
+        if (!(await moveConstantToNewPosition(editor, element, newPosition, rawRow))) {
             return;
         };
 
@@ -165,7 +174,9 @@ async function handleMoveConstantCommand(node: DdsNode, offset: number): Promise
 // CONSTANT MOVEMENT FUNCTIONS
 
 /**
- * Moves a constant to a new column position by updating the column spec in the source line.
+ * Moves a constant to a new column position by updating the column spec in the source line, and
+ * materializes the row spec alongside it (see the call site's comment on rawRow) so a row left
+ * blank under the DDS relative record format becomes an explicit number.
  * The raw source columns 38-41 (line/row spec) and 41-44 (position/col spec) always keep that
  * same meaning regardless of record type — a subfile only swaps which of those raw values ends up
  * labeled element.row vs element.column internally (see isSubfileRecord's caller), the physical
@@ -174,11 +185,13 @@ async function handleMoveConstantCommand(node: DdsNode, offset: number): Promise
  * @param editor - The active text editor
  * @param element - The constant element to move
  * @param newPosition - The new column value
+ * @param rawRow - The row spec value to (re)write at columns 38-41, undefined to leave it as-is
  */
 async function moveConstantToNewPosition(
     editor: vscode.TextEditor,
     element: any,
-    newPosition: number
+    newPosition: number,
+    rawRow: number | undefined
 ): Promise<boolean> {
     const uri = editor.document.uri;
     const workspaceEdit = new vscode.WorkspaceEdit();
@@ -193,6 +206,11 @@ async function moveConstantToNewPosition(
     );
 
     workspaceEdit.replace(uri, range, formattedPos);
+
+    if (rawRow !== undefined) {
+        const formattedRow = String(rawRow).padStart(3, ' ');
+        workspaceEdit.replace(uri, new vscode.Range(element.lineIndex, 38, element.lineIndex, 41), formattedRow);
+    };
 
     return applyWorkspaceEdit(workspaceEdit, 'move the constant');
 }
