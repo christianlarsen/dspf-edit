@@ -132,6 +132,21 @@ function getEditWordMask(attributes: AttributeWithIndicators[] | undefined): str
     return attr.value.match(/^EDTWRD\(\s*'([^']*)'\s*\)$/i)?.[1] ?? null;
 };
 
+/**
+ * Extracts a field's CNTFLD() continuation width, if it carries one — the number of characters
+ * shown per line before wrapping to the next row (same column) for a field too long to fit on one line.
+ * @param attributes - The element's DDS attributes
+ */
+function getContinuedFieldWidth(attributes: AttributeWithIndicators[] | undefined): number | null {
+    const attr = attributes?.find(a => /^CNTFLD\(/i.test(a.value));
+    if (!attr) {
+        return null;
+    };
+
+    const width = attr.value.match(/^CNTFLD\(\s*(\d+)\s*\)$/i)?.[1];
+    return width ? Number(width) : null;
+};
+
 /** Default 5250-style green, used when a field/constant has no COLOR() keyword. */
 const DEFAULT_COLOR = '#00ff00';
 
@@ -793,13 +808,10 @@ export class RecordPreviewPanel {
                 const color = isReferenced || (field.referenced && activeAttrs.length === 0)
                     ? REFERENCED_FIELD_COLOR
                     : getDisplayColor(activeAttrs, hasDisplayAttribute(activeAttrs, 'HI'));
-                items.push({
-                    kind: 'field',
+                const baseItem = {
+                    kind: 'field' as const,
                     name: field.name,
-                    text,
-                    row: trueRow + rowOffset,
                     col: trueCol + colOffset,
-                    length: text.length,
                     lineIndex: field.lineIndex,
                     color,
                     highIntensity: hasDisplayAttribute(activeAttrs, 'HI'),
@@ -814,7 +826,21 @@ export class RecordPreviewPanel {
                     isInteractive: !isBackground,
                     isInputCapable: usageCode === 'I' || usageCode === 'B',
                     isReferenced
-                });
+                };
+
+                // CNTFLD(n) wraps a field too long for one line across multiple rows, n characters
+                // per row, all starting at the same column — matching how RDi previews it — instead
+                // of a single run that overflows past the record's right edge.
+                const continuedWidth = getContinuedFieldWidth(activeAttrs);
+                if (continuedWidth && continuedWidth > 0 && text.length > continuedWidth) {
+                    const chunkCount = Math.ceil(text.length / continuedWidth);
+                    for (let chunk = 0; chunk < chunkCount; chunk++) {
+                        const chunkText = text.substr(chunk * continuedWidth, continuedWidth);
+                        items.push({ ...baseItem, text: chunkText, row: trueRow + rowOffset + chunk, length: chunkText.length });
+                    };
+                } else {
+                    items.push({ ...baseItem, text, row: trueRow + rowOffset, length: text.length });
+                };
             };
         };
 
@@ -2093,15 +2119,20 @@ export class RecordPreviewPanel {
             return;
         }
 
+        // A CNTFLD-wrapped field renders as several items sharing one lineIndex (one per wrapped
+        // line) — it's still a single field for selection purposes, so count/act on distinct
+        // lineIndexes, not raw rendered items.
+        const uniqueByLine = [...new Map(items.map(i => [i.lineIndex, i])).values()];
+
         // A multi-selection only supports moving (dragging), not centering or the actions menu —
         // those stay single-item, so the buttons are hidden rather than made to act on a group.
-        const multi = items.length > 1;
+        const multi = uniqueByLine.length > 1;
         if (multi) {
-            const kinds = new Set(items.map(i => i.kind));
-            const noun = kinds.size === 1 ? items[0].kind + 's' : 'fields/constants';
-            selectionLabel.textContent = items.length + ' ' + noun + ' selected';
+            const kinds = new Set(uniqueByLine.map(i => i.kind));
+            const noun = kinds.size === 1 ? uniqueByLine[0].kind + 's' : 'fields/constants';
+            selectionLabel.textContent = uniqueByLine.length + ' ' + noun + ' selected';
         } else {
-            selectionLabel.textContent = '1 ' + items[0].kind + ' selected';
+            selectionLabel.textContent = '1 ' + uniqueByLine[0].kind + ' selected';
         }
         selectionCenterBtn.style.display = multi ? 'none' : 'inline-block';
         selectionMenuBtn.style.display = multi ? 'none' : 'inline-block';
@@ -2484,9 +2515,22 @@ export class RecordPreviewPanel {
         }
 
         if (dragState.moved) {
+            // A CNTFLD-wrapped field renders as several items sharing one lineIndex (one per
+            // wrapped line), all dragged together for a consistent visual — but the field has only
+            // one source line to write back to. Collapse each lineIndex down to a single move, using
+            // its topmost item (smallest startRow), which is the field's actual anchor row; the
+            // wrapped lines below it are re-derived from that on reparse. Without this, duplicate
+            // moves for the same line produce overlapping edits that VS Code rejects outright.
+            const primaryMoveByLine = new Map();
+            for (const d of dragState.items) {
+                const existing = primaryMoveByLine.get(d.item.lineIndex);
+                if (!existing || d.startRow < existing.startRow) {
+                    primaryMoveByLine.set(d.item.lineIndex, d);
+                }
+            }
             vscode.postMessage({
                 type: 'move',
-                moves: dragState.items.map(d => ({
+                moves: [...primaryMoveByLine.values()].map(d => ({
                     lineIndex: d.item.lineIndex,
                     newRow: d.startRow + dragState.rowDelta,
                     newCol: d.startCol + dragState.colDelta,

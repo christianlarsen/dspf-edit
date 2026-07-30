@@ -16,7 +16,8 @@ import {
     fieldsPerRecords,
     getDefaultSize,
     getSizeForFormat,
-    attributesFileLevel
+    attributesFileLevel,
+    SYSTEM_FIELD_PLACEHOLDER
 } from '../dspf-edit.model/dspf-edit.model';
 
 
@@ -389,7 +390,11 @@ function parseFieldElement(
     };
 
     if (!isHidden && resolvedRow !== undefined && resolvedCol !== undefined) {
-        lastPositionInRecord = { row: resolvedRow, col: resolvedCol, length };
+        // A bare system keyword field (DATE/TIME/USER/SYSNAME) renders at its fixed placeholder
+        // width, not the declared DDS length (usually 0, since none is coded) — use that width here
+        // so a following "+n" relative position lands after the actual rendered text, not the source length.
+        const systemWidth = SYSTEM_FIELD_PLACEHOLDER[String(components.fieldName).trim().toUpperCase()]?.length;
+        lastPositionInRecord = { row: resolvedRow, col: resolvedCol, length: systemWidth ?? length };
     };
 
     const element = {
@@ -452,7 +457,12 @@ function parseConstantElement(
     };
 
     if (resolvedRow !== undefined && resolvedCol !== undefined) {
-        lastPositionInRecord = { row: resolvedRow, col: resolvedCol, length: stripConstantQuotes(fullValue).length };
+        // A bare system keyword constant (DATE/TIME/USER/SYSNAME) renders at its fixed placeholder
+        // width, not its raw source text length — use that width here so a following "+n" relative
+        // position lands after the actual rendered text, not the source keyword's length.
+        const strippedValue = stripConstantQuotes(fullValue);
+        const systemWidth = SYSTEM_FIELD_PLACEHOLDER[strippedValue.trim().toUpperCase()]?.length;
+        lastPositionInRecord = { row: resolvedRow, col: resolvedCol, length: systemWidth ?? strippedValue.length };
     };
 
     const element = {
