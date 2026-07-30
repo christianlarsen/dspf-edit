@@ -64,6 +64,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
     - Add editing keywords.
     - Add error messages.
     - Add / Remove / Change indicators.
+    - Resolve Referenced Field (for referenced fields only): fetches the real type/length/decimals from the connected IBM i, via the [Code for i](https://marketplace.visualstudio.com/items?itemName=HalcyonTechLtd.code-for-ibmi) extension. Also available as "Resolve All Referenced Fields" from the status bar, for every pending referenced field in the document at once.
 
 - **Attributes**
     - Add / Remove / Change indicators.
@@ -71,6 +72,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
 
 - **Screen Preview**
   - Visual, green-screen-style preview of a record's fields and constants (colors, DSPATR attributes, and placeholders for output/input/both fields).
+  - A field coded with `CNTFLD(n)` wraps across multiple lines in the preview, `n` characters each, all starting at its original column — matching how RDi previews it.
   - A single, compact toolbar (size, display format, overlay, indicators, add buttons) sits above the preview.
   - Drag fields/constants to reposition them directly on the preview.
   - "+ Field" / "+ Constant" buttons: click, then click a point on the screen to place a new field/constant there, using the same prompts as the tree's "Add field"/"Add constant" commands.
@@ -120,9 +122,15 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.13.6** - 2026-07-29
-- Fixed: Parser: fields and constants positioned using DDS's relative record format (`+n` in the Position field, or a blank Line/Row meaning "same row as the previous field/constant") were misparsed as attributes and silently dropped, instead of being resolved to their actual screen position.
-- Fixed: Move Field/Constant Left/Right (tree buttons): moving a field/constant whose row was inherited via the relative record format above left the row blank in the source instead of writing it explicitly, unlike dragging in the preview panel. Both now behave the same way.
+**0.14.0** - 2026-07-30
+- Added: "Resolve Referenced Field" action (and "Resolve All Referenced Fields", from a new status bar item) fetches a referenced field's real type/length/decimals from the connected IBM i, via the [Code for i](https://marketplace.visualstudio.com/items?itemName=HalcyonTechLtd.code-for-ibmi) extension. Resolved fields show their real type/length in both the tree and the preview.
+- Added: Preview support for the `CNTFLD(n)` keyword — a field too long for one line now wraps across multiple rows, `n` characters each, at the same column, matching RDi's preview. Centering such a field now uses its per-line width instead of its full declared length.
+- Fixed: Performance: re-parsing a document (e.g. after moving a field in the preview) got dramatically slower as it grew larger, due to two O(n²) hotspots in the parser. Both are now linear.
+- Fixed: Performance: checking whether a file is read-only before applying an edit did a live round-trip to the IBM i on every single edit while connected via Code for i. It's now cached per document.
+- Fixed: Referenced fields were missing the usual field context menu/inline actions (delete, copy, rename, etc.).
+- Fixed: Parser: a field/constant positioned relative (`+n`) right after a bare system keyword (`DATE`, `TIME`, `USER`, `SYSNAME`) landed several columns too far left in the preview, overlapping the keyword's own placeholder.
+- Fixed: Preview: dragging a `CNTFLD`-wrapped field failed with a false "document may be read-only" error, since its wrapped lines all share one source line.
+- Fixed: Preview: selecting a `CNTFLD`-wrapped field showed "N fields selected" instead of treating it as the single field it is, hiding the "Center"/"Actions" buttons.
 
 ---
 

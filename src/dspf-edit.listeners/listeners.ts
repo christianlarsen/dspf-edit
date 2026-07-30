@@ -8,7 +8,8 @@ import * as vscode from 'vscode';
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
 import { generateStructure } from '../dspf-edit.commands/dspf-edit.generate-structure';
 import { ExtensionState } from '../dspf-edit.states/state';
-import { debounceUpdate, generateIfDds } from '../dspf-edit.utils/dspf-edit.helper';
+import { debounceUpdate, generateIfDds, clearReadOnlyCache } from '../dspf-edit.utils/dspf-edit.helper';
+import { clearResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 
 export function initializeDocumentListeners(
     context: vscode.ExtensionContext,
@@ -42,6 +43,8 @@ export function initializeDocumentListeners(
             if (ExtensionState.lastDdsDocument && document === ExtensionState.lastDdsDocument) {
                 ExtensionState.clearTimeout();
                 treeProvider.cleanupDocumentFilter(document.uri.toString());
+                clearResolvedRef(document.uri.toString());
+                clearReadOnlyCache(document.uri.toString());
                 ExtensionState.lastDdsDocument = undefined;
                 ExtensionState.lastDdsEditor = undefined;
                 treeProvider.setElements([]);

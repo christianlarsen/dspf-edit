@@ -8,7 +8,7 @@
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "0.13.6",
+  "version": "0.14.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
@@ -30,7 +30,7 @@
     "dspf"
   ],
   "engines": {
-    "vscode": "^1.75.0" 
+    "vscode": "^1.75.0"
   },
   "license": "MIT",
   "categories": [
@@ -44,19 +44,19 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id" : "dspf-edit",
-          "title" : "DSPF Structure",
-          "icon" : "assets/dds_extension_icon_activity.svg",
-          "when" : "true"
+          "id": "dspf-edit",
+          "title": "DSPF Structure",
+          "icon": "assets/dds_extension_icon_activity.svg",
+          "when": "true"
         }
       ]
     },
     "views": {
-      "dspf-edit" : [
+      "dspf-edit": [
         {
-          "id" : "dspf-edit.schema-view",
-          "name" : "Definition",
-          "when" : "true"
+          "id": "dspf-edit.schema-view",
+          "name": "Definition",
+          "when": "true"
         }
       ]
     },
@@ -171,6 +171,16 @@
         "title": "Copy Constant"
       },
       {
+        "command": "dspf-edit.resolve-referenced-field",
+        "title": "Resolve Referenced Field",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "dspf-edit.resolve-all-referenced-fields",
+        "title": "Resolve All Referenced Fields",
+        "icon": "$(cloud-download)"
+      },
+      {
         "command": "dspf-edit.remove-element",
         "title": "Delete",
         "icon": "$(trash)"
@@ -262,47 +272,52 @@
         },
         {
           "command": "dspf-edit.edit-field",
-          "when": "view == dspf-edit.schema-view && viewItem == field",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\bfield\\b/",
           "group": "fields_constants_navigation1@1"
         },
         {
+          "command": "dspf-edit.resolve-referenced-field",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\breferenced-(pending|resolved)\\b/",
+          "group": "fields_constants_navigation1@0"
+        },
+        {
           "command": "dspf-edit.center",
-          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem == field)",
+          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem =~ /\\bfield\\b/)",
           "group": "fields_constants_navigation2@2"
         },
         {
           "command": "dspf-edit.change-position",
-          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem == field)",
+          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem =~ /\\bfield\\b/)",
           "group": "fields_constants_navigation2@3"
         },
         {
           "command": "dspf-edit.add-color",
-          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem == field)",
+          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem =~ /\\bfield\\b/)",
           "group": "fields_constants_navigation3@1"
         },
         {
           "command": "dspf-edit.add-attribute",
-          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem == field)",
+          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem =~ /\\bfield\\b/)",
           "group": "fields_constants_navigation3@2"
         },
         {
           "command": "dspf-edit.add-validity-check",
-          "when": "view == dspf-edit.schema-view && viewItem == field",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\bfield\\b/",
           "group": "fields_constants_navigation3@3"
         },
         {
           "command": "dspf-edit.add-editing-keywords",
-          "when": "view == dspf-edit.schema-view && viewItem == field",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\bfield\\b/",
           "group": "fields_constants_navigation3@4"
         },
         {
           "command": "dspf-edit.add-error-message",
-          "when": "view == dspf-edit.schema-view && viewItem == field",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\bfield\\b/",
           "group": "fields_constants_navigation3@5"
         },
         {
           "command": "dspf-edit.add-indicators",
-          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem == field)",
+          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem =~ /\\bfield\\b/)",
           "group": "fields_constants_navigation3@6"
         },
         {
@@ -387,7 +402,7 @@
         },
         {
           "command": "dspf-edit.copy-field",
-          "when": "view == dspf-edit.schema-view && viewItem == field",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\bfield\\b/",
           "group": "fields_constants_navigation1@2"
         },
         {
@@ -402,7 +417,7 @@
         },
         {
           "command": "dspf-edit.remove-element",
-          "when": "view == dspf-edit.schema-view && viewItem == field",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\bfield\\b/",
           "group": "fields_constants_navigation1@3"
         },
         {
@@ -411,19 +426,24 @@
           "group": "fields_constants_navigation1@3"
         },
         {
-          "command" : "dspf-edit.remove-element",
-          "when" : "view == dspf-edit.schema-view && (viewItem == constant || viewItem == field)",
-          "group" : "inline@99"
+          "command": "dspf-edit.resolve-referenced-field",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\breferenced-(pending|resolved)\\b/",
+          "group": "inline@1"
         },
         {
-          "command" : "dspf-edit.remove-attribute",
-          "when" : "view == dspf-edit.schema-view && (viewItem == constantAttribute || viewItem == fieldAttribute)",
-          "group" : "inline@99"
+          "command": "dspf-edit.remove-element",
+          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem =~ /\\bfield\\b/)",
+          "group": "inline@99"
         },
         {
-          "command" : "dspf-edit.rename-record",
-          "when" : "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
-          "group" : "inline@99"
+          "command": "dspf-edit.remove-attribute",
+          "when": "view == dspf-edit.schema-view && (viewItem == constantAttribute || viewItem == fieldAttribute)",
+          "group": "inline@99"
+        },
+        {
+          "command": "dspf-edit.rename-record",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
+          "group": "inline@99"
         },
         {
           "command": "dspf-edit.preview-record",
@@ -431,9 +451,9 @@
           "group": "inline@1"
         },
         {
-          "command" : "dspf-edit.rename-field",
-          "when" : "view == dspf-edit.schema-view && viewItem == field",
-          "group" : "inline@99"
+          "command": "dspf-edit.rename-field",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\bfield\\b/",
+          "group": "inline@99"
         },
         {
           "command": "dspf-edit.moveConstantLeft5",
@@ -455,25 +475,24 @@
           "when": "view == dspf-edit.schema-view && viewItem == constant",
           "group": "inline@4"
         },
-
         {
           "command": "dspf-edit.moveFieldLeft5",
-          "when": "view == dspf-edit.schema-view && viewItem == field",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\bfield\\b/",
           "group": "inline@1"
         },
         {
           "command": "dspf-edit.moveFieldLeft1",
-          "when": "view == dspf-edit.schema-view && viewItem == field",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\bfield\\b/",
           "group": "inline@2"
         },
         {
           "command": "dspf-edit.moveFieldRight1",
-          "when": "view == dspf-edit.schema-view && viewItem == field",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\bfield\\b/",
           "group": "inline@3"
         },
         {
           "command": "dspf-edit.moveFieldRight5",
-          "when": "view == dspf-edit.schema-view && viewItem == field",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\bfield\\b/",
           "group": "inline@4"
         }
       ]

@@ -161,7 +161,11 @@ function calculateFieldCenterPosition(element: any, maxCols: number): number {
     // A system keyword field (DATE, USER...) always displays at its own fixed width, regardless
     // of whatever the source's own length column holds (typically blank/0 for these).
     const systemWidth = SYSTEM_FIELD_PLACEHOLDER[String(element.name).trim().toUpperCase()]?.length;
-    const width = systemWidth ?? element.length;
+    // A CNTFLD(n)-wrapped field displays only n characters per line (wrapping onto further rows
+    // below, all at this same column) — centering must use that per-line width, not the field's
+    // full declared length, or it lands miles off-screen for a long wrapped field.
+    const continuedWidth = getContinuedFieldWidth(element.attributes);
+    const width = systemWidth ?? (continuedWidth && element.length > continuedWidth ? continuedWidth : element.length);
 
     if (width) {
         return Math.floor((maxCols - width) / 2) + 1;
@@ -169,6 +173,17 @@ function calculateFieldCenterPosition(element: any, maxCols: number): number {
         // If no length is available, keep the current column position
         return element.column;
     };
+};
+
+/**
+ * Extracts a field's CNTFLD() continuation width, if it carries one — the number of characters
+ * shown per line before wrapping to the next row (same column) for a field too long to fit on one line.
+ * @param attributes - The field's DDS attributes
+ */
+function getContinuedFieldWidth(attributes: any[] | undefined): number | undefined {
+    const attr = attributes?.find((a: any) => /^CNTFLD\(/i.test(a.value));
+    const width = attr?.value.match(/^CNTFLD\(\s*(\d+)\s*\)$/i)?.[1];
+    return width ? Number(width) : undefined;
 };
 
 /**

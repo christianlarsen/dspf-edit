@@ -37,6 +37,7 @@ import { renameField, renameRecord } from './dspf-edit.rename';
 import { moveConstantLeft1, moveConstantLeft5, moveConstantRight1, moveConstantRight5 } from './dspf-edit.move-constants';
 import { moveFieldLeft1, moveFieldLeft5, moveFieldRight1, moveFieldRight5 } from './dspf-edit.move-fields';
 import { previewRecord } from './dspf-edit.preview-record';
+import { resolveReferencedFieldCommand, resolveAllReferencedFieldsCommand } from './dspf-edit.resolve-referenced-field';
 
 export const commands = [
     { name: 'viewStructure', handler: viewStructure, needsTreeProvider: true },
@@ -76,7 +77,9 @@ export const commands = [
     { name: 'moveFieldLeft1', handler: moveFieldLeft1, needsTreeProvider: false },
     { name: 'moveFieldLeft5', handler: moveFieldLeft5, needsTreeProvider: false },
     { name: 'moveFieldRight1', handler: moveFieldRight1, needsTreeProvider: false },
-    { name: 'moveFieldRight5', handler: moveFieldRight5, needsTreeProvider: false }
+    { name: 'moveFieldRight5', handler: moveFieldRight5, needsTreeProvider: false },
+    { name: 'resolveReferencedField', handler: resolveReferencedFieldCommand, needsTreeProvider: true },
+    { name: 'resolveAllReferencedFields', handler: resolveAllReferencedFieldsCommand, needsTreeProvider: true }
 
 ];
 
