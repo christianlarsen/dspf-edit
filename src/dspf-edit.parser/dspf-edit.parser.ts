@@ -328,12 +328,15 @@ const FIXED_LENGTH_BY_TYPE: Record<string, number> = { L: 10, T: 8, Z: 26 };
  * Extracts a referenced field's REFFLD() target: the field name (and, optionally, its qualified
  * database file) whose type/length/decimals this field borrows. Matches the format dspf-edit
  * itself generates (see `generateNewFieldLine` in edit-field.ts): REFFLD(field-name {library/}file-name).
+ * The field name may itself be qualified with a record format name (record-format-name/field-name)
+ * — needed when the referenced file has more than one record format containing a field with that
+ * name, to say which format's definition to borrow from.
  * Falls back to the field's own name when there's no REFFLD (a bare "R" referencing a file/record
  * -level REF() under the same field name).
  * @param attributes - The field's own DDS attributes
  * @param ownName - The field's own name, used as the fallback reference target
  */
-function parseReffldTarget(attributes: DdsAttribute[] | undefined, ownName: string): { fieldName: string; file?: string; library?: string } {
+function parseReffldTarget(attributes: DdsAttribute[] | undefined, ownName: string): { fieldName: string; file?: string; library?: string; recordFormat?: string } {
     const attr = attributes?.find(a => a.value.toUpperCase().startsWith('REFFLD('));
     if (!attr) {
         return { fieldName: ownName };
@@ -344,13 +347,17 @@ function parseReffldTarget(attributes: DdsAttribute[] | undefined, ownName: stri
         return { fieldName: ownName };
     };
 
-    const [, fieldName, qualifiedFile] = match;
+    const [, fieldSpec, qualifiedFile] = match;
+    const slashIndex = fieldSpec.indexOf('/');
+    const recordFormat = slashIndex >= 0 ? fieldSpec.slice(0, slashIndex) : undefined;
+    const fieldName = slashIndex >= 0 ? fieldSpec.slice(slashIndex + 1) : fieldSpec;
+
     if (!qualifiedFile) {
-        return { fieldName };
+        return { fieldName, recordFormat };
     };
 
     const [library, file] = qualifiedFile.includes('/') ? qualifiedFile.split('/') : [undefined, qualifiedFile];
-    return { fieldName, file, library };
+    return { fieldName, file, library, recordFormat };
 };
 
 function parseFieldElement(
@@ -775,6 +782,7 @@ function addFieldToRecord(field: any, recordEntry: any, seenFieldNames: Set<stri
             row: field.row || 0,
             col: field.column || 0,
             length: field.length || 0,
+            decimals: field.decimals,
             referenced: field.referenced,
             attributes: processedAttributes,
             indicators: field.indicators || [],

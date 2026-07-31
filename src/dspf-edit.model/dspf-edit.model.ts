@@ -99,8 +99,10 @@ export interface DdsField {
   hidden?: boolean;
   referenced?: boolean;
   /** For a referenced field: the field/file/library its type/length/decimals are borrowed from,
-   * parsed from its REFFLD() keyword (or, absent one, its own name in an R-flagged field). */
-  refTarget?: { fieldName: string; file?: string; library?: string };
+   * parsed from its REFFLD() keyword (or, absent one, its own name in an R-flagged field).
+   * `recordFormat` is set when the field name was qualified as record-format-name/field-name,
+   * disambiguating a field name that exists in more than one format of the referenced file. */
+  refTarget?: { fieldName: string; file?: string; library?: string; recordFormat?: string };
   lineIndex: number;
   recordname: string;
   attribute?: string;
@@ -216,6 +218,7 @@ export interface FieldInfo {
   row: number;
   col: number;
   length: number;
+  decimals?: number;
   /** True for a referenced field (REFFLD/position-29 `R`): its type/length live in the external database field, not in this source. */
   referenced?: boolean;
   attributes: AttributeWithIndicators[];
