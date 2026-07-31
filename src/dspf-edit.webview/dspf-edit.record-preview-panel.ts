@@ -2719,13 +2719,16 @@ export class RecordPreviewPanel {
                 rebuildOverlayOptions(message.availableRecords, message.overlayRecordName || '');
             }
 
+            // indicatorBar (the "Indicators" checkbox) and indicatorList (the toggle buttons below
+            // it) are separate sibling elements, not nested — indicatorList must be rebuilt/hidden
+            // every render regardless of hasIndicators, or deleting the last element that carried
+            // any indicator in the record leaves its stale buttons behind, still visible, since
+            // hiding indicatorBar alone doesn't touch indicatorList at all.
             const hasIndicators = message.availableIndicators && message.availableIndicators.length > 0;
             indicatorBar.style.display = hasIndicators ? 'inline-flex' : 'none';
-            if (hasIndicators) {
-                indicatorsToggle.checked = Boolean(message.indicatorsEnabled);
-                indicatorList.style.display = message.indicatorsEnabled ? 'block' : 'none';
-                rebuildIndicatorList(message.availableIndicators, message.activeIndicators || []);
-            }
+            indicatorsToggle.checked = Boolean(message.indicatorsEnabled);
+            indicatorList.style.display = (hasIndicators && message.indicatorsEnabled) ? 'block' : 'none';
+            rebuildIndicatorList(message.availableIndicators || [], message.activeIndicators || []);
 
             const hasSflPag = typeof message.sflPag === 'number';
             sflpagBar.style.display = hasSflPag ? 'inline-flex' : 'none';
