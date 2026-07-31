@@ -126,6 +126,7 @@ See the full changelog [here](./CHANGELOG.md).
 - Fixed: Parser: `REFFLD()`'s field name can be qualified with a record format (`REFFLD(record-format-name/field-name [library-name/]file-name)`), needed to disambiguate a field name that exists in more than one format of the referenced file. This qualification wasn't parsed correctly, breaking resolution against IBM i entirely. Add/Edit Field's "Referenced Field" flow now also has a dedicated (optional) step for the record format.
 - Fixed: Add Editing Keywords: `EDTCDE`/`EDTWRD`/`EDTMSK` were always rejected as "not a numeric field" on a referenced field, even after its real type had been resolved from IBM i. It now uses the resolved type/length/decimals when available.
 - Fixed: Preview: a field with `EDTCDE()` rendered as a plain, unformatted placeholder instead of showing the thousands separators/decimal point/sign a real edited numeric field displays.
+- Fixed: Parser: a constant whose literal text continues onto a second source line (a `-` in column 80) could get parsed with that continuation character left embedded in the middle of the text instead of removed, when the physical source line ran past column 80.
 
 ---
 
