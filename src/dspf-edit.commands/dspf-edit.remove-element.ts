@@ -31,6 +31,7 @@ interface DeletionRange {
 interface ElementDeletionPlan {
     element: DeletableElement;
     elementType: 'field' | 'constant';
+    recordName: string;
     ranges: DeletionRange[];
     totalLines: number;
 };
@@ -87,7 +88,7 @@ async function handleRemoveElementCommand(node: DdsNode): Promise<void> {
         };
 
         // Create deletion plan
-        const deletionPlan = createDeletionPlan(elementInfo, element.kind);
+        const deletionPlan = createDeletionPlan(elementInfo, element.kind, element.recordname);
 
         // Show confirmation dialog with details
         const confirmed = await showDeletionConfirmation(deletionPlan);
@@ -166,7 +167,7 @@ function findElementInModel(
  * @param elementType - The type of element
  * @returns Complete deletion plan
  */
-function createDeletionPlan(elementInfo: DeletableElement, elementType: 'field' | 'constant'): ElementDeletionPlan {
+function createDeletionPlan(elementInfo: DeletableElement, elementType: 'field' | 'constant', recordName: string): ElementDeletionPlan {
     const ranges: DeletionRange[] = [];
 
     // Add the main element range
@@ -189,12 +190,13 @@ function createDeletionPlan(elementInfo: DeletableElement, elementType: 'field' 
     ranges.sort((a, b) => b.startLine - a.startLine);
 
     // Calculate total lines to be deleted
-    const totalLines = ranges.reduce((total, range) => 
+    const totalLines = ranges.reduce((total, range) =>
         total + (range.endLine - range.startLine + 1), 0);
 
     return {
         element: elementInfo,
         elementType: elementType,
+        recordName: recordName,
         ranges: ranges,
         totalLines: totalLines
     };
@@ -235,6 +237,14 @@ async function executeElementDeletion(
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
 
+    // Before removing this element's own lines, freeze the screen position of whichever
+    // field/constant immediately follows it in this record, if that position was coded relative to
+    // it (DDS's relative record format: a blank Line, or a Position written as "+n"). Left alone,
+    // deleting the element it's relative to would silently re-anchor it to whatever now precedes it
+    // instead — a real behavior of DDS's own relative positioning, but a surprising side effect for
+    // someone who only meant to delete the one element they picked.
+    addPositionMaterializationEdit(editor.document, workspaceEdit, uri, deletionPlan);
+
     // Optimize ranges to handle overlapping or adjacent ranges
     const optimizedRanges = optimizeDeletionRanges(deletionPlan.ranges, editor.document);
 
@@ -245,6 +255,98 @@ async function executeElementDeletion(
 
     // Apply all deletions
     return applyWorkspaceEdit(workspaceEdit, 'delete the element');
+};
+
+/**
+ * Checks whether the deleted element's own record is a subfile (SFL) — in a subfile, the raw
+ * source's row/column spec columns keep their physical meaning but end up swapped onto
+ * element.row/element.column (see dspf-edit.move-fields.ts, which established this same mapping).
+ * @param recordName - The record to check
+ */
+function isSubfileRecord(recordName: string): boolean {
+    const record = fieldsPerRecords.find(r => r.record === recordName);
+    return record?.attributes?.some(attr => attr.value === 'SFL') ?? false;
+};
+
+/**
+ * Finds the field or constant that comes immediately after `afterLineIndex` in the given record —
+ * the only element whose relative position (if any) could be anchored to whatever's at that line,
+ * since DDS's relative record format always resolves against the immediately preceding
+ * field/constant in source order.
+ * @param recordName - The record to search within
+ * @param afterLineIndex - Source line index of the element being deleted
+ */
+function findNextPositionedElement(recordName: string, afterLineIndex: number): DeletableElement | null {
+    const record = fieldsPerRecords.find(r => r.record === recordName);
+    if (!record) return null;
+
+    const candidates: DeletableElement[] = [...record.fields, ...record.constants]
+        .filter(el => el.lineIndex > afterLineIndex)
+        .sort((a, b) => a.lineIndex - b.lineIndex);
+
+    return candidates[0] ?? null;
+};
+
+/**
+ * Adds an edit (to the same workspace edit as the deletion) that rewrites the next field/constant's
+ * relative Line/Position spec to the absolute row/column it currently resolves to, if it has one —
+ * so its on-screen position doesn't move once the element it was relative to is gone. A no-op when:
+ * the deleted element is a hidden field (hidden fields never anchor a relative position, since
+ * they're never actually placed on screen); there's no following field/constant in the record; or
+ * that following element's Line/Position were already coded absolute.
+ * @param document - The DDS source document
+ * @param workspaceEdit - The workspace edit the deletion itself is being added to
+ * @param uri - The document's URI
+ * @param deletionPlan - The plan for the element being deleted
+ */
+function addPositionMaterializationEdit(
+    document: vscode.TextDocument,
+    workspaceEdit: vscode.WorkspaceEdit,
+    uri: vscode.Uri,
+    deletionPlan: ElementDeletionPlan
+): void {
+    const { element, elementType, recordName } = deletionPlan;
+
+    if (elementType === 'field' && (element as FieldInfo).usage === 'H') {
+        return;
+    };
+
+    const nextElement = findNextPositionedElement(recordName, element.lineIndex);
+    if (!nextElement) {
+        return;
+    };
+
+    const lineText = document.lineAt(nextElement.lineIndex).text;
+    const rawRowSpec = lineText.substring(38, 41);
+    const rawColSpec = lineText.substring(41, 44);
+
+    const rowIsRelative = rawRowSpec.trim() === '';
+    const colIsRelative = rawColSpec.trim().startsWith('+');
+    if (!rowIsRelative && !colIsRelative) {
+        return;
+    };
+
+    // Raw columns 38-41 (Line/row spec) and 41-44 (Position/col spec) always keep that same
+    // physical meaning; a subfile only swaps which of those raw values ends up labeled
+    // element.row vs element.column internally.
+    const isSfl = isSubfileRecord(recordName);
+    const rawRowValue = isSfl ? nextElement.col : nextElement.row;
+    const rawColValue = isSfl ? nextElement.row : nextElement.col;
+
+    if (rowIsRelative) {
+        workspaceEdit.replace(
+            uri,
+            new vscode.Range(nextElement.lineIndex, 38, nextElement.lineIndex, 41),
+            String(rawRowValue).padStart(3, ' ')
+        );
+    };
+    if (colIsRelative) {
+        workspaceEdit.replace(
+            uri,
+            new vscode.Range(nextElement.lineIndex, 41, nextElement.lineIndex, 44),
+            String(rawColValue).padStart(3, ' ')
+        );
+    };
 };
 
 /**

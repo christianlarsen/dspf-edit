@@ -133,6 +133,90 @@ function getEditWordMask(attributes: AttributeWithIndicators[] | undefined): str
 };
 
 /**
+ * The standard DDS numeric edit codes: whether each inserts thousands commas, and what (if any)
+ * sign indicator it reserves trailing room for. Every edit code always inserts a decimal point
+ * when the field has decimals and suppresses leading zeros — irrelevant to a generic placeholder
+ * preview (there's no real value to format), which only needs the extra display width/characters.
+ */
+const EDIT_CODE_INFO: Record<string, { comma: boolean; sign: '' | '-' | 'CR' }> = {
+    '1': { comma: true, sign: '' },
+    '2': { comma: false, sign: '' },
+    '3': { comma: true, sign: '' },
+    '4': { comma: false, sign: '' },
+    A: { comma: true, sign: 'CR' },
+    B: { comma: false, sign: 'CR' },
+    C: { comma: true, sign: 'CR' },
+    D: { comma: false, sign: 'CR' },
+    J: { comma: true, sign: '-' },
+    K: { comma: false, sign: '-' },
+    L: { comma: true, sign: '-' },
+    M: { comma: false, sign: '-' }
+};
+
+/**
+ * Extracts a field's EDTCDE() code, if it carries one (its optional modifier — asterisk fill or a
+ * currency symbol — doesn't affect the preview mask, so it's not extracted here).
+ * @param attributes - The element's DDS attributes
+ */
+function getEditCode(attributes: AttributeWithIndicators[] | undefined): string | null {
+    const attr = attributes?.find(a => /^EDTCDE\(/i.test(a.value));
+    if (!attr) {
+        return null;
+    };
+
+    return attr.value.match(/^EDTCDE\(\s*([1-4A-DJ-M])/i)?.[1]?.toUpperCase() ?? null;
+};
+
+/**
+ * Builds an EDTWRD-mask-shaped string (blanks mark digit positions, everything else is literal)
+ * for a field carrying EDTCDE(code), from the standard DDS edit-code table above — the same extra
+ * width (commas, decimal point, sign) SDA/RDi reserve when previewing an edited numeric field.
+ * @param length - The field's digit length
+ * @param decimals - The field's decimal positions
+ * @param code - The EDTCDE code (1-4, A-D, J-M)
+ */
+function getEditCodeMask(length: number, decimals: number, code: string): string | null {
+    const info = EDIT_CODE_INFO[code];
+    if (!info) {
+        return null;
+    };
+
+    const intDigits = Math.max(length - decimals, 1);
+    let mask = '';
+    for (let i = 0; i < intDigits; i++) {
+        const remaining = intDigits - i;
+        if (info.comma && i > 0 && remaining % 3 === 0) {
+            mask += ',';
+        };
+        mask += ' ';
+    };
+    if (decimals > 0) {
+        mask += '.' + ' '.repeat(decimals);
+    };
+    mask += info.sign;
+
+    return mask;
+};
+
+/**
+ * Resolves the EDTWRD/EDTCDE mask that determines an edited numeric field's placeholder text and
+ * extra display width — EDTWRD (an explicit mask) takes precedence since DDS doesn't allow both on
+ * the same field.
+ * @param attributes - The element's DDS attributes
+ * @param length - The field's digit length (post REFFLD resolution, if applicable)
+ * @param decimals - The field's decimal positions (post REFFLD resolution, if applicable)
+ */
+function getEditingMask(attributes: AttributeWithIndicators[] | undefined, length: number, decimals: number): string | null {
+    const wordMask = getEditWordMask(attributes);
+    if (wordMask) {
+        return wordMask;
+    };
+
+    const code = getEditCode(attributes);
+    return code ? getEditCodeMask(length, decimals, code) : null;
+};
+
+/**
  * Extracts a field's CNTFLD() continuation width, if it carries one — the number of characters
  * shown per line before wrapping to the next row (same column) for a field too long to fit on one line.
  * @param attributes - The element's DDS attributes
@@ -158,7 +242,7 @@ const REFERENCED_FIELD_COLOR = '#ff8800';
 
 /** Maps DDS COLOR() keyword codes to their on-screen color. */
 const DDS_COLOR_MAP: Record<string, string> = {
-    BLU: '#3366ff',
+    BLU: '#6a8ef0',
     GRN: '#00ff00',
     WHT: '#ffffff',
     RED: '#ff4136',
@@ -800,11 +884,14 @@ export class RecordPreviewPanel {
                 // The displayed text's own length drives the item's width/hit-box (below), not the
                 // parsed field length: a system keyword field (DATE, USER...) always renders at a
                 // fixed width of its own, regardless of whatever the source's length column holds
-                // — and an edited numeric field (EDTWRD) is one character wider per insert
-                // character (its decimal point, typically), which text.length already reflects.
+                // — and an edited numeric field (EDTWRD, or EDTCDE with a standard code) is wider
+                // per insert character (its decimal point, thousands commas, sign...), which
+                // text.length already reflects.
+                const effectiveLength = resolvedRef?.length ?? field.length;
+                const effectiveDecimals = resolvedRef?.decimals ?? field.decimals ?? 0;
                 const text = isReferenced
                     ? getFieldPlaceholderText(field.name, field.type, field.usage, 1)
-                    : getFieldPlaceholderText(field.name, resolvedRef?.type ?? field.type, field.usage, resolvedRef?.length ?? field.length, getEditWordMask(activeAttrs));
+                    : getFieldPlaceholderText(field.name, resolvedRef?.type ?? field.type, field.usage, effectiveLength, getEditingMask(activeAttrs, effectiveLength, effectiveDecimals));
                 const color = isReferenced || (field.referenced && activeAttrs.length === 0)
                     ? REFERENCED_FIELD_COLOR
                     : getDisplayColor(activeAttrs, hasDisplayAttribute(activeAttrs, 'HI'));
@@ -2632,13 +2719,16 @@ export class RecordPreviewPanel {
                 rebuildOverlayOptions(message.availableRecords, message.overlayRecordName || '');
             }
 
+            // indicatorBar (the "Indicators" checkbox) and indicatorList (the toggle buttons below
+            // it) are separate sibling elements, not nested — indicatorList must be rebuilt/hidden
+            // every render regardless of hasIndicators, or deleting the last element that carried
+            // any indicator in the record leaves its stale buttons behind, still visible, since
+            // hiding indicatorBar alone doesn't touch indicatorList at all.
             const hasIndicators = message.availableIndicators && message.availableIndicators.length > 0;
             indicatorBar.style.display = hasIndicators ? 'inline-flex' : 'none';
-            if (hasIndicators) {
-                indicatorsToggle.checked = Boolean(message.indicatorsEnabled);
-                indicatorList.style.display = message.indicatorsEnabled ? 'block' : 'none';
-                rebuildIndicatorList(message.availableIndicators, message.activeIndicators || []);
-            }
+            indicatorsToggle.checked = Boolean(message.indicatorsEnabled);
+            indicatorList.style.display = (hasIndicators && message.indicatorsEnabled) ? 'block' : 'none';
+            rebuildIndicatorList(message.availableIndicators || [], message.activeIndicators || []);
 
             const hasSflPag = typeof message.sflPag === 'number';
             sflpagBar.style.display = hasSflPag ? 'inline-flex' : 'none';

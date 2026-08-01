@@ -328,12 +328,15 @@ const FIXED_LENGTH_BY_TYPE: Record<string, number> = { L: 10, T: 8, Z: 26 };
  * Extracts a referenced field's REFFLD() target: the field name (and, optionally, its qualified
  * database file) whose type/length/decimals this field borrows. Matches the format dspf-edit
  * itself generates (see `generateNewFieldLine` in edit-field.ts): REFFLD(field-name {library/}file-name).
+ * The field name may itself be qualified with a record format name (record-format-name/field-name)
+ * — needed when the referenced file has more than one record format containing a field with that
+ * name, to say which format's definition to borrow from.
  * Falls back to the field's own name when there's no REFFLD (a bare "R" referencing a file/record
  * -level REF() under the same field name).
  * @param attributes - The field's own DDS attributes
  * @param ownName - The field's own name, used as the fallback reference target
  */
-function parseReffldTarget(attributes: DdsAttribute[] | undefined, ownName: string): { fieldName: string; file?: string; library?: string } {
+function parseReffldTarget(attributes: DdsAttribute[] | undefined, ownName: string): { fieldName: string; file?: string; library?: string; recordFormat?: string } {
     const attr = attributes?.find(a => a.value.toUpperCase().startsWith('REFFLD('));
     if (!attr) {
         return { fieldName: ownName };
@@ -344,13 +347,17 @@ function parseReffldTarget(attributes: DdsAttribute[] | undefined, ownName: stri
         return { fieldName: ownName };
     };
 
-    const [, fieldName, qualifiedFile] = match;
+    const [, fieldSpec, qualifiedFile] = match;
+    const slashIndex = fieldSpec.indexOf('/');
+    const recordFormat = slashIndex >= 0 ? fieldSpec.slice(0, slashIndex) : undefined;
+    const fieldName = slashIndex >= 0 ? fieldSpec.slice(slashIndex + 1) : fieldSpec;
+
     if (!qualifiedFile) {
-        return { fieldName };
+        return { fieldName, recordFormat };
     };
 
     const [library, file] = qualifiedFile.includes('/') ? qualifiedFile.split('/') : [undefined, qualifiedFile];
-    return { fieldName, file, library };
+    return { fieldName, file, library, recordFormat };
 };
 
 function parseFieldElement(
@@ -484,7 +491,15 @@ function parseConstantElement(
 };
 
 /**
- * Extracts multi-line constant values, following continuation characters
+ * Extracts multi-line constant values, following continuation characters.
+ * The value area is the standard DDS keyword-area window, columns 45-80 (36 characters,
+ * `substring(39, 75)` on the already-5-char-stripped line) — matching `extractAttributes`
+ * elsewhere in this file. A line continues onto the next when the last *non-blank* character
+ * in that window is a hyphen — the compiler does not require it to sit exactly at column 80,
+ * since a still-open (unterminated) quoted string followed only by blanks and a trailing '-'
+ * is unambiguous. Source lines are frequently shorter than 80 columns once trailing blanks are
+ * stripped (e.g. by an editor that doesn't pad DDS source), so anchoring the check to raw column
+ * 80 missed the dash entirely and left each physical line parsed as its own broken constant.
  * @param lines - All document lines
  * @param startIndex - Starting line index
  * @param trimmedLine - Initial line content
@@ -496,18 +511,20 @@ function extractMultiLineConstant(
     trimmedLine: string
 ): { fullValue: string; lastLineIndex: number } {
 
-    let fullValue = trimmedLine.substring(39, 79);
+    let fullValue = trimmedLine.substring(39, 75);
     let continuationIndex = startIndex;
 
-    // Follow continuation lines (marked with '-' at position 79)
-    while (lines[continuationIndex]?.charAt(79) === '-') {
+    // Follow continuation lines (marked with a trailing '-', wherever it falls before column 80)
+    while (fullValue.trimEnd().endsWith('-')) {
+        const trimmedEnd = fullValue.trimEnd();
+        fullValue = trimmedEnd.substring(0, trimmedEnd.length - 1); // Drop the dash and any padding after it
+
         continuationIndex++;
         const nextLine = lines[continuationIndex];
         if (!nextLine) break;
 
         const nextTrimmed = nextLine.substring(5);
-        const continuedValue = nextTrimmed.substring(39, 79);
-        fullValue = fullValue.slice(0, -1) + continuedValue; // Remove '-' and append
+        fullValue += nextTrimmed.substring(39, 75);
     };
 
     return { fullValue: fullValue.trim(), lastLineIndex: continuationIndex };
@@ -775,6 +792,7 @@ function addFieldToRecord(field: any, recordEntry: any, seenFieldNames: Set<stri
             row: field.row || 0,
             col: field.column || 0,
             length: field.length || 0,
+            decimals: field.decimals,
             referenced: field.referenced,
             attributes: processedAttributes,
             indicators: field.indicators || [],

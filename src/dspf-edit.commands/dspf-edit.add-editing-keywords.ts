@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
 import { isAttributeLine, findElementInsertionPoint, checkForEditorAndDocument, groupConsecutiveLines, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 
 // INTERFACES AND TYPES
 
@@ -61,12 +62,15 @@ async function handleEditingKeywordsCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        // Get field information
+        // Get field information — for a referenced field, its own DDS source leaves type/length/
+        // decimals blank (they live in the external database field), so fall back to whatever's
+        // already been resolved from IBM i (via "Resolve Referenced Field") when available.
         const fieldInfo = getFieldInfo(node.ddsElement);
         if (!fieldInfo) {
             vscode.window.showErrorMessage('Could not determine field information for editing.');
             return;
         };
+        const effectiveFieldInfo = getEffectiveFieldInfo(fieldInfo, node.ddsElement, document.uri.toString());
 
         // Get current editing configuration
         const currentEditing = getCurrentEditingForField(node.ddsElement);
@@ -104,7 +108,7 @@ async function handleEditingKeywordsCommand(node: DdsNode): Promise<void> {
             'EDTWRD - Edit Word (custom formatting patterns)',
             'EDTMSK - Edit Mask (field protection with EDTCDE/EDTWRD)'
         ], {
-            title: `Select editing type for ${fieldInfo.name} (Type: ${fieldInfo.type})`,
+            title: `Select editing type for ${effectiveFieldInfo.name} (Type: ${effectiveFieldInfo.type || 'unresolved'})`,
             placeHolder: 'Choose editing method'
         });
 
@@ -114,28 +118,28 @@ async function handleEditingKeywordsCommand(node: DdsNode): Promise<void> {
 
         if (editingType.startsWith('EDTCDE')) {
             // Validate field is numeric for EDTCDE
-            if (!isNumericField(fieldInfo)) {
-                vscode.window.showWarningMessage('Edit codes (EDTCDE) can only be applied to numeric fields (types P, S, B, F, I).');
+            if (!isNumericField(effectiveFieldInfo)) {
+                vscode.window.showWarningMessage(numericFieldWarning('Edit codes (EDTCDE)', node.ddsElement, effectiveFieldInfo));
                 return;
             };
-            const editCode = await collectEditCode(fieldInfo);
+            const editCode = await collectEditCode(effectiveFieldInfo);
             if (editCode) selectedEditing.push(editCode);
 
         } else if (editingType.startsWith('EDTWRD')) {
             // Validate field is numeric for EDTWRD
-            if (!isNumericField(fieldInfo)) {
-                vscode.window.showWarningMessage('Edit words (EDTWRD) can only be applied to numeric fields (types P, S, B, F, I).');
+            if (!isNumericField(effectiveFieldInfo)) {
+                vscode.window.showWarningMessage(numericFieldWarning('Edit words (EDTWRD)', node.ddsElement, effectiveFieldInfo));
                 return;
             };
-            const editWord = await collectEditWord(fieldInfo);
+            const editWord = await collectEditWord(effectiveFieldInfo);
             if (editWord) selectedEditing.push(editWord);
 
         } else if (editingType.startsWith('EDTMSK')) {
             // EDTMSK requires EDTCDE or EDTWRD to be present
             vscode.window.showInformationMessage('EDTMSK requires EDTCDE or EDTWRD. You will be asked to specify both.');
-            
+
             let baseEdit: EditConfiguration | null = null;
-            
+
             const baseEditType = await vscode.window.showQuickPick([
                 'EDTCDE - Edit Code',
                 'EDTWRD - Edit Word'
@@ -147,15 +151,15 @@ async function handleEditingKeywordsCommand(node: DdsNode): Promise<void> {
             if (!baseEditType) return;
 
             // Validate field is numeric for base editing
-            if (!isNumericField(fieldInfo)) {
-                vscode.window.showWarningMessage('EDTMSK base editing can only be applied to numeric fields (types P, S, B, F, I).');
+            if (!isNumericField(effectiveFieldInfo)) {
+                vscode.window.showWarningMessage(numericFieldWarning('EDTMSK base editing', node.ddsElement, effectiveFieldInfo));
                 return;
             };
 
             if (baseEditType.startsWith('EDTCDE')) {
-                baseEdit = await collectEditCode(fieldInfo);
+                baseEdit = await collectEditCode(effectiveFieldInfo);
             } else {
-                baseEdit = await collectEditWord(fieldInfo);
+                baseEdit = await collectEditWord(effectiveFieldInfo);
             };
 
             if (!baseEdit) return;
@@ -247,6 +251,40 @@ function getFieldInfo(element: any): any {
     if (!recordInfo) return null;
 
     return recordInfo.fields.find(field => field.name === element.name);
+};
+
+/**
+ * For a referenced field, `fieldInfo.type`/`length`/`decimals` are blank — the DDS source doesn't
+ * declare them, the external database field does. Once that's been resolved from IBM i (via
+ * "Resolve Referenced Field"), use the resolved type/length/decimals instead so EDTCDE/EDTWRD
+ * validation reflects the field's real, borrowed type rather than always reading as non-numeric.
+ * @param fieldInfo - Field information as parsed from the DDS source
+ * @param element - The DDS field element (for its `referenced`/`recordname`/`name`)
+ * @param documentUri - The document's URI (as a string), used as the resolved-cache key
+ */
+function getEffectiveFieldInfo(fieldInfo: any, element: any, documentUri: string): any {
+    if (!element.referenced) return fieldInfo;
+
+    const resolved = getResolvedRef(documentUri, element.recordname, element.name);
+    if (!resolved) return fieldInfo;
+
+    return { ...fieldInfo, type: resolved.type, length: resolved.length, decimals: resolved.decimals };
+};
+
+/**
+ * Builds the "not numeric" warning for EDTCDE/EDTWRD/EDTMSK, adding a hint to resolve the field
+ * first when it's a referenced field whose real type isn't known yet (rather than implying it's
+ * definitely non-numeric, which the source alone can't say).
+ * @param keywordLabel - e.g. 'Edit codes (EDTCDE)'
+ * @param element - The DDS field element
+ * @param effectiveFieldInfo - The field info actually checked (post `getEffectiveFieldInfo`)
+ */
+function numericFieldWarning(keywordLabel: string, element: any, effectiveFieldInfo: any): string {
+    const base = `${keywordLabel} can only be applied to numeric fields (types P, S, B, F, I).`;
+    if (element.referenced && !effectiveFieldInfo.type) {
+        return `${base} This is a referenced field with an unresolved type — run "Resolve Referenced Field" first to check whether it's numeric.`;
+    };
+    return base;
 };
 
 /**

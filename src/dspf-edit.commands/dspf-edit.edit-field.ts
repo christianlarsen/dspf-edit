@@ -60,6 +60,9 @@ interface FieldReference {
     library: string;
     file: string;
     field: string;
+    /** Record format the field is qualified with (record-format-name/field-name), disambiguating
+     * a field name that exists in more than one format of the referenced file. */
+    recordFormat?: string;
 };
 
 /**
@@ -648,7 +651,7 @@ async function collectFieldUsage(fieldName: string): Promise<FieldUsage | null> 
 async function collectFieldReference(fieldName: string): Promise<FieldReference | null> {
     // Get library name (optional — DDS uses the current library list, *LIBL, when omitted)
     const library = await vscode.window.showInputBox({
-        title: `Reference for field '${fieldName}' - Step 1/3`,
+        title: `Reference for field '${fieldName}' - Step 1/4`,
         prompt: "Enter library name (max 10 characters), or leave empty to use the library list (*LIBL)",
         placeHolder: "LIBRARY (optional)",
         validateInput: (value) => validateLibraryFileName(value, "Library", false)
@@ -657,7 +660,7 @@ async function collectFieldReference(fieldName: string): Promise<FieldReference 
 
     // Get file name
     const file = await vscode.window.showInputBox({
-        title: `Reference for field '${fieldName}' - Step 2/3`,
+        title: `Reference for field '${fieldName}' - Step 2/4`,
         prompt: "Enter file name (max 10 characters)",
         placeHolder: "FILE",
         validateInput: (value) => validateLibraryFileName(value, "File")
@@ -666,7 +669,7 @@ async function collectFieldReference(fieldName: string): Promise<FieldReference 
 
     // Get referenced field name
     const referencedField = await vscode.window.showInputBox({
-        title: `Reference for field '${fieldName}' - Step 3/3`,
+        title: `Reference for field '${fieldName}' - Step 3/4`,
         prompt: "Enter referenced field name (max 10 characters)",
         placeHolder: fieldName,
         value: fieldName,
@@ -674,10 +677,21 @@ async function collectFieldReference(fieldName: string): Promise<FieldReference 
     });
     if (!referencedField) return null;
 
+    // Get the record format the field belongs to (optional) — needed only when the referenced
+    // file has more than one record format containing a field with that name.
+    const recordFormat = await vscode.window.showInputBox({
+        title: `Reference for field '${fieldName}' - Step 4/4`,
+        prompt: "Enter record format name (max 10 characters), or leave empty if the file has only one record format",
+        placeHolder: "RECORD FORMAT (optional)",
+        validateInput: (value) => value.trim() === '' ? null : validateFieldNameFormat(value)
+    });
+    if (recordFormat === undefined) return null;
+
     return {
         library: library.toUpperCase(),
         file: file.toUpperCase(),
-        field: referencedField.toUpperCase()
+        field: referencedField.trim().toUpperCase(),
+        recordFormat: recordFormat.trim() === '' ? undefined : recordFormat.trim().toUpperCase()
     };
 };
 
@@ -1165,9 +1179,10 @@ function generateNewFieldLine(config: NewFieldConfig): string {
         // Referenced field - use R and reference specification
         line = replaceAt(line, 28, 'R');
         
-        // Reference specification: REFFLD(referenced-field-name [library-name/]database-file-name)
+        // Reference specification: REFFLD([record-format-name/]referenced-field-name [library-name/]database-file-name)
         const qualifiedFile = config.reference.library ? `${config.reference.library}/${config.reference.file}` : config.reference.file;
-        const refSpec = `REFFLD(${config.reference.field} ${qualifiedFile})`;
+        const qualifiedField = config.reference.recordFormat ? `${config.reference.recordFormat}/${config.reference.field}` : config.reference.field;
+        const refSpec = `REFFLD(${qualifiedField} ${qualifiedFile})`;
         line = replaceAt(line, 44, refSpec);
     } else if (config.typeConfig) {
         // New field with type specification
@@ -1364,7 +1379,7 @@ function validateFieldNameFormat(value: string): string | null {
     if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(trimmedValue)) {
         return "The name can only contain letters, numbers, underscores, and hyphens, and must start with a letter.";
     };
-    
+
     return null;
 };
 

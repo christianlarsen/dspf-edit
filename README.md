@@ -122,15 +122,14 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.14.0** - 2026-07-30
-- Added: "Resolve Referenced Field" action (and "Resolve All Referenced Fields", from a new status bar item) fetches a referenced field's real type/length/decimals from the connected IBM i, via the [Code for i](https://marketplace.visualstudio.com/items?itemName=HalcyonTechLtd.code-for-ibmi) extension. Resolved fields show their real type/length in both the tree and the preview.
-- Added: Preview support for the `CNTFLD(n)` keyword — a field too long for one line now wraps across multiple rows, `n` characters each, at the same column, matching RDi's preview. Centering such a field now uses its per-line width instead of its full declared length.
-- Fixed: Performance: re-parsing a document (e.g. after moving a field in the preview) got dramatically slower as it grew larger, due to two O(n²) hotspots in the parser. Both are now linear.
-- Fixed: Performance: checking whether a file is read-only before applying an edit did a live round-trip to the IBM i on every single edit while connected via Code for i. It's now cached per document.
-- Fixed: Referenced fields were missing the usual field context menu/inline actions (delete, copy, rename, etc.).
-- Fixed: Parser: a field/constant positioned relative (`+n`) right after a bare system keyword (`DATE`, `TIME`, `USER`, `SYSNAME`) landed several columns too far left in the preview, overlapping the keyword's own placeholder.
-- Fixed: Preview: dragging a `CNTFLD`-wrapped field failed with a false "document may be read-only" error, since its wrapped lines all share one source line.
-- Fixed: Preview: selecting a `CNTFLD`-wrapped field showed "N fields selected" instead of treating it as the single field it is, hiding the "Center"/"Actions" buttons.
+**0.14.1** - 2026-08-01
+- Fixed: Parser: `REFFLD()`'s field name can be qualified with a record format (`REFFLD(record-format-name/field-name [library-name/]file-name)`), needed to disambiguate a field name that exists in more than one format of the referenced file. This qualification wasn't parsed correctly, breaking resolution against IBM i entirely. Add/Edit Field's "Referenced Field" flow now also has a dedicated (optional) step for the record format.
+- Fixed: Add Editing Keywords: `EDTCDE`/`EDTWRD`/`EDTMSK` were always rejected as "not a numeric field" on a referenced field, even after its real type had been resolved from IBM i. It now uses the resolved type/length/decimals when available.
+- Fixed: Preview: a field with `EDTCDE()` rendered as a plain, unformatted placeholder instead of showing the thousands separators/decimal point/sign a real edited numeric field displays.
+- Fixed: Parser: multi-line constants (text continued across several source lines with a `-`) could be parsed incorrectly, missing or leaving the continuation character embedded in the resulting text.
+- Fixed: Delete Field/Constant: a following field/constant positioned relative to the deleted one (DDS's relative record format) silently moved on screen instead of staying put — its position is now materialized to an explicit absolute value first.
+- Fixed: Preview: deleting the only field/constant in a record that carried conditioning indicators left stale toggle buttons for them in the preview's indicator bar.
+- Adjusted: Preview: the `COLOR(BLU)` shade, to match the IBM i Access Client Solutions (ACS) 5250 terminal more closely.
 
 ---
 
