@@ -242,7 +242,7 @@ const REFERENCED_FIELD_COLOR = '#ff8800';
 
 /** Maps DDS COLOR() keyword codes to their on-screen color. */
 const DDS_COLOR_MAP: Record<string, string> = {
-    BLU: '#3366ff',
+    BLU: '#6a8ef0',
     GRN: '#00ff00',
     WHT: '#ffffff',
     RED: '#ff4136',

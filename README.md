@@ -122,13 +122,14 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.14.1** - 2026-07-31
+**0.14.1** - 2026-08-01
 - Fixed: Parser: `REFFLD()`'s field name can be qualified with a record format (`REFFLD(record-format-name/field-name [library-name/]file-name)`), needed to disambiguate a field name that exists in more than one format of the referenced file. This qualification wasn't parsed correctly, breaking resolution against IBM i entirely. Add/Edit Field's "Referenced Field" flow now also has a dedicated (optional) step for the record format.
 - Fixed: Add Editing Keywords: `EDTCDE`/`EDTWRD`/`EDTMSK` were always rejected as "not a numeric field" on a referenced field, even after its real type had been resolved from IBM i. It now uses the resolved type/length/decimals when available.
 - Fixed: Preview: a field with `EDTCDE()` rendered as a plain, unformatted placeholder instead of showing the thousands separators/decimal point/sign a real edited numeric field displays.
-- Fixed: Parser: a constant whose literal text continues onto a second source line (a `-` in column 80) could get parsed with that continuation character left embedded in the middle of the text instead of removed, when the physical source line ran past column 80.
+- Fixed: Parser: multi-line constants (text continued across several source lines with a `-`) could be parsed incorrectly, missing or leaving the continuation character embedded in the resulting text.
 - Fixed: Delete Field/Constant: a following field/constant positioned relative to the deleted one (DDS's relative record format) silently moved on screen instead of staying put — its position is now materialized to an explicit absolute value first.
 - Fixed: Preview: deleting the only field/constant in a record that carried conditioning indicators left stale toggle buttons for them in the preview's indicator bar.
+- Adjusted: Preview: the `COLOR(BLU)` shade, to match the IBM i Access Client Solutions (ACS) 5250 terminal more closely.
 
 ---
 

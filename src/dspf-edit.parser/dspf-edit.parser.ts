@@ -494,12 +494,12 @@ function parseConstantElement(
  * Extracts multi-line constant values, following continuation characters.
  * The value area is the standard DDS keyword-area window, columns 45-80 (36 characters,
  * `substring(39, 75)` on the already-5-char-stripped line) — matching `extractAttributes`
- * elsewhere in this file. It must match exactly: the continuation dash is looked for at column 80
- * (raw index 79), the very last character of that window. A wider window here previously grabbed a
- * few extra trailing characters past column 80 (harmless when a line is padded with nothing but
- * blanks there, but real when the physical line carries anything else that far right) — the dash
- * that `fullValue.slice(0, -1)` was supposed to strip off was then 4 characters short of the actual
- * end, leaving it embedded mid-string instead of removed, and the next line's text glued on after it.
+ * elsewhere in this file. A line continues onto the next when the last *non-blank* character
+ * in that window is a hyphen — the compiler does not require it to sit exactly at column 80,
+ * since a still-open (unterminated) quoted string followed only by blanks and a trailing '-'
+ * is unambiguous. Source lines are frequently shorter than 80 columns once trailing blanks are
+ * stripped (e.g. by an editor that doesn't pad DDS source), so anchoring the check to raw column
+ * 80 missed the dash entirely and left each physical line parsed as its own broken constant.
  * @param lines - All document lines
  * @param startIndex - Starting line index
  * @param trimmedLine - Initial line content
@@ -514,15 +514,17 @@ function extractMultiLineConstant(
     let fullValue = trimmedLine.substring(39, 75);
     let continuationIndex = startIndex;
 
-    // Follow continuation lines (marked with '-' at position 79)
-    while (lines[continuationIndex]?.charAt(79) === '-') {
+    // Follow continuation lines (marked with a trailing '-', wherever it falls before column 80)
+    while (fullValue.trimEnd().endsWith('-')) {
+        const trimmedEnd = fullValue.trimEnd();
+        fullValue = trimmedEnd.substring(0, trimmedEnd.length - 1); // Drop the dash and any padding after it
+
         continuationIndex++;
         const nextLine = lines[continuationIndex];
         if (!nextLine) break;
 
         const nextTrimmed = nextLine.substring(5);
-        const continuedValue = nextTrimmed.substring(39, 75);
-        fullValue = fullValue.slice(0, -1) + continuedValue; // Remove '-' and append
+        fullValue += nextTrimmed.substring(39, 75);
     };
 
     return { fullValue: fullValue.trim(), lastLineIndex: continuationIndex };

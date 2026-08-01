@@ -8,14 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
-## [0.14.1] - 2026-07-31
+## [0.14.1] - 2026-08-01
 ### Fixed
 - Parser: `REFFLD()`'s field name can be qualified with a record format (`REFFLD(record-format-name/field-name [library-name/]file-name)`), needed to disambiguate a field name that exists in more than one format of the referenced file. This qualification wasn't parsed correctly — the whole "format/field" text was used as the field name, which then never matched an actual database column, breaking resolution against IBM i entirely. Add/Edit Field's "Referenced Field" flow now also has a dedicated (optional) step for the record format, separate from the field name.
 - Add Editing Keywords: `EDTCDE`/`EDTWRD`/`EDTMSK` were always rejected as "not a numeric field" on a referenced field, even after its real type had been resolved from IBM i (via "Resolve Referenced Field") — the check only ever looked at the field's own DDS source type, which is blank for a referenced field. It now uses the resolved type/length/decimals when available, and the warning explains when it's the type that's still unresolved rather than the field genuinely being non-numeric.
 - Preview: a field with `EDTCDE()` rendered as a plain, unformatted placeholder (e.g. `66666666`) instead of showing the thousands separators/decimal point/sign a real edited numeric field displays — only `EDTWRD` was accounted for. The preview now derives an equivalent mask from the standard DDS edit-code table (1-4, A-D, J-M).
-- Parser: a constant whose literal text continues onto a second (or further) source line, via a `-` continuation character in column 80, could get parsed with the continuation character left embedded in the middle of the text instead of removed. Only showed up when the physical source line ran past column 80 (e.g. trailing padding from the source member's format) — the code read the value from a window 4 columns wider than where it actually looked for the continuation character, so the char it stripped as "the dash" usually wasn't.
+- Parser: fixed incorrect handling of multi-line constants (text continued across several source lines with a `-`) — depending on how the source line was formatted, the continuation could be missed or left embedded in the resulting text instead of being stripped out cleanly.
 - Delete Field/Constant: if the following field/constant in the record had its Line/Position coded relative to the deleted one (DDS's relative record format — a blank Line, or a Position written as `+n`), deleting it silently re-anchored that following element to whatever now precedes it, moving it on screen. It's now materialized to an explicit absolute position first, matching what Move Field/Constant already does for an inherited row.
 - Preview: deleting the only field/constant in a record that carried any conditioning indicators left the indicator toggle buttons for those indicators showing in the preview's indicator bar, instead of clearing along with it — a stale-refresh bug in the webview's own script, not the parser.
+- Preview: adjusted the `COLOR(BLU)` shade to match the IBM i Access Client Solutions (ACS) 5250 terminal more closely.
 
 ## [0.14.0] - 2026-07-30
 ### Added
