@@ -110,12 +110,22 @@ function parseAllLines(lines: string[]): DdsElement[] {
     const elements: DdsElement[] = [];
     let currentRecord = '';
     let lineIndex = 0;
+    // True once a field/constant has been seen for currentRecord — tells parseAttributeElement
+    // whether a keyword-only line (e.g. SFL placed on its own line by SDA/RDI, instead of on the
+    // record name's own line) still belongs to the record itself, or to the last field/constant.
+    let hasFieldInCurrentRecord = false;
 
     while (lineIndex < lines.length) {
-        const parseResult = parseSingleDdsLine(lines, lineIndex, currentRecord);
+        const parseResult = parseSingleDdsLine(lines, lineIndex, currentRecord, hasFieldInCurrentRecord);
 
         if (parseResult.element) {
             elements.push(parseResult.element);
+
+            if (parseResult.element.kind === 'record') {
+                hasFieldInCurrentRecord = false;
+            } else if (parseResult.element.kind === 'field' || parseResult.element.kind === 'constant') {
+                hasFieldInCurrentRecord = true;
+            };
         };
 
         currentRecord = parseResult.lastRecord;
@@ -135,7 +145,8 @@ function parseAllLines(lines: string[]): DdsElement[] {
 function parseSingleDdsLine(
     lines: string[],
     lineIndex: number,
-    lastRecord: string
+    lastRecord: string,
+    hasFieldInCurrentRecord: boolean
 ): { element: DdsElement | undefined; nextIndex: number; lastRecord: string } {
 
     const line = lines[lineIndex];
@@ -163,7 +174,7 @@ function parseSingleDdsLine(
     };
 
     // Default to attribute parsing
-    return parseAttributeElement(lines, lineIndex, trimmedLine, lineComponents, lastRecord);
+    return parseAttributeElement(lines, lineIndex, trimmedLine, lineComponents, lastRecord, hasFieldInCurrentRecord);
 };
 
 /**
@@ -544,11 +555,26 @@ function parseAttributeElement(
     lineIndex: number,
     trimmedLine: string,
     components: any,
-    lastRecord: string
+    lastRecord: string,
+    hasFieldInCurrentRecord: boolean
 ) {
     const { attributes, nextIndex } = extractAttributes('A', lines, lineIndex, true, components.indicators, components.displayFormat);
 
     if (attributes.length > 0) {
+        // A keyword-only line with no field/constant seen yet since the record line belongs to the
+        // record itself (e.g. SFL placed on its own line by SDA/RDI instead of the record name's
+        // own line). linkAttributesToParents() links it into the record element too, but only after
+        // the whole document has been parsed — too late for isSubfileRecord() checks made earlier in
+        // this same pass (see parseFieldElement/parseConstantElement). Updating fieldsPerRecords here,
+        // as soon as the keyword is read, makes it visible to every field/constant parsed afterwards.
+        // syncRecordAttributes() overwrites this with the final, equivalent list once parsing ends.
+        if (!hasFieldInCurrentRecord && lastRecord) {
+            const currentRecordEntry = fieldsPerRecords.find(r => r.record === lastRecord);
+            if (currentRecordEntry) {
+                currentRecordEntry.attributes = [...(currentRecordEntry.attributes || []), ...attributes];
+            };
+        };
+
         const maxLastLineIndex = attributes.reduce(
             (max, attr) => Math.max(max, attr.lastLineIndex ?? lineIndex),
             lineIndex

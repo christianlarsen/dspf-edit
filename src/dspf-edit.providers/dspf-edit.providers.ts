@@ -103,7 +103,11 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 				// silently included too, unless the filter was intentionally emptied ("Hide all"),
 				// which stays that way.
 				const pruned = new Set([...filter.recordFilter].filter(name => currentRecordNames.has(name)));
-				if (filter.recordFilter.size > 0) {
+				// recordFilter is empty in two different cases that look identical otherwise: the
+				// user explicitly hid every record (must stick), or no record existed yet to filter
+				// in the first place (a brand-new DSPF) — knownRecords being empty means the latter,
+				// so a record appearing for the first time must always become visible.
+				if (filter.recordFilter.size > 0 || filter.knownRecords.size === 0) {
 					for (const name of newRecords) {
 						pruned.add(name);
 					};
