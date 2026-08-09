@@ -7,7 +7,7 @@
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import { DdsElement, DdsIndicator, DdsAttribute, records, FieldsPerRecord, ConstantInfo, FieldInfo, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
+import { DdsElement, DdsIndicator, DdsAttribute, records, FieldsPerRecord, ConstantInfo, FieldInfo, fieldsPerRecords, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
 import { parseDocument } from '../dspf-edit.parser/dspf-edit.parser';
 import { ExtensionState } from '../dspf-edit.states/state';
@@ -84,20 +84,42 @@ export function describeDdsFile(field: DdsElement): string {
 // FORMATTING FUNCTIONS
 
 /**
- * Formats DDS indicators into a readable string representation.
+ * Formats DDS indicators into a readable string representation. Indicators sharing the same
+ * `group` (ANDed together, e.g. via an 'A'-continuation line) are shown side by side; different
+ * groups (ORed, started by an 'O'-continuation line) are separated by " OR ". Indicators with no
+ * `group` (the common case) are all treated as a single group, so this is identical to before for
+ * every non-continued element.
  * @param indicators - Array of DDS indicators to format
  * @returns A formatted string showing indicators with their active/inactive status
  */
 export function formatDdsIndicators(indicators?: DdsIndicator[]): string {
     if (!indicators || indicators.length === 0) return '';
 
-    const indicatorStr = `[${indicators.map(ind => {
+    const formatGroup = (group: DdsIndicator[]) => group.map(ind => {
         const status = ind.active ? ' ' : 'N';
         const number = ind.number.toString().padStart(2, '0');
         return `${status}${number}`;
-    }).join('')}]`;
+    }).join('');
+
+    const indicatorStr = `[${groupIndicatorsByCondition(indicators).map(formatGroup).join(' OR ')}]`;
 
     return indicatorStr;
+};
+
+/**
+ * Spells out a full indicator condition as a human-readable boolean expression, e.g.
+ * "51 AND NOT 61 AND 53  OR  52  OR  81 AND 82" — the same AND/OR structure formatDdsIndicators
+ * encodes compactly, for use in tooltips.
+ * @param indicators - Array of DDS indicators to describe
+ * @returns A human-readable condition string, or '' when unconditioned
+ */
+export function formatIndicatorCondition(indicators?: DdsIndicator[]): string {
+    if (!indicators || indicators.length === 0) return '';
+
+    const describeIndicator = (ind: DdsIndicator) => `${ind.active ? '' : 'NOT '}${ind.number.toString().padStart(2, '0')}`;
+    const describeGroup = (group: DdsIndicator[]) => group.map(describeIndicator).join(' AND ');
+
+    return groupIndicatorsByCondition(indicators).map(describeGroup).join('  OR  ');
 };
 
 /**

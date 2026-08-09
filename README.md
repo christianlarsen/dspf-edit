@@ -47,12 +47,12 @@ The extension provides a **navigable schema view** of the DDS source file that i
     - Center constant on screen.
     - Change position (absolute position/relative to existing constant).
     - Apply colors/attributes.
-    - Add / Remove / Change indicators.
+    - Add / Remove / Change indicators, including more than 3 ANDed indicators (up to DDS's limit of 9, spilling onto continuation lines automatically) and OR'd conditions (add/remove whole OR'd groups, or edit indicators within one).
     - Fill constant with characters.
 
 - **Fields**
   - Show name, length, type, position (row/column), and flags (referenced/hidden).
-  - Indicators and attributes are expandable.
+  - Indicators and attributes are expandable; an OR'd condition is grouped into its ANDed sub-conditions ("Group 1 (AND)" / "OR" / "Group 2 (AND)" / ...) instead of one flat list. Hovering a conditioned field/constant/attribute shows the full condition (e.g. `51 AND NOT 61 AND 53  OR  52`) as a tooltip.
   - Right-click options:
     - Edit field.
     - Copy field (to the same or different record).
@@ -63,11 +63,11 @@ The extension provides a **navigable schema view** of the DDS source file that i
     - Add validity checks.
     - Add editing keywords.
     - Add error messages.
-    - Add / Remove / Change indicators.
+    - Add / Remove / Change indicators, including more than 3 ANDed indicators (up to DDS's limit of 9, spilling onto continuation lines automatically) and OR'd conditions (add/remove whole OR'd groups, or edit indicators within one).
     - Resolve Referenced Field (for referenced fields only): fetches the real type/length/decimals from the connected IBM i, via the [Code for i](https://marketplace.visualstudio.com/items?itemName=HalcyonTechLtd.code-for-ibmi) extension. Also available as "Resolve All Referenced Fields" from the status bar, for every pending referenced field in the document at once.
 
 - **Attributes**
-    - Add / Remove / Change indicators.
+    - Add / Remove / Change indicators, with the same AND/OR support as fields and constants.
     - Remove attribute.
 
 - **Screen Preview**
@@ -106,8 +106,6 @@ The extension provides a **navigable schema view** of the DDS source file that i
 This extension is currently in **preview**.  
 Some features may not work as expected. Please leave an issue if something is not working fine!
 
-- DDS indicator **OR conditioning** is not yet supported: DDS lets you OR several indicator-only continuation lines (marked with `O` in column 7) together, with the actual keyword coded on the last line of the group. Only the indicators on that last line are currently read — the preceding OR'd indicator-only lines are ignored.
-
 ---
 
 ## 📝 To Do
@@ -122,18 +120,8 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.14.2** - 2026-08-09
-- Fixed: Tree view: a record created in a brand-new DSPF source (zero records to start) didn't show up in the records list until the source was closed and reopened.
-- Fixed: Parser/Preview: subfile record formats where `SFL` sits on its own line (common in SDA/RDI-generated sources) rendered their fields stacked vertically instead of side-by-side as subfile columns.
-
-**0.14.1** - 2026-08-01
-- Fixed: Parser: `REFFLD()`'s field name can be qualified with a record format (`REFFLD(record-format-name/field-name [library-name/]file-name)`), needed to disambiguate a field name that exists in more than one format of the referenced file. This qualification wasn't parsed correctly, breaking resolution against IBM i entirely. Add/Edit Field's "Referenced Field" flow now also has a dedicated (optional) step for the record format.
-- Fixed: Add Editing Keywords: `EDTCDE`/`EDTWRD`/`EDTMSK` were always rejected as "not a numeric field" on a referenced field, even after its real type had been resolved from IBM i. It now uses the resolved type/length/decimals when available.
-- Fixed: Preview: a field with `EDTCDE()` rendered as a plain, unformatted placeholder instead of showing the thousands separators/decimal point/sign a real edited numeric field displays.
-- Fixed: Parser: multi-line constants (text continued across several source lines with a `-`) could be parsed incorrectly, missing or leaving the continuation character embedded in the resulting text.
-- Fixed: Delete Field/Constant: a following field/constant positioned relative to the deleted one (DDS's relative record format) silently moved on screen instead of staying put — its position is now materialized to an explicit absolute value first.
-- Fixed: Preview: deleting the only field/constant in a record that carried conditioning indicators left stale toggle buttons for them in the preview's indicator bar.
-- Adjusted: Preview: the `COLOR(BLU)` shade, to match the IBM i Access Client Solutions (ACS) 5250 terminal more closely.
+**0.15.0** - 2026-08-09
+- Added: Indicators: full support for DDS's AND/OR conditioning — more than 3 ANDed indicators (up to DDS's limit of 9, spilling onto continuation lines automatically), and OR'd conditions (add/remove a whole OR'd group, or edit indicators within a specific one). Tree view shows an OR'd condition grouped by AND sub-condition, with a readable tooltip; preview's indicator simulation now evaluates AND/OR correctly instead of treating every indicator as ANDed together.
 
 ---
 

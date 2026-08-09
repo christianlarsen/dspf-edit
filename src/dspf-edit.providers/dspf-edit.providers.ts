@@ -6,8 +6,8 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { DdsElement, DdsGroup } from '../dspf-edit.model/dspf-edit.model';
-import { describeDdsField, describeDdsConstant, describeDdsRecord, describeDdsFile, formatDdsIndicators } from '../dspf-edit.utils/dspf-edit.helper';
+import { DdsElement, DdsGroup, DdsIndicator, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
+import { describeDdsField, describeDdsConstant, describeDdsRecord, describeDdsFile, formatDdsIndicators, formatIndicatorCondition } from '../dspf-edit.utils/dspf-edit.helper';
 import { ExtensionState } from '../dspf-edit.states/state';
 import { getResolvedRef, getPendingReferencedFields } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 
@@ -650,6 +650,11 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 	 */
 	private getGroupChildren(element: DdsNode): Thenable<DdsNode[]> {
 		const groupAttr = element.ddsElement.attribute ?? '';
+		// One AND-group of an OR'd indicator condition (see getIndicatorsGroupChildren) — carries its
+		// own group index as a suffix, so it can't be a fixed switch case like the others below.
+		if (groupAttr.startsWith('IndicatorGroup:')) {
+			return this.getIndicatorLeafNodes((element.ddsElement as DdsGroup).indicators ?? []);
+		}
 		switch (groupAttr) {
 			case 'Attributes': return this.getAttributesGroupChildren(element);
 			case 'ConstantAttributes': return this.getConstantAttributesGroupChildren(element);
@@ -677,10 +682,40 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 		return Promise.resolve(attrs.map(attr => new DdsNode(`⚙️ ${'value' in attr ? attr.value : 'Attribute'} `, vscode.TreeItemCollapsibleState.None, { ...attr, kind: 'fieldAttribute', lineIndex: attr.lineIndex ?? group.lineIndex, lastLineIndex: attr.lastLineIndex ?? group.lineIndex })));
 	}
 
+	/**
+	 * Indicator leaf nodes for a single AND-group (each one a plain "51: ON" row) — shared by the
+	 * flat single-group case and each OR'd sub-group below.
+	 */
+	private getIndicatorLeafNodes(indis: DdsIndicator[]): Thenable<DdsNode[]> {
+		return Promise.resolve(indis.map(indi => new DdsNode(`${indi.number.toString().padStart(2, '0')}: ${indi.active ? 'ON' : 'OFF'}`, vscode.TreeItemCollapsibleState.None, { kind: 'indicatornode', indicator: indi, attributes: [], indicators: [], lineIndex: 0 })));
+	}
+
+	/**
+	 * Children of the "📶 Indicators" node. When the condition is a single AND-group (the
+	 * overwhelming common case: one line, up to 3 indicators, no continuation), this stays a flat
+	 * list exactly as before. When it spans several OR'd AND-groups (continuation lines — see
+	 * DdsIndicator.group), each group gets its own expandable node, with a plain "OR" row between
+	 * them so the boolean structure is visible at a glance.
+	 */
 	private getIndicatorsGroupChildren(element: DdsNode): Thenable<DdsNode[]> {
 		const group = element.ddsElement as DdsGroup;
 		const indis = group.indicators ?? [];
-		return Promise.resolve(indis.map(indi => new DdsNode(`${indi.number.toString().padStart(2, '0')}: ${indi.active ? 'ON' : 'OFF'}`, vscode.TreeItemCollapsibleState.None, { kind: 'indicatornode', indicator: indi, attributes: [], indicators: [], lineIndex: 0 })));
+		const conditionGroups = groupIndicatorsByCondition(indis);
+
+		if (conditionGroups.length <= 1) {
+			return this.getIndicatorLeafNodes(indis);
+		}
+
+		const nodes: DdsNode[] = [];
+		conditionGroups.forEach((conditionGroup, i) => {
+			if (i > 0) {
+				nodes.push(new DdsNode('──── OR ────', vscode.TreeItemCollapsibleState.None,
+					{ kind: 'group', attribute: '', lineIndex: group.lineIndex, children: [], attributes: [], indicators: [] }));
+			};
+			nodes.push(new DdsNode(`Group ${i + 1} (AND)`, vscode.TreeItemCollapsibleState.Expanded,
+				{ kind: 'group', attribute: `IndicatorGroup:${i}`, lineIndex: group.lineIndex, children: [], attributes: [], indicators: conditionGroup } as DdsGroup));
+		});
+		return Promise.resolve(nodes);
 	}
 
 	private getDefaultGroupChildren(element: DdsNode): Thenable<DdsNode[]> {
@@ -827,13 +862,20 @@ export class DdsNode extends vscode.TreeItem {
 	}
 
 	private getTooltip(ddsElement: DdsElement): string {
-		switch (ddsElement.kind) {
-			case 'record':
-			case 'field':
-			case 'constant':
-			case 'attribute':
-			case 'file': return ddsElement.kind;
-			default: return '';
-		}
+		const base = (() => {
+			switch (ddsElement.kind) {
+				case 'record':
+				case 'field':
+				case 'constant':
+				case 'attribute':
+				case 'constantAttribute':
+				case 'fieldAttribute':
+				case 'file': return ddsElement.kind;
+				default: return '';
+			}
+		})();
+
+		const condition = 'indicators' in ddsElement ? formatIndicatorCondition(ddsElement.indicators) : '';
+		return condition ? `${base}\nActive when: ${condition}` : base;
 	}
 }
