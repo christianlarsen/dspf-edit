@@ -122,6 +122,10 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
+**0.14.2** - 2026-08-09
+- Fixed: Tree view: a record created in a brand-new DSPF source (zero records to start) didn't show up in the records list until the source was closed and reopened.
+- Fixed: Parser/Preview: subfile record formats where `SFL` sits on its own line (common in SDA/RDI-generated sources) rendered their fields stacked vertically instead of side-by-side as subfile columns.
+
 **0.14.1** - 2026-08-01
 - Fixed: Parser: `REFFLD()`'s field name can be qualified with a record format (`REFFLD(record-format-name/field-name [library-name/]file-name)`), needed to disambiguate a field name that exists in more than one format of the referenced file. This qualification wasn't parsed correctly, breaking resolution against IBM i entirely. Add/Edit Field's "Referenced Field" flow now also has a dedicated (optional) step for the record format.
 - Fixed: Add Editing Keywords: `EDTCDE`/`EDTWRD`/`EDTMSK` were always rejected as "not a numeric field" on a referenced field, even after its real type had been resolved from IBM i. It now uses the resolved type/length/decimals when available.
