@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [0.16.0] - 2026-08-11
+### Added
+- Multi-size (DSPSIZ) awareness across creation and editing: when a display file declares more than one screen size (e.g. `DSPSIZ(24 80 *DS3 27 132 *DS4)`), the extension now keeps every declared size correct instead of only ever acting on the first one.
+  - New Record / Change Window Size: creating or resizing a WINDOW now generates one `WINDOW()` line per declared size — same rows/columns, position recalculated to fit each screen — instead of a single line silently reused (and often mispositioned) on every size.
+  - Change Window Title: edits the title line that actually matches the size being worked on, asking which one when invoked from the tree and the record declares more than one.
+  - Preview: dragging/resizing/centering a window, or adjusting a subfile's SFLPAG/SFLSIZ, while a specific size is selected in the preview's format switcher no longer silently changes the other declared size too — the first time a shared, unconditioned line is edited this way, it's split into one explicit line per declared size, and only the one being viewed changes.
+  - New "Add Display Size" command (right-click the file in the tree) adds the second standard size (*DS3/*DS4) to a file that currently declares only one, rewriting its DSPSIZ specification in place. Existing windows/subfiles keep applying to the new size unchanged (DDS's own "unconditioned line applies everywhere" rule) until adjusted per size from the preview. Removing a declared size isn't supported yet.
+  - Change Position: a field/constant's row/column bounds are now validated against the smallest declared size, not just the first one, so a position stays reachable regardless of which size is active.
+
 ## [0.15.0] - 2026-08-11
 ### Added
 - Indicators: full support for DDS's AND/OR conditioning — previously only a single line's worth (up to 3 ANDed) was read or editable, and OR'd conditions were silently ignored.

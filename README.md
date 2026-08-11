@@ -18,6 +18,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
   - Right-click options:
     - Create new records.
     - Assign command keys.
+    - Add Display Size: adds a second standard screen size (*DS3/*DS4) to a file that currently declares only one.
 
 - **Records level**
   - Right-click options:
@@ -33,8 +34,8 @@ The extension provides a **navigable schema view** of the DDS source file that i
     - Add "buttons" (constants for record commands).
     - Assign command keys.
     - Add / Remove / Change indicators.
-    - Resizing (if window record).
-    - Change Window Title (if window record).
+    - Resizing (if window record) — aware of every declared display size, resizing all of them at once.
+    - Change Window Title (if window record) — targets the size being worked on when the record declares more than one.
     - Sort elements.
     - Preview Screen Layout (also available as an inline button on the record).
 
@@ -81,7 +82,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
   - Subfile (SFL/SFLCTL) records show all SFLPAG rows, and automatically preview their paired header/detail record; detail rows can't be dragged up over the header's own content.
   - Overlay any other record (dimmed) behind the one being previewed, to see how they compose.
   - Simulate indicators on/off to preview conditional fields, constants, and attributes.
-  - For files with more than one DSPSIZ format (e.g. *DS3/*DS4), switch which one is previewed — window positions/sizes and conditioned elements are resolved for the selected format.
+  - For files with more than one DSPSIZ format (e.g. *DS3/*DS4), switch which one is previewed — window positions/sizes and conditioned elements are resolved for the selected format. Dragging/resizing/centering a window, or adjusting a subfile's SFLPAG/SFLSIZ, only affects the size currently being previewed.
   - Stays in sync with the schema tree selection in both directions.
 
 ---
@@ -111,7 +112,7 @@ Some features may not work as expected. Please leave an issue if something is no
 ## 📝 To Do
 
 - Bug fixes.  
-- Correct handling of display sizes.  
+- Support removing a declared display size.  
 - Many new features to come!  
 
 ---
@@ -120,8 +121,8 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.15.0** - 2026-08-11
-- Added: Indicators: full support for DDS's AND/OR conditioning — more than 3 ANDed indicators (up to DDS's limit of 9, spilling onto continuation lines automatically), and OR'd conditions (add/remove a whole OR'd group, or edit indicators within a specific one). Tree view shows an OR'd condition grouped by AND sub-condition, with a readable tooltip; preview's indicator simulation now evaluates AND/OR correctly instead of treating every indicator as ANDed together.
+**0.16.0** - 2026-08-11
+- Added: Multi-size (DSPSIZ) awareness across creation and editing. Creating/resizing a WINDOW, or changing its title, now correctly handles every declared screen size (not just the first); editing a window or a subfile's SFLPAG/SFLSIZ from the preview while viewing one specific size no longer silently changes another; a new "Add Display Size" command adds a second standard size to a file that only declares one.
 
 ---
 

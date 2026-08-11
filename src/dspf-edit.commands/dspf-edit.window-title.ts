@@ -6,8 +6,9 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { FieldsPerRecord, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { DdsAttribute, FieldsPerRecord, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
+import { checkForEditorAndDocument, applyWorkspaceEdit, writeDisplayFormatCondition } from '../dspf-edit.utils/dspf-edit.helper';
+import { pickForActiveFormat } from '../dspf-edit.parser/dspf-edit.parser';
 import { generateWindowTitleLines } from './dspf-edit.new-record';
 
 type TitleAlign = 'LEFT' | 'CENTER' | 'RIGHT';
@@ -59,8 +60,10 @@ async function handleWindowTitleCommand(node: DdsNode): Promise<void> {
  * WDWTITLE() keyword for the given window record. Shared by the tree context-menu command and by
  * clicking the title directly in the record preview.
  * @param recordName - Name of the window record to edit the title for
+ * @param activeFormat - Display format (e.g. "*DS3") currently being previewed, when called from the
+ * preview panel; undefined when called from the tree, which has no notion of an "active" format.
  */
-export async function editWindowTitleForRecord(recordName: string): Promise<void> {
+export async function editWindowTitleForRecord(recordName: string, activeFormat?: string): Promise<void> {
     try {
         const { editor } = checkForEditorAndDocument();
         if (!editor) {
@@ -68,11 +71,23 @@ export async function editWindowTitleForRecord(recordName: string): Promise<void
         };
 
         const record = fieldsPerRecords.find(r => r.record === recordName);
-        const windowAttr = record?.attributes?.find(a => a.value.toUpperCase().startsWith('WINDOW('));
-        if (!record || !windowAttr) {
+        const windowCandidates = (record?.attributes ?? []).filter(a => a.value.toUpperCase().startsWith('WINDOW('));
+        if (!record || windowCandidates.length === 0) {
             vscode.window.showWarningMessage(`Record '${recordName}' does not have a WINDOW keyword.`);
             return;
         };
+
+        // The tree has no "active format" of its own — if the record declares a separate window per
+        // display size (one WINDOW() line per format), ask which one this title edit targets.
+        if (!activeFormat && windowCandidates.length > 1) {
+            const picked = await pickTargetFormat(windowCandidates);
+            if (!picked) {
+                return;
+            };
+            activeFormat = picked.format;
+        };
+
+        const windowAttr = pickForActiveFormat(windowCandidates, activeFormat)!;
 
         const windowMatch = windowAttr.value.match(/WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)(?:\s+[^)]*)?\s*\)/i);
         if (!windowMatch) {
@@ -83,7 +98,7 @@ export async function editWindowTitleForRecord(recordName: string): Promise<void
         };
         const windowWidth = parseInt(windowMatch[4], 10);
 
-        const existing = findExistingWindowTitle(record);
+        const existing = findExistingWindowTitle(record, activeFormat);
 
         const text = await collectTitleText(existing?.text, windowWidth);
         if (text === null) {
@@ -112,8 +127,13 @@ export async function editWindowTitleForRecord(recordName: string): Promise<void
             return;
         };
 
+        // A brand-new title (no existing WDWTITLE() line yet) only needs to be conditioned on the
+        // active format when this record actually has more than one declared format's window — a
+        // single declared format (or none) means "applies everywhere" already, unconditioned.
+        const conditionFormat = !existing && windowCandidates.length > 1 ? activeFormat : undefined;
+
         const anchorLineIndex = windowAttr.lastLineIndex ?? windowAttr.lineIndex;
-        if (!(await applyWindowTitle(editor, anchorLineIndex, existing, text, align, position))) {
+        if (!(await applyWindowTitle(editor, anchorLineIndex, existing, text, align, position, conditionFormat))) {
             return;
         };
 
@@ -128,14 +148,40 @@ export async function editWindowTitleForRecord(recordName: string): Promise<void
     };
 };
 
+/**
+ * Asks the user which declared display format's window a title edit should target, when the record
+ * has more than one WINDOW() line and the caller (the tree) has no implicit "active format" to go by.
+ * @param windowCandidates - The record's WINDOW() attribute lines, one per declared format
+ * @returns The chosen format (undefined means the unconditioned/shared line), or null if cancelled
+ */
+async function pickTargetFormat(windowCandidates: DdsAttribute[]): Promise<{ format?: string } | null> {
+    const options: (vscode.QuickPickItem & { format?: string })[] = windowCandidates.map(c => ({
+        label: c.displayFormat ?? 'All sizes (unconditioned)',
+        format: c.displayFormat
+    }));
+
+    const selection = await vscode.window.showQuickPick(options, {
+        title: 'Change Window Title - Select Display Size',
+        placeHolder: 'This record has a separate window per display size — choose which one to edit',
+        ignoreFocusOut: true
+    });
+
+    return selection ? { format: selection.format } : null;
+};
+
 // EXISTING TITLE LOOKUP
 
 /**
- * Finds and parses the record's WDWTITLE() keyword, if any.
+ * Finds and parses the record's WDWTITLE() keyword for the given display format, if any — the one
+ * explicitly conditioned on `activeFormat`, else the shared unconditioned one, else the first
+ * candidate (see `pickForActiveFormat`).
  * @param record - The record's field/attribute info
+ * @param activeFormat - Display format (e.g. "*DS3") to prefer, when the record has more than one
+ * WDWTITLE() line (one per format)
  */
-function findExistingWindowTitle(record: FieldsPerRecord): ExistingWindowTitle | undefined {
-    const attr = record.attributes?.find(a => a.value.toUpperCase().startsWith('WDWTITLE('));
+function findExistingWindowTitle(record: FieldsPerRecord, activeFormat?: string): ExistingWindowTitle | undefined {
+    const candidates = record.attributes?.filter(a => a.value.toUpperCase().startsWith('WDWTITLE(')) ?? [];
+    const attr = pickForActiveFormat(candidates, activeFormat);
     if (!attr) {
         return undefined;
     };
@@ -252,6 +298,8 @@ async function collectTitlePosition(current: TitlePosition | undefined): Promise
  * @param text - The new title text
  * @param align - The new horizontal alignment
  * @param position - The new vertical position
+ * @param conditionFormat - Display format to condition a brand-new title line on (only used when
+ * `existing` is undefined); undefined leaves it unconditioned, applying to every declared format
  */
 async function applyWindowTitle(
     editor: vscode.TextEditor,
@@ -259,7 +307,8 @@ async function applyWindowTitle(
     existing: ExistingWindowTitle | undefined,
     text: string,
     align: TitleAlign,
-    position: TitlePosition
+    position: TitlePosition,
+    conditionFormat?: string
 ): Promise<boolean> {
     const lines = generateWindowTitleLines(text, align, position);
     const workspaceEdit = new vscode.WorkspaceEdit();
@@ -272,6 +321,9 @@ async function applyWindowTitle(
         );
         workspaceEdit.replace(uri, range, lines.join('\n'));
     } else {
+        if (conditionFormat && lines.length > 0) {
+            lines[0] = writeDisplayFormatCondition(lines[0], conditionFormat);
+        };
         const insertPosition = new vscode.Position(anchorLineIndex + 1, 0);
         workspaceEdit.insert(uri, insertPosition, lines.join('\n') + '\n');
     };

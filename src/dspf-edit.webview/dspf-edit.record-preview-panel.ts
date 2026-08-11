@@ -6,11 +6,11 @@
 
 import * as vscode from 'vscode';
 import { FieldsPerRecord, DdsSize, DdsAttribute, AttributeWithIndicators, DdsIndicator, fieldsPerRecords, records, getDefaultSize, getAvailableDisplayFormats, getSizeForFormat, SYSTEM_FIELD_PLACEHOLDER, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument, updateTreeProvider, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, updateTreeProvider, applyWorkspaceEdit, applyDisplayFormatSplitEdit } from '../dspf-edit.utils/dspf-edit.helper';
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
 import { ExtensionState } from '../dspf-edit.states/state';
 import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
-import { resolveRecordSizeForFormat } from '../dspf-edit.parser/dspf-edit.parser';
+import { resolveRecordSizeForFormat, filterForActiveFormat, pickForActiveFormat } from '../dspf-edit.parser/dspf-edit.parser';
 import { editWindowTitleForRecord } from '../dspf-edit.commands/dspf-edit.window-title';
 import { getConstantTextFromUser, insertNewConstant } from '../dspf-edit.commands/dspf-edit.edit-constant';
 import { addFieldAtPosition } from '../dspf-edit.commands/dspf-edit.edit-field';
@@ -476,40 +476,6 @@ function getEffectiveSize(recordName: string, activeFormat?: string): DdsSize | 
         return resolveRecordSizeForFormat(recordName, activeFormat);
     };
     return fieldsPerRecords.find(r => r.record === recordName)?.size;
-};
-
-/**
- * Filters out attributes/fields/constants conditioned by a display format other than the active
- * one; unconditioned ones (and everything, when no format is active) always pass through.
- * @param items - Items carrying an optional displayFormat condition
- * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
- */
-function filterForActiveFormat<T extends { displayFormat?: string }>(items: T[], activeFormat: string | undefined): T[] {
-    if (!activeFormat) {
-        return items;
-    };
-    return items.filter(item => !item.displayFormat || item.displayFormat === activeFormat);
-};
-
-/**
- * Picks which of several same-keyword candidates applies, when a record/field/constant is
- * conditioned by more than one display format (one line per format, e.g. WDWTITLE or SFLPAG
- * declared once for *DS3 and once for *DS4). Prefers the one matching activeFormat, falling back
- * to an unconditioned one, then to the first candidate — so behavior is unchanged when no format
- * is active.
- * @param candidates - Same-keyword attribute candidates, in source order
- * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
- */
-function pickForActiveFormat<T extends { displayFormat?: string }>(candidates: T[], activeFormat?: string): T | undefined {
-    if (candidates.length === 0) {
-        return undefined;
-    };
-    if (!activeFormat) {
-        return candidates[0];
-    };
-    return candidates.find(c => c.displayFormat === activeFormat)
-        ?? candidates.find(c => !c.displayFormat)
-        ?? candidates[0];
 };
 
 /**
@@ -1426,12 +1392,13 @@ export class RecordPreviewPanel {
      * @param newCols - New window width
      */
     private async resizeWindow(newRows: number, newCols: number): Promise<void> {
-        const windowInfo = findWindowAttribute(this.resolveWindowRecordName(), this.activeDisplayFormat);
+        const windowRecordName = this.resolveWindowRecordName();
+        const windowInfo = findWindowAttribute(windowRecordName, this.activeDisplayFormat);
         if (!windowInfo) {
             return;
         };
 
-        await this.rewriteWindowKeyword(windowInfo.lineIndex, windowInfo.startRow, windowInfo.startCol, newRows, newCols);
+        await this.rewriteWindowKeyword(windowRecordName, windowInfo.startRow, windowInfo.startCol, newRows, newCols);
     };
 
     /**
@@ -1440,12 +1407,13 @@ export class RecordPreviewPanel {
      * @param newCol - New window screen column
      */
     private async moveWindowPosition(newRow: number, newCol: number): Promise<void> {
-        const windowInfo = findWindowAttribute(this.resolveWindowRecordName(), this.activeDisplayFormat);
+        const windowRecordName = this.resolveWindowRecordName();
+        const windowInfo = findWindowAttribute(windowRecordName, this.activeDisplayFormat);
         if (!windowInfo) {
             return;
         };
 
-        await this.rewriteWindowKeyword(windowInfo.lineIndex, newRow, newCol, windowInfo.numRows, windowInfo.numCols);
+        await this.rewriteWindowKeyword(windowRecordName, newRow, newCol, windowInfo.numRows, windowInfo.numCols);
     };
 
     /**
@@ -1454,7 +1422,7 @@ export class RecordPreviewPanel {
      * belongs to a shared window (WINDOW(other-record-name), or an inherited SFL/SFLCTL pair).
      */
     private async editWindowTitle(): Promise<void> {
-        await editWindowTitleForRecord(this.resolveWindowRecordName());
+        await editWindowTitleForRecord(this.resolveWindowRecordName(), this.activeDisplayFormat);
 
         const { editor } = checkForEditorAndDocument();
         if (editor) {
@@ -1508,7 +1476,7 @@ export class RecordPreviewPanel {
             return;
         };
 
-        await this.rewriteWindowKeyword(windowInfo.lineIndex, windowInfo.startRow, newStartCol, windowInfo.numRows, windowInfo.numCols);
+        await this.rewriteWindowKeyword(windowRecordName, windowInfo.startRow, newStartCol, windowInfo.numRows, windowInfo.numCols);
     };
 
     /**
@@ -1569,26 +1537,40 @@ export class RecordPreviewPanel {
     };
 
     /**
-     * Rewrites the record's WINDOW(startRow startCol numRows numCols) keyword in place.
+     * Rewrites the record's WINDOW(startRow startCol numRows numCols) keyword to the given values.
+     * When the file declares more than one display format and the currently-effective WINDOW() line
+     * is the shared unconditioned one, this splits it first (see `applyDisplayFormatSplitEdit`) so
+     * the edit only affects the format currently being previewed, instead of silently changing every
+     * format's window at once.
+     * @param recordName - Name of the record whose WINDOW() line(s) to rewrite
      */
-    private async rewriteWindowKeyword(lineIndex: number, startRow: number, startCol: number, numRows: number, numCols: number): Promise<void> {
+    private async rewriteWindowKeyword(recordName: string, startRow: number, startCol: number, numRows: number, numCols: number): Promise<void> {
         const { editor } = checkForEditorAndDocument();
         if (!editor) {
             return;
         };
 
-        const line = editor.document.lineAt(lineIndex);
-        const updatedLine = line.text.replace(
-            /WINDOW\s*\(\s*\d+\s+\d+\s+\d+\s+\d+(\s+[^)]*)?\s*\)/i,
-            (_match, suffix) => `WINDOW(${startRow} ${startCol} ${numRows} ${numCols}${suffix ?? ''})`
-        );
-
-        if (updatedLine === line.text) {
+        const record = fieldsPerRecords.find(r => r.record === recordName);
+        const candidates = record?.attributes?.filter(a => a.value.toUpperCase().startsWith('WINDOW(')) ?? [];
+        if (candidates.length === 0) {
             return;
         };
 
+        const declaredFormats = getAvailableDisplayFormats().map(f => f.name);
         const workspaceEdit = new vscode.WorkspaceEdit();
-        workspaceEdit.replace(editor.document.uri, line.range, updatedLine);
+
+        applyDisplayFormatSplitEdit(
+            workspaceEdit,
+            editor.document,
+            candidates,
+            this.activeDisplayFormat,
+            declaredFormats,
+            (existingLineText) => existingLineText.replace(
+                /WINDOW\s*\(\s*\d+\s+\d+\s+\d+\s+\d+(\s+[^)]*)?\s*\)/i,
+                (_match, suffix) => `WINDOW(${startRow} ${startCol} ${numRows} ${numCols}${suffix ?? ''})`
+            )
+        );
+
         if (!(await applyWorkspaceEdit(workspaceEdit, 'resize/move the window'))) {
             return;
         };
@@ -1598,7 +1580,10 @@ export class RecordPreviewPanel {
     /**
      * Increments or decrements an SFLCTL record's SFLPAG() (number of subfile rows shown at once),
      * always keeping SFLSIZ() one more than SFLPAG — the common convention that gives the subfile
-     * one row of headroom past what's visible. Both are 4-digit zero-padded numeric literals.
+     * one row of headroom past what's visible. Both are 4-digit zero-padded numeric literals. When
+     * the file declares more than one display format and either keyword's currently-effective line
+     * is still the shared unconditioned one, splits it first (see `applyDisplayFormatSplitEdit`) so
+     * the change only affects the format currently being previewed.
      */
     private async adjustSubfilePageSize(delta: number): Promise<void> {
         const { editor } = checkForEditorAndDocument();
@@ -1611,7 +1596,8 @@ export class RecordPreviewPanel {
             return;
         };
 
-        const pagAttr = findOwnSflPagAttribute(recordInfo, this.activeDisplayFormat);
+        const pagCandidates = recordInfo.attributes?.filter(a => a.value.toUpperCase().startsWith('SFLPAG(')) ?? [];
+        const pagAttr = pickForActiveFormat(pagCandidates, this.activeDisplayFormat);
         const pagMatch = pagAttr?.value.match(/SFLPAG\(\s*(\d+)\s*\)/i);
         if (!pagAttr || !pagMatch) {
             return;
@@ -1624,25 +1610,27 @@ export class RecordPreviewPanel {
         };
         const newSiz = newPag + 1;
 
+        const declaredFormats = getAvailableDisplayFormats().map(f => f.name);
         const workspaceEdit = new vscode.WorkspaceEdit();
 
-        const pagLine = editor.document.lineAt(pagAttr.lineIndex);
-        workspaceEdit.replace(
-            editor.document.uri,
-            pagLine.range,
-            pagLine.text.replace(/SFLPAG\(\s*\d+\s*\)/i, `SFLPAG(${String(newPag).padStart(4, '0')})`)
+        applyDisplayFormatSplitEdit(
+            workspaceEdit,
+            editor.document,
+            pagCandidates,
+            this.activeDisplayFormat,
+            declaredFormats,
+            (existingLineText) => existingLineText.replace(/SFLPAG\(\s*\d+\s*\)/i, `SFLPAG(${String(newPag).padStart(4, '0')})`)
         );
 
         const sizCandidates = recordInfo.attributes?.filter(a => a.value.toUpperCase().startsWith('SFLSIZ(')) ?? [];
-        const sizAttr = pickForActiveFormat(sizCandidates, this.activeDisplayFormat);
-        if (sizAttr) {
-            const sizLine = editor.document.lineAt(sizAttr.lineIndex);
-            workspaceEdit.replace(
-                editor.document.uri,
-                sizLine.range,
-                sizLine.text.replace(/SFLSIZ\(\s*\d+\s*\)/i, `SFLSIZ(${String(newSiz).padStart(4, '0')})`)
-            );
-        };
+        applyDisplayFormatSplitEdit(
+            workspaceEdit,
+            editor.document,
+            sizCandidates,
+            this.activeDisplayFormat,
+            declaredFormats,
+            (existingLineText) => existingLineText.replace(/SFLSIZ\(\s*\d+\s*\)/i, `SFLSIZ(${String(newSiz).padStart(4, '0')})`)
+        );
 
         if (!(await applyWorkspaceEdit(workspaceEdit, 'change the subfile page size'))) {
             return;

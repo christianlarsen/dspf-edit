@@ -1213,6 +1213,40 @@ export function resolveRecordSizeForFormat(recordName: string, activeFormat: str
 };
 
 /**
+ * Filters out attributes/fields/constants conditioned by a display format other than the active
+ * one; unconditioned ones (and everything, when no format is active) always pass through.
+ * @param items - Items carrying an optional displayFormat condition
+ * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
+ */
+export function filterForActiveFormat<T extends { displayFormat?: string }>(items: T[], activeFormat: string | undefined): T[] {
+    if (!activeFormat) {
+        return items;
+    };
+    return items.filter(item => !item.displayFormat || item.displayFormat === activeFormat);
+};
+
+/**
+ * Picks which of several same-keyword candidates applies, when a record/field/constant is
+ * conditioned by more than one display format (one line per format, e.g. WDWTITLE or SFLPAG
+ * declared once for *DS3 and once for *DS4). Prefers the one matching activeFormat, falling back
+ * to an unconditioned one, then to the first candidate — so behavior is unchanged when no format
+ * is active.
+ * @param candidates - Same-keyword attribute candidates, in source order
+ * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
+ */
+export function pickForActiveFormat<T extends { displayFormat?: string }>(candidates: T[], activeFormat?: string): T | undefined {
+    if (candidates.length === 0) {
+        return undefined;
+    };
+    if (!activeFormat) {
+        return candidates[0];
+    };
+    return candidates.find(c => c.displayFormat === activeFormat)
+        ?? candidates.find(c => !c.displayFormat)
+        ?? candidates[0];
+};
+
+/**
  * Shares a window's size across an SFL/SFLCTL pair when only one side declares WINDOW(): the
  * subfile detail (SFL) record and its control (SFLCTL) record occupy the exact same screen area,
  * but the WINDOW() keyword (direct or shared-reference) commonly sits on just one of them.

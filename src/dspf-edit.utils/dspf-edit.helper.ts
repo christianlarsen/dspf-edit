@@ -7,9 +7,9 @@
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import { DdsElement, DdsIndicator, DdsAttribute, records, FieldsPerRecord, ConstantInfo, FieldInfo, fieldsPerRecords, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
+import { DdsElement, DdsIndicator, DdsAttribute, records, FieldsPerRecord, ConstantInfo, FieldInfo, fieldsPerRecords, attributesFileLevel, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
-import { parseDocument } from '../dspf-edit.parser/dspf-edit.parser';
+import { parseDocument, pickForActiveFormat } from '../dspf-edit.parser/dspf-edit.parser';
 import { ExtensionState } from '../dspf-edit.states/state';
 import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 
@@ -488,14 +488,21 @@ export async function checkIfDspsizNeeded(editor: vscode.TextEditor): Promise<bo
 
 /**
  * Collects DSPSIZ configuration from user.
+ * @param existingSizes - Sizes the file already declares, when adding to an existing DSPSIZ (e.g.
+ * the "Add Display Size" command) rather than declaring one from scratch — pre-checked in the
+ * picker so the user adds to them instead of starting over. Empty (the default) for the from-scratch
+ * case, which pre-checks the standard 24x80 size instead.
  * @returns DSPSIZ configuration or null if cancelled
  */
-export async function collectDspsizConfiguration(): Promise<DspsizConfig | null> {
+export async function collectDspsizConfiguration(existingSizes: DisplaySize[] = []): Promise<DspsizConfig | null> {
     // Ask user which display sizes to support
+    const existingNames = new Set(existingSizes.map(s => s.name));
     const sizeOptions = STANDARD_DISPLAY_SIZES.map(size => ({
         label: `${size.rows}x${size.cols} (${size.name})`,
         description: size.description,
-        picked: size.rows === 24 && size.cols === 80 // Default to standard size
+        picked: existingSizes.length > 0
+            ? existingNames.has(size.name)
+            : (size.rows === 24 && size.cols === 80) // Default to standard size, from scratch
     }));
 
     const selectedSizes = await vscode.window.showQuickPick(sizeOptions, {
@@ -603,6 +610,38 @@ export async function insertDspsizLines(editor: vscode.TextEditor, dspsizLines: 
 };
 
 /**
+ * Updates the file's DSPSIZ specification to declare the given complete set of sizes — used by the
+ * "Add Display Size" command, as opposed to `insertDspsizLines`, which only covers declaring DSPSIZ
+ * from scratch when the file has none yet. When an existing DSPSIZ attribute is found (via
+ * `attributesFileLevel`, already parsed), its line range — including any wrapped continuation lines
+ * — is replaced wholesale with the freshly generated lines; otherwise falls back to inserting a new
+ * DSPSIZ specification, same as the from-scratch case.
+ * @param editor - The active text editor
+ * @param sizes - The complete set of sizes the file should declare afterward (existing + newly added)
+ */
+export async function updateDspsizLines(editor: vscode.TextEditor, sizes: DisplaySize[]): Promise<boolean> {
+    const dspsizLines = generateDspsizLines({ sizes, needsDspsiz: true });
+    if (dspsizLines.length === 0) {
+        return true;
+    };
+
+    const existingAttr = attributesFileLevel.find(attr => attr.value.toUpperCase().includes('DSPSIZ('));
+    if (!existingAttr) {
+        return insertDspsizLines(editor, dspsizLines);
+    };
+
+    const workspaceEdit = new vscode.WorkspaceEdit();
+    const uri = editor.document.uri;
+    const lastLineIndex = existingAttr.lastLineIndex ?? existingAttr.lineIndex;
+    const range = new vscode.Range(
+        existingAttr.lineIndex, 0,
+        lastLineIndex, editor.document.lineAt(lastLineIndex).text.length
+    );
+    workspaceEdit.replace(uri, range, dspsizLines.join('\n'));
+    return applyWorkspaceEdit(workspaceEdit, 'update the DSPSIZ specification');
+};
+
+/**
  * Finds the correct insertion point for DSPSIZ specification.
  * Should be after existing file-level attributes but before the first record.
  * @param editor - The active text editor
@@ -637,6 +676,107 @@ function findDspsizInsertionPoint(editor: vscode.TextEditor): number {
     };
 
     return insertionPoint;
+};
+
+/**
+ * Stamps (or clears) a display-format condition (e.g. "*DS3") onto a DDS line, in the same 9-character
+ * zone (columns 8-16, 0-based 7-15) that normally holds indicators — see `parseDisplayFormatCondition`
+ * in the parser for the read side of this convention, and `setIndicatorsOnLine` in
+ * dspf-edit.add-indicators.ts for the equivalent indicator-writing convention this mirrors.
+ * @param lineText - The line to stamp (must already have its keyword text in place)
+ * @param formatName - Display format name (e.g. "*DS3") to condition the line on, or undefined to
+ * leave the line unconditioned (returned unchanged)
+ */
+export function writeDisplayFormatCondition(lineText: string, formatName?: string): string {
+    if (!formatName) {
+        return lineText;
+    };
+
+    const line = lineText.padEnd(80, ' ');
+    const formatZone = formatName.padEnd(9, ' ').substring(0, 9);
+    return (line.substring(0, 7) + formatZone + line.substring(16)).trimEnd();
+};
+
+/**
+ * A single existing line of a keyword that can be conditioned per DSPSIZ display format (WINDOW,
+ * WDWTITLE, SFLPAG, SFLSIZ, ...) — the minimal shape `applyDisplayFormatSplitEdit` needs to pick the
+ * right candidate and locate it in the document.
+ */
+export interface DisplayFormatConditionable {
+    lineIndex: number;
+    displayFormat?: string;
+};
+
+/**
+ * Applies the "split on edit" rule to a workspace edit for a keyword that may be conditioned per
+ * display format, so that editing it while previewing one format never silently changes another.
+ *
+ * Rule: resolve which existing line is actually in effect for `activeFormat` the same way the
+ * preview already resolves it for reading (`pickForActiveFormat`: a line explicitly conditioned for
+ * it, else the shared unconditioned line, else the first candidate). If that line is already
+ * conditioned for `activeFormat` specifically (or the file declares at most one format), just
+ * rewrite it in place with the new value — already correctly scoped, no change in behavior. If it's
+ * the *shared* unconditioned line and the file declares more than one format, every other declared
+ * format currently falling back to that same line gets its own new line inserted right after,
+ * preserving the line's OLD value and explicitly conditioned for that format; the original line is
+ * then rewritten in place, now conditioned for `activeFormat`, with the NEW value — so afterward
+ * every declared format has its own explicit line and none are left relying on a fallback that just
+ * changed under them.
+ * @param workspaceEdit - Edit to add the replace/insert operations to
+ * @param document - The document being edited (for reading each candidate line's current text/range)
+ * @param candidates - This keyword's existing lines on the record, in source order
+ * @param activeFormat - Display format (e.g. "*DS3") currently being previewed/edited, or undefined
+ * @param declaredFormats - Every display format the file declares (from `getAvailableDisplayFormats`)
+ * @param generateLine - Produces the full line text to write, given the resolved line's current text
+ * and the format it should end up conditioned on (undefined for the rewritten/active line only when
+ * no split occurs). Called once per line written (1 rewrite, plus 1 insert per other format on split).
+ */
+export function applyDisplayFormatSplitEdit<T extends DisplayFormatConditionable>(
+    workspaceEdit: vscode.WorkspaceEdit,
+    document: vscode.TextDocument,
+    candidates: T[],
+    activeFormat: string | undefined,
+    declaredFormats: string[],
+    generateLine: (existingLineText: string, format?: string) => string
+): void {
+    if (candidates.length === 0) {
+        return;
+    };
+
+    const effective = pickForActiveFormat(candidates, activeFormat);
+    if (!effective) {
+        return;
+    };
+
+    const uri = document.uri;
+    const effectiveLine = document.lineAt(effective.lineIndex);
+
+    // No-op guard: if the edit wouldn't actually change this line's content (e.g. a drag that ends
+    // back where it started), skip entirely — including the split, which should never fire for a
+    // change that isn't really happening.
+    const proposedLine = generateLine(effectiveLine.text, effective.displayFormat);
+    if (proposedLine === effectiveLine.text) {
+        return;
+    };
+
+    const needsSplit = !!activeFormat && !effective.displayFormat && declaredFormats.length > 1;
+
+    if (!needsSplit) {
+        workspaceEdit.replace(uri, effectiveLine.range, proposedLine);
+        return;
+    };
+
+    // Preserve the OLD value for every other declared format that would otherwise keep silently
+    // falling back to this same shared line once it's rewritten.
+    const otherFormats = declaredFormats.filter(f => f !== activeFormat);
+    for (const format of otherFormats) {
+        const oldConditionedLine = writeDisplayFormatCondition(effectiveLine.text, format);
+        workspaceEdit.insert(uri, effectiveLine.range.end, '\n' + oldConditionedLine);
+    };
+
+    // Rewrite the original line in place: now conditioned for the active format, with the new value.
+    const newLine = writeDisplayFormatCondition(generateLine(effectiveLine.text, activeFormat), activeFormat);
+    workspaceEdit.replace(uri, effectiveLine.range, newLine);
 };
 
 /**
