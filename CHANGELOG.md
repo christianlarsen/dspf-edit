@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [0.15.0] - 2026-08-11
+### Added
+- Indicators: full support for DDS's AND/OR conditioning — previously only a single line's worth (up to 3 ANDed) was read or editable, and OR'd conditions were silently ignored.
+  - Parser: reads indicator-only continuation lines (position 7 `A`/blank to extend an AND group beyond 3, `O` to start a new OR'd group), up to DDS's own limits (9 ANDed indicators per condition, 9 OR'd conditions).
+  - Tree view: an OR'd condition is now shown grouped into its ANDed sub-conditions instead of one flat, misleading list; hovering a conditioned field/constant/attribute shows the full condition as a tooltip (e.g. `51 AND NOT 61 AND 53  OR  52`).
+  - Preview: indicator simulation (on/off toggles) now evaluates AND/OR conditions correctly instead of treating every indicator as ANDed together.
+  - "Indicators" command: add a 4th+ ANDed indicator (continuation lines are generated/removed automatically), add or remove a whole OR'd condition, or edit indicators within a specific one when there's more than one.
+
 ## [0.14.2] - 2026-08-09
 ### Fixed
 - Tree view: a record created in a brand-new DSPF source (one that started out with zero records) didn't show up in the records list until the source was closed and reopened — the per-document record filter seeded itself empty on that first parse and never learned to include anything added afterward.

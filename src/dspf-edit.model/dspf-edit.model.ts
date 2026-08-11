@@ -40,6 +40,36 @@ export interface DdsAttribute {
 export interface DdsIndicator {
   active: boolean;
   number: number;
+  /**
+   * Zero-based index of the AND-group this indicator belongs to, when the element/keyword is
+   * conditioned by more than 3 ANDed indicators (continued across lines with 'A' in position 7)
+   * and/or several OR'd conditions (each starting with 'O' in position 7) — see "Condition for
+   * display files (positions 7 through 16)" in the DDS reference. All indicators sharing the same
+   * `group` are ANDed together; different groups are ORed. Undefined (or 0) is the common case: a
+   * single AND group, exactly as coded on the element's own line.
+   */
+  group?: number;
+};
+
+/**
+ * Splits a flat, group-tagged indicator array (as produced by the parser — see `DdsIndicator.group`)
+ * back into its OR'd AND-groups, in group order. Indicators with no `group` all fall into the same
+ * (first) group, so a plain, non-continued element's indicators come back as a single group.
+ * Shared by every consumer that needs to evaluate or display the AND/OR structure (indicator
+ * simulation, tree labels, tooltips) so they all agree on the same grouping.
+ * @param indicators - The element's indicators, possibly spanning several OR'd AND-groups
+ */
+export function groupIndicatorsByCondition(indicators?: DdsIndicator[]): DdsIndicator[][] {
+  if (!indicators || indicators.length === 0) return [];
+
+  const groups = new Map<number, DdsIndicator[]>();
+  for (const ind of indicators) {
+    const key = ind.group ?? 0;
+    const group = groups.get(key);
+    if (group) group.push(ind); else groups.set(key, [ind]);
+  };
+
+  return [...groups.entries()].sort((a, b) => a[0] - b[0]).map(([, group]) => group);
 };
 
 /**

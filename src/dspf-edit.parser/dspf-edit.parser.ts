@@ -34,6 +34,75 @@ export let currentDdsElements: DdsElement[] = [];
 let lastPositionInRecord: { row: number; col: number; length: number } | undefined;
 
 /**
+ * AND-groups accumulated so far from indicator-only continuation lines (position 7 = 'A'/blank,
+ * or 'O' to start a new OR'd group — see "Condition for display files (positions 7 through 16)"
+ * in the DDS reference), waiting to be attached to the next field/constant/keyword line that
+ * actually names something. Per that same rule, the field/constant/keyword itself only ever
+ * appears on the last line of such a group, so this buffer is folded into (and cleared by)
+ * whichever real element line follows — see resolveLineIndicators.
+ */
+let pendingIndicatorGroups: DdsIndicator[][] = [];
+
+/**
+ * Clears any indicator-continuation lines collected so far without a terminating element line
+ * (either a fresh parse, or a malformed/dangling group — e.g. before a record line, which this
+ * conditioning mechanism doesn't apply to).
+ */
+function resetPendingIndicatorGroups(): void {
+    pendingIndicatorGroups = [];
+};
+
+/**
+ * True when a line is a pure indicator continuation line: it carries its own conditioning
+ * indicators (columns 8-16) but no keyword text (columns 45-80) — meaning it doesn't stand on its
+ * own and instead extends whichever field/constant/keyword line follows. (A field/constant name or
+ * position already rules this out at the call site, via isFieldLine/isConstantLine.)
+ * @param trimmedLine - Line with the sequence number area removed
+ * @param indicators - This line's own indicators, already parsed from columns 8-16
+ */
+function isIndicatorOnlyLine(trimmedLine: string, indicators: DdsIndicator[]): boolean {
+    if (indicators.length === 0) return false;
+    return trimmedLine.substring(39, 75).trim() === '';
+};
+
+/**
+ * Folds a line's own indicators into the pending buffer according to its column-7 marker: 'O'
+ * starts a new OR'd group, 'A' (or blank, the default) extends the AND group currently being built.
+ * @param marker - The line's column-7 character
+ * @param indicators - The line's own indicators (columns 8-16)
+ */
+function accumulatePendingIndicators(marker: string, indicators: DdsIndicator[]): void {
+    if (marker === 'O' && pendingIndicatorGroups.length > 0) {
+        pendingIndicatorGroups.push([...indicators]);
+    } else {
+        if (pendingIndicatorGroups.length === 0) pendingIndicatorGroups.push([]);
+        pendingIndicatorGroups[pendingIndicatorGroups.length - 1].push(...indicators);
+    };
+};
+
+/**
+ * Resolves the final, group-tagged indicator set for a terminating element line (one that names a
+ * field/constant or carries keyword text): folds its own indicators into any pending continuation
+ * groups per its own column-7 marker, then flattens the result — each indicator tagged with its
+ * (zero-based) OR-group index — and clears the pending buffer. When there's nothing pending (the
+ * overwhelming majority of lines), this is just the line's own indicators, all in group 0,
+ * identical to the pre-continuation-support behavior.
+ * @param marker - The terminating line's column-7 character
+ * @param ownIndicators - The terminating line's own indicators (columns 8-16)
+ */
+function resolveLineIndicators(marker: string, ownIndicators: DdsIndicator[]): DdsIndicator[] {
+    if (pendingIndicatorGroups.length === 0) {
+        return ownIndicators.map(ind => ({ ...ind, group: 0 }));
+    };
+
+    accumulatePendingIndicators(marker, ownIndicators);
+    const groups = pendingIndicatorGroups;
+    resetPendingIndicatorGroups();
+
+    return groups.flatMap((group, groupIndex) => group.map(ind => ({ ...ind, group: groupIndex })));
+};
+
+/**
  * Main parser function that processes DDS document text and returns structured elements
  * @param text - Raw DDS document text to parse
  * @returns Array of parsed DDS elements
@@ -82,6 +151,7 @@ function clearGlobalState(): void {
     fieldsPerRecords.length = 0;
     attributesFileLevel.length = 0;
     lastPositionInRecord = undefined;
+    resetPendingIndicatorGroups();
 
     // Reset both display-size slots so switching to a document with fewer (or no) DSPSIZ formats
     // doesn't leak a stale second size (e.g. *DS4) left over from a previously parsed document —
@@ -159,22 +229,40 @@ function parseSingleDdsLine(
 
     // Extract common line components
     const lineComponents = extractLineComponents(trimmedLine);
+    // Column 7: blank/'A' continues (or starts) an AND group, 'O' starts a new OR'd group — see
+    // resolveLineIndicators/accumulatePendingIndicators.
+    const conditionMarker = trimmedLine.charAt(1);
 
     // Determine element type and parse accordingly
     if (isRecordLine(trimmedLine)) {
+        // This conditioning mechanism applies to fields/constants/keywords, not record lines —
+        // drop any dangling continuation group rather than let it leak into whatever comes next.
+        resetPendingIndicatorGroups();
         return parseRecordElement(lines, lineIndex, trimmedLine, lastRecord);
     };
 
     if (isFieldLine(lineComponents.fieldName)) {
-        return parseFieldElement(lines, lineIndex, trimmedLine, lineComponents, lastRecord);
+        const indicators = resolveLineIndicators(conditionMarker, lineComponents.indicators);
+        return parseFieldElement(lines, lineIndex, trimmedLine, { ...lineComponents, indicators }, lastRecord);
     };
 
     if (isConstantLine(lineComponents)) {
-        return parseConstantElement(lines, lineIndex, trimmedLine, lineComponents, lastRecord);
+        const indicators = resolveLineIndicators(conditionMarker, lineComponents.indicators);
+        return parseConstantElement(lines, lineIndex, trimmedLine, { ...lineComponents, indicators }, lastRecord);
     };
 
-    // Default to attribute parsing
-    return parseAttributeElement(lines, lineIndex, trimmedLine, lineComponents, lastRecord, hasFieldInCurrentRecord);
+    // Neither record, field, nor constant: either a pure indicator-only continuation line (no name,
+    // no keyword text — buffer it for whichever real line follows) or a keyword-only attribute line.
+    if (isIndicatorOnlyLine(trimmedLine, lineComponents.indicators)) {
+        accumulatePendingIndicators(conditionMarker, lineComponents.indicators);
+        return { element: undefined, nextIndex: lineIndex, lastRecord };
+    };
+
+    // Default to attribute parsing. Whether this line actually carries keyword text (and so should
+    // consume the pending buffer) is only known once extractAttributes runs, so the merge happens
+    // inside parseAttributeElement itself — a blank/malformed line here must NOT swallow indicators
+    // that are still waiting for a later line.
+    return parseAttributeElement(lines, lineIndex, trimmedLine, lineComponents, lastRecord, hasFieldInCurrentRecord, conditionMarker);
 };
 
 /**
@@ -556,11 +644,21 @@ function parseAttributeElement(
     trimmedLine: string,
     components: any,
     lastRecord: string,
-    hasFieldInCurrentRecord: boolean
+    hasFieldInCurrentRecord: boolean,
+    conditionMarker: string
 ) {
+    // Extract with the line's own (unmerged) indicators first — extractAttributes returns an empty
+    // array whenever there's no actual keyword text, and only then do we know whether this line is
+    // real or a blank/malformed one. Only a real line may consume the pending continuation buffer
+    // (see the comment at this function's call site).
     const { attributes, nextIndex } = extractAttributes('A', lines, lineIndex, true, components.indicators, components.displayFormat);
 
     if (attributes.length > 0) {
+        // Now that we know this line carries a real keyword, fold it (and any pending
+        // continuation groups) into the attribute's final, group-tagged indicator set.
+        const indicators = resolveLineIndicators(conditionMarker, components.indicators);
+        attributes.forEach(attr => { attr.indicators = indicators; });
+
         // A keyword-only line with no field/constant seen yet since the record line belongs to the
         // record itself (e.g. SFL placed on its own line by SDA/RDI instead of the record name's
         // own line). linkAttributesToParents() links it into the record element too, but only after
@@ -584,7 +682,7 @@ function parseAttributeElement(
             lineIndex: lineIndex,
             lastLineIndex: maxLastLineIndex,
             value: '',
-            indicators: components.indicators,
+            indicators: indicators,
             displayFormat: components.displayFormat,
             attributes: attributes
         };

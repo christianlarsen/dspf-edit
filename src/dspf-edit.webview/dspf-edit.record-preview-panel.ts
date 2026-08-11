@@ -5,7 +5,7 @@
 */
 
 import * as vscode from 'vscode';
-import { FieldsPerRecord, DdsSize, DdsAttribute, AttributeWithIndicators, DdsIndicator, fieldsPerRecords, records, getDefaultSize, getAvailableDisplayFormats, getSizeForFormat, SYSTEM_FIELD_PLACEHOLDER } from '../dspf-edit.model/dspf-edit.model';
+import { FieldsPerRecord, DdsSize, DdsAttribute, AttributeWithIndicators, DdsIndicator, fieldsPerRecords, records, getDefaultSize, getAvailableDisplayFormats, getSizeForFormat, SYSTEM_FIELD_PLACEHOLDER, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, updateTreeProvider, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
 import { ExtensionState } from '../dspf-edit.states/state';
@@ -979,12 +979,15 @@ export class RecordPreviewPanel {
 
     /**
      * Checks whether a field/constant's own line-level indicators (columns 7-15, e.g. "61"/"N61")
-     * are satisfied. With live indicators, checks them against the currently toggled-on set
-     * (multiple indicators on one line are ANDed together, matching real DDS conditioning).
-     * Otherwise, uses the resting state — every indicator assumed OFF — so only unconditioned
-     * items and negated ("N") conditions show; this is what makes mutually-exclusive alternates
-     * (e.g. one shown on "61", another on "N61") resolve to a single, deterministic one even when
-     * they don't happen to share the same screen position. No indicators at all means "always shown".
+     * are satisfied. Indicators sharing the same `group` (all those coded on one line, plus any
+     * ANDed onto it via 'A'-continuation lines) are ANDed together; different groups (started by an
+     * 'O'-continuation line) are ORed — matching real DDS conditioning. Indicators with no `group`
+     * (the common case: a single, non-continued line) are all treated as one group. With live
+     * indicators, checks them against the currently toggled-on set. Otherwise, uses the resting
+     * state — every indicator assumed OFF — so only unconditioned items and negated ("N")
+     * conditions show; this is what makes mutually-exclusive alternates (e.g. one shown on "61",
+     * another on "N61") resolve to a single, deterministic one even when they don't happen to share
+     * the same screen position. No indicators at all means "always shown".
      * @param indicators - The item's own indicators
      * @param useLiveIndicators - Whether to check against the toggled-on indicator set, or assume all OFF
      */
@@ -992,10 +995,11 @@ export class RecordPreviewPanel {
         if (!indicators || indicators.length === 0) {
             return true;
         };
-        if (!useLiveIndicators) {
-            return indicators.every(ind => !ind.active);
-        };
-        return indicators.every(ind => this.activeIndicators.has(ind.number) === ind.active);
+
+        const satisfies = (ind: DdsIndicator) =>
+            useLiveIndicators ? this.activeIndicators.has(ind.number) === ind.active : !ind.active;
+
+        return groupIndicatorsByCondition(indicators).some(group => group.every(satisfies));
     };
 
     /**
