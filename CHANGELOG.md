@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
-## [0.15.0] - 2026-08-09
+## [0.15.0] - 2026-08-11
 ### Added
 - Indicators: full support for DDS's AND/OR conditioning — previously only a single line's worth (up to 3 ANDed) was read or editable, and OR'd conditions were silently ignored.
   - Parser: reads indicator-only continuation lines (position 7 `A`/blank to extend an AND group beyond 3, `O` to start a new OR'd group), up to DDS's own limits (9 ANDed indicators per condition, 9 OR'd conditions).

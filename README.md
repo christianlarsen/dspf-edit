@@ -120,7 +120,7 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.15.0** - 2026-08-09
+**0.15.0** - 2026-08-11
 - Added: Indicators: full support for DDS's AND/OR conditioning — more than 3 ANDed indicators (up to DDS's limit of 9, spilling onto continuation lines automatically), and OR'd conditions (add/remove a whole OR'd group, or edit indicators within a specific one). Tree view shows an OR'd condition grouped by AND sub-condition, with a readable tooltip; preview's indicator simulation now evaluates AND/OR correctly instead of treating every indicator as ANDed together.
 
 ---
