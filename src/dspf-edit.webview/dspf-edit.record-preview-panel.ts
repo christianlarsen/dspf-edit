@@ -295,7 +295,7 @@ function attributeGroupKey(value: string): string {
  * @param recordName - Name of the record to inspect
  * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
  */
-function findWindowAttribute(recordName: string, activeFormat?: string): { startRow: number; startCol: number; numRows: number; numCols: number; lineIndex: number } | undefined {
+function findWindowAttribute(recordName: string, activeFormat?: string): { startRow: number; startCol: number; numRows: number; numCols: number; lineIndex: number; hasOwnMessageLine: boolean } | undefined {
     const record = fieldsPerRecords.find(r => r.record === recordName);
     const candidates = record?.attributes?.filter(a => a.value.toUpperCase().startsWith('WINDOW(')) ?? [];
     const attr = pickForActiveFormat(candidates, activeFormat);
@@ -303,17 +303,23 @@ function findWindowAttribute(recordName: string, activeFormat?: string): { start
         return undefined;
     };
 
-    const match = attr.value.match(/WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)(?:\s+[^)]*)?\s*\)/i);
+    const match = attr.value.match(/WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)((?:\s+[^)]*)?)\s*\)/i);
     if (!match) {
         return undefined;
     };
+
+    // Per the DDS reference (WINDOW keyword, "MSGLIN parameter"): a window's own last content line
+    // is reserved as its message line by default — *NOMSGLIN is what opts OUT of that, moving error
+    // messages back to the bottom of the physical display (or MSGLOC) instead.
+    const hasOwnMessageLine = !/\*NOMSGLIN\b/i.test(match[5] ?? '');
 
     return {
         startRow: parseInt(match[1], 10),
         startCol: parseInt(match[2], 10),
         numRows: parseInt(match[3], 10),
         numCols: parseInt(match[4], 10),
-        lineIndex: attr.lineIndex
+        lineIndex: attr.lineIndex,
+        hasOwnMessageLine
     };
 };
 
@@ -382,7 +388,13 @@ function extractFunctionKeyCommands(attributes: DdsAttribute[] | undefined): Fun
     const commands: FunctionKeyCommand[] = [];
 
     (attributes ?? []).forEach(attr => {
-        const match = attr.value.match(/^(CA|CF)(\d{2})\(\d{2}\s+'([^']{1,25})'\)$/);
+        // No length cap on the description here: DDS allows text longer than fits on one source
+        // line (spilling onto a continuation line, already reassembled into `attr.value` by the
+        // parser) — capping the match would silently drop keys with a longer description, e.g. one
+        // that had to wrap (see dspf-edit.add-keys.ts's extractKeyCommandsFromAttributes for the
+        // matching read-side fix, and validateKeyCommandDescription for where 25 legitimately still
+        // applies: only when this tool itself creates a new one).
+        const match = attr.value.match(/^(CA|CF)(\d{2})\(\d{2}\s+'([^']*)'\)$/);
         if (match) {
             commands.push({
                 type: match[1] as 'CA' | 'CF',
@@ -564,7 +576,13 @@ export class RecordPreviewPanel {
             'dspfEditRecordPreview',
             `Preview: ${recordName}`,
             { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
-            { enableScripts: true }
+            // retainContextWhenHidden: without it, VS Code tears down the webview's live page
+            // (canvas, drag state, everything) whenever it's hidden — which moving/dragging the
+            // panel to a different editor group briefly does — and only reloads the static HTML on
+            // return, with nothing to trigger a fresh 'render' message; the canvas just stays blank
+            // until some unrelated state change (editing the document, switching records...) happens
+            // to call render() again. Keeping the page alive in the background avoids that entirely.
+            { enableScripts: true, retainContextWhenHidden: true }
         );
 
         this.panel.webview.html = this.getHtml();
@@ -675,10 +693,20 @@ export class RecordPreviewPanel {
             return null;
         };
 
+        const availableFormats = getAvailableDisplayFormats();
+
+        // A previously-selected format can stop being valid for what's being previewed now — the
+        // panel is reused across documents (switching which record is shown doesn't recreate it), so
+        // a format kept from a different file, or one a live edit just dropped from DSPSIZ, must be
+        // let go too. Left in place, the format dropdown would try to select a value with no matching
+        // <option>, which a <select> just renders blank instead of falling back to any real choice.
+        if (this.activeDisplayFormat && !availableFormats.some(f => f.name === this.activeDisplayFormat)) {
+            this.activeDisplayFormat = undefined;
+        };
+
         // Default to the first declared format so a record's WINDOW()/attributes conditioned per
         // format resolve consistently from the very first render, instead of showing every
         // candidate at once. The selector itself stays locked to it when the file only declares one.
-        const availableFormats = getAvailableDisplayFormats();
         if (availableFormats.length > 0 && !this.activeDisplayFormat) {
             this.activeDisplayFormat = availableFormats[0].name;
         };
@@ -801,6 +829,15 @@ export class RecordPreviewPanel {
         const availableRecords = records.filter(name => name !== this.recordName);
         const windowTitle = isWindow ? (findWindowTitle(this.recordName, this.activeDisplayFormat) ?? null) : null;
         const errorMessage = this.resolveErrorMessage(recordInfo);
+
+        // A window reserves its own last content line as a message line unless *NOMSGLIN is coded
+        // on its WINDOW() keyword (DDS reference, WINDOW keyword's MSGLIN parameter) — when that's
+        // the case, an active error shows there instead of at the bottom of the physical display.
+        const windowInfoForMsgLine = isWindow ? findWindowAttribute(this.resolveWindowRecordName(), this.activeDisplayFormat) : undefined;
+        const errorMessageFrame = (errorMessage && windowFrame && (windowInfoForMsgLine?.hasOwnMessageLine ?? true))
+            ? { row: windowFrame.row + windowFrame.rows - 1, col: windowFrame.col, cols: windowFrame.cols }
+            : null;
+
         const sflPagAttr = isSflCtlRecordInfo(recordInfo) ? findOwnSflPagAttribute(recordInfo, this.activeDisplayFormat) : undefined;
         const sflPagMatch = sflPagAttr?.value.match(/SFLPAG\(\s*(\d+)\s*\)/i);
         const sflPag = sflPagMatch ? parseInt(sflPagMatch[1], 10) : null;
@@ -817,6 +854,7 @@ export class RecordPreviewPanel {
             outerFrame,
             windowTitle,
             errorMessage,
+            errorMessageFrame,
             sflPag,
             maxSize,
             availableRecords,
@@ -1963,6 +2001,7 @@ export class RecordPreviewPanel {
     let currentOuterFrame = null;
     let currentWindowTitle = null;
     let currentErrorMessage = null;
+    let currentErrorMessageFrame = null;
     let currentTitleRect = null;
     let currentMenuIconRect = null;
     let currentCenterIconRect = null;
@@ -2216,19 +2255,28 @@ export class RecordPreviewPanel {
 
         drawGridDots(size, items, currentBackgroundItems, moveDelta, currentOuterFrame, currentWindowFrame);
 
-        // A currently-active ERRMSG() shows on the display's message line — the physical screen's
-        // bottom row, whether or not the record being previewed is itself a window — in white,
-        // overwriting whatever would otherwise be there, same as a real 5250 error line.
+        // A currently-active ERRMSG() shows on the message line, in white, overwriting whatever
+        // would otherwise be there, same as a real 5250 error line. Where that line actually is
+        // depends on the window's own WINDOW() keyword (DDS's MSGLIN parameter, see
+        // findWindowAttribute's hasOwnMessageLine): by default a window reserves its own last
+        // content line for this (currentErrorMessageFrame, set by the extension); only with
+        // *NOMSGLIN coded (or when the record isn't a window at all) does it fall back to the
+        // physical display's own bottom row, spanning the full canvas width.
         if (currentErrorMessage) {
-            const rowY = (size.rows - 1) * CHAR_H;
+            const frame = currentErrorMessageFrame;
+            const rowY = frame ? (frame.row - 1) * CHAR_H : (size.rows - 1) * CHAR_H;
+            const colX = frame ? (frame.col - 1) * CHAR_W : 0;
+            const widthPx = frame ? frame.cols * CHAR_W : canvas.width;
+            const maxChars = frame ? frame.cols : size.cols;
+
             ctx.fillStyle = '#000000';
-            ctx.fillRect(0, rowY, canvas.width, CHAR_H);
+            ctx.fillRect(colX, rowY, widthPx, CHAR_H);
             ctx.fillStyle = '#ffffff';
             ctx.font = (CHAR_H - 4) + 'px ' + fontFamily;
             ctx.textAlign = 'center';
             const text = currentErrorMessage.text;
-            for (let i = 0; i < text.length && i < size.cols; i++) {
-                ctx.fillText(text[i], i * CHAR_W + CHAR_W / 2, rowY + CHAR_H / 2);
+            for (let i = 0; i < text.length && i < maxChars; i++) {
+                ctx.fillText(text[i], colX + i * CHAR_W + CHAR_W / 2, rowY + CHAR_H / 2);
             }
             ctx.textAlign = 'start';
         }
@@ -2874,6 +2922,7 @@ export class RecordPreviewPanel {
                 : baseInfo;
 
             currentErrorMessage = message.errorMessage || null;
+            currentErrorMessageFrame = message.errorMessageFrame || null;
             draw(message.size, message.items, message.backgroundItems, message.windowFrame, message.windowTitle, message.outerFrame);
         } else if (message.type === 'notFound') {
             info.textContent = 'Record no longer exists.';

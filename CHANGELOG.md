@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [0.17.0] - 2026-08-12
+### Added
+- Command Keys: adding a CAxx/CFxx now also checks the *other* level (the file, when adding to a record; every record, when adding at file level) and excludes any key number already used there from the picker, regardless of whether the type matches — prevents generating a record whose effective key set defines the same key number as both CA and CF (or twice), which DDS won't compile.
+- Preview: a function-key legend now always shows below the toolbar — one green-bordered `Fnn` badge per key actually available to the record being previewed (file-level + record-level CAxx/CFxx, record overriding file per key number, narrowed to the active display format). A key still shows even when its own indicator condition isn't currently met, so you can see at a glance that it's *defined*; it switches to solid (inverted) styling when it's actually active right now — correctly handling more than one indicator-conditioned alternate per key number (AND/OR), and hovering shows its description.
+- Preview: an active `ERRMSG()` on a `WINDOW` record now shows on the window's own reserved message line (its last content row) instead of always at the bottom of the physical screen — matching the DDS `WINDOW` keyword's `MSGLIN`/`*NOMSGLIN` parameter (a window reserves its own message line by default; `*NOMSGLIN` is what opts out and sends it to the display's normal message line instead).
+- Preview: the "Indicators" toggle and the active display format (e.g. *DS3) now persist across switching which record is previewed in the same panel, instead of resetting back off/default every time.
+### Fixed
+- Command Keys / Preview: a CAxx/CFxx description longer than 25 characters — legitimately allowed by DDS, spilling onto a continuation line in the source — was silently dropped from both the "current key commands" list and the preview's function-key legend. The reading regex incorrectly reused the 25-character cap that's only meant to apply when this tool itself creates a *new* key command.
+- Preview: the display-format dropdown (the *DS3/*DS4 selector) could end up blank instead of showing a real selection — it now keeps the previously-selected format across record switches, but wasn't falling back when that format no longer applied (e.g. after switching to a different file, or a live edit removed a DSPSIZ format from the current one).
+- Preview: the panel went blank after being dragged to a different editor group — VS Code was tearing down its live content whenever it became hidden (which moving it briefly does) and nothing re-rendered it on return; the panel now keeps its content alive in the background (`retainContextWhenHidden`).
+
 ## [0.16.0] - 2026-08-11
 ### Added
 - Multi-size (DSPSIZ) awareness across creation and editing: when a display file declares more than one screen size (e.g. `DSPSIZ(24 80 *DS3 27 132 *DS4)`), the extension now keeps every declared size correct instead of only ever acting on the first one.

@@ -229,8 +229,12 @@ function extractKeyCommandsFromAttributes(attributes: any[] | undefined): KeyCom
     (attributes ?? []).forEach(attr => {
         const attribute = attr.value;
 
-        // Match CA or CF commands: CA03(03 'End of program') or CF12(12 'Cancel')
-        const commandMatch = attribute ? attribute.match(/^(CA|CF)(\d{2})\(\d{2}\s+'([^']{1,25})'\)$/) : false;
+        // Match CA or CF commands: CA03(03 'End of program') or CF12(12 'Cancel'). The description
+        // is capped at 25 chars only when THIS tool creates one (see validateKeyCommandDescription)
+        // — DDS itself allows longer text (spilling onto a continuation line, which extractAttributes
+        // already reassembles into `attribute` before this regex runs), so reading must not re-impose
+        // that cap: a longer existing description would otherwise silently fail to match at all.
+        const commandMatch = attribute ? attribute.match(/^(CA|CF)(\d{2})\(\d{2}\s+'([^']*)'\)$/) : false;
         if (commandMatch) {
             keyCommands.push({
                 type: commandMatch[1] as 'CA' | 'CF',

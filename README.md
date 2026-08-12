@@ -17,7 +17,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
   - View display file attributes (e.g., display size, command keys).
   - Right-click options:
     - Create new records.
-    - Assign command keys.
+    - Assign command keys — a key number already used at the other level (file vs. record) is excluded, so you can't end up with the same key defined as both CA and CF.
     - Add Display Size: adds a second standard screen size (*DS3/*DS4) to a file that currently declares only one.
 
 - **Records level**
@@ -32,7 +32,7 @@ The extension provides a **navigable schema view** of the DDS source file that i
     - Remove field.
     - Copy/Delete record.
     - Add "buttons" (constants for record commands).
-    - Assign command keys.
+    - Assign command keys — a key number already used at the other level (file vs. record) is excluded, so you can't end up with the same key defined as both CA and CF.
     - Add / Remove / Change indicators.
     - Resizing (if window record) — aware of every declared display size, resizing all of them at once.
     - Change Window Title (if window record) — targets the size being worked on when the record declares more than one.
@@ -82,7 +82,10 @@ The extension provides a **navigable schema view** of the DDS source file that i
   - Subfile (SFL/SFLCTL) records show all SFLPAG rows, and automatically preview their paired header/detail record; detail rows can't be dragged up over the header's own content.
   - Overlay any other record (dimmed) behind the one being previewed, to see how they compose.
   - Simulate indicators on/off to preview conditional fields, constants, and attributes.
+  - A function-key legend (`F3`, `F12`, ...) shows every command key available to the record being previewed (file-level + record-level CAxx/CFxx); a key still shows even when its indicator condition isn't currently met (so you can see it's defined), switching to solid/inverted styling when it's actually active.
+  - An active `ERRMSG()` on a window shows on the window's own reserved message line (its last content row) when the window doesn't specify `*NOMSGLIN`, matching real DDS behavior, instead of always at the bottom of the physical screen.
   - For files with more than one DSPSIZ format (e.g. *DS3/*DS4), switch which one is previewed — window positions/sizes and conditioned elements are resolved for the selected format. Dragging/resizing/centering a window, or adjusting a subfile's SFLPAG/SFLSIZ, only affects the size currently being previewed.
+  - The "Indicators" toggle and the selected display format persist when switching which record is previewed in the same panel.
   - Stays in sync with the schema tree selection in both directions.
 
 ---
@@ -121,8 +124,9 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.16.0** - 2026-08-11
-- Added: Multi-size (DSPSIZ) awareness across creation and editing. Creating/resizing a WINDOW, or changing its title, now correctly handles every declared screen size (not just the first); editing a window or a subfile's SFLPAG/SFLSIZ from the preview while viewing one specific size no longer silently changes another; a new "Add Display Size" command adds a second standard size to a file that only declares one.
+**0.17.0** - 2026-08-12
+- Added: Command Keys now checks across file/record level to prevent a key number being defined as both CA and CF. Preview gained a function-key legend (shows every available `Fnn`, highlighting the ones currently active) and now shows an active `ERRMSG()` on the window's own message line when applicable. The "Indicators" toggle and selected display format persist across switching which record is previewed.
+- Fixed: a CAxx/CFxx description longer than 25 characters (spilling onto a continuation line) was silently dropped instead of shown. The display-format dropdown could go blank after switching records/files. The preview panel could go blank after being dragged to a different editor group.
 
 ---
 
