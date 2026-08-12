@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { fileSizeAttributes, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
+import { fileSizeAttributes, fieldsPerRecords, getAvailableDisplayFormats, getSizeForFormat } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 
 // INTERFACES AND TYPES
@@ -22,7 +22,7 @@ type WindowPosition = 'CENTERED' | 'BOTTOM_CENTERED';
 type ResizeOperation = 'CHANGE_SIZE' | 'AUTO_ADJUST';
 
 /**
- * Current window dimensions from WINDOW keyword.
+ * Current window dimensions from a WINDOW keyword.
  */
 interface CurrentWindowDimensions {
     startRow: number;
@@ -30,6 +30,9 @@ interface CurrentWindowDimensions {
     numRows: number;
     numCols: number;
     windowLine : number;
+    /** Display format (e.g. "*DS3") this line is conditioned on, or undefined if unconditioned
+     * (applies to every declared format). */
+    format?: string;
 };
 
 /**
@@ -77,7 +80,11 @@ export function windowResize(context: vscode.ExtensionContext): void {
 
 /**
  * Handles the window resize command workflow.
- * Validates that the record has WINDOW keyword and provides resize options.
+ * Validates that the record has WINDOW keyword and provides resize options. When the record has more
+ * than one WINDOW() line (one per declared DSPSIZ display format), all of them are resized together:
+ * the user picks one size/position preference, and it's applied to every declared format, each
+ * repositioned according to its own screen size — mirroring how a new window is created (see
+ * `dspf-edit.new-record.ts`'s `calculateWindowDimensionsForAllFormats`).
  * @param node - The DDS node containing the window record
  */
 async function handleWindowResizeCommand(node: DdsNode): Promise<void> {
@@ -87,7 +94,7 @@ async function handleWindowResizeCommand(node: DdsNode): Promise<void> {
         if (!document || !editor) {
             return;
         };
-        
+
         const element = node.ddsElement;
 
         // Validate element type - only records can have windows
@@ -96,16 +103,17 @@ async function handleWindowResizeCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        // Check if record has WINDOW keyword
-        const currentWindow = findCurrentWindowDimensions(editor, element);
-        if (!currentWindow) {
+        // Check if record has one or more WINDOW keyword lines (one per declared display format)
+        const currentWindows = findCurrentWindowDimensions(editor, element);
+        if (currentWindows.length === 0) {
             vscode.window.showWarningMessage(`Record '${element.name}' does not have a WINDOW keyword.`);
             return;
         };
 
         // Show current window information
-        const currentInfo = `Current: ${currentWindow.numRows}x${currentWindow.numCols} at (${currentWindow.startRow},${currentWindow.startCol})`;
-        const windowLine = currentWindow.windowLine;
+        const currentInfo = currentWindows.length === 1
+            ? `Current: ${currentWindows[0].numRows}x${currentWindows[0].numCols} at (${currentWindows[0].startRow},${currentWindows[0].startCol})`
+            : `Current: ${currentWindows[0].numRows}x${currentWindows[0].numCols} (${currentWindows.length} display sizes declared)`;
 
         // Collect resize configuration from user
         const resizeConfig = await collectWindowResizeConfiguration(currentInfo, element);
@@ -114,15 +122,20 @@ async function handleWindowResizeCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        // Calculate new dimensions based on operation
-        const newDimensions = await calculateNewDimensions(resizeConfig, currentWindow, editor, element);
-        if (!newDimensions) {
-            vscode.window.showErrorMessage("Unable to calculate new window dimensions.");
-            return;
+        // Calculate new dimensions for every existing WINDOW line, each positioned according to its
+        // own declared format's screen size (or the file default, when unconditioned).
+        const newDimensionsList: CurrentWindowDimensions[] = [];
+        for (const currentWindow of currentWindows) {
+            const newDimensions = await calculateNewDimensionsForWindow(resizeConfig, currentWindow, editor, element);
+            if (!newDimensions) {
+                vscode.window.showErrorMessage("Unable to calculate new window dimensions.");
+                return;
+            };
+            newDimensionsList.push(newDimensions);
         };
 
         // Apply the window resize
-        if (!(await applyWindowResize(editor, element, windowLine, newDimensions))) {
+        if (!(await applyWindowResize(editor, newDimensionsList))) {
             return;
         };
         await vscode.commands.executeCommand('cursorRight');
@@ -130,8 +143,11 @@ async function handleWindowResizeCommand(node: DdsNode): Promise<void> {
 
         // Show success message
         const operationLabel = resizeConfig.operation === 'CHANGE_SIZE' ? 'resized' : 'auto-adjusted';
+        const dimensionsSummary = newDimensionsList.length === 1
+            ? `${newDimensionsList[0].numRows}x${newDimensionsList[0].numCols} at (${newDimensionsList[0].startRow},${newDimensionsList[0].startCol})`
+            : newDimensionsList.map(d => `${d.format ?? 'default'}: ${d.numRows}x${d.numCols} at (${d.startRow},${d.startCol})`).join(', ');
         vscode.window.showInformationMessage(
-            `Successfully ${operationLabel} window '${element.name}' to ${newDimensions.numRows}x${newDimensions.numCols} at (${newDimensions.startRow},${newDimensions.startCol}).`
+            `Successfully ${operationLabel} window '${element.name}' — ${dimensionsSummary}.`
         );
 
     } catch (error) {
@@ -190,13 +206,13 @@ async function collectWindowResizeConfiguration(currentInfo: string, element: an
  */
 async function collectResizeOperation(currentInfo: string): Promise<ResizeOperation | null> {
     const operationOptions: vscode.QuickPickItem[] = [
-        { 
-            label: "CHANGE_SIZE", 
+        {
+            label: "CHANGE_SIZE",
             description: "Specify new window size",
             detail: "Enter custom width and height for the window"
         },
-        { 
-            label: "AUTO_ADJUST", 
+        {
+            label: "AUTO_ADJUST",
             description: "Auto-adjust to fit content",
             detail: "Calculate optimal size based on fields and constants"
         }
@@ -213,12 +229,19 @@ async function collectResizeOperation(currentInfo: string): Promise<ResizeOperat
 };
 
 /**
- * Collects new window size when changing size manually.
+ * Collects new window size when changing size manually. Bounded by the smallest declared display
+ * size (DSPSIZ format), when the file declares more than one, so the same rows/cols fit on every
+ * screen a WINDOW() line will be written for.
  * @returns New window size or null if cancelled
  */
 async function collectNewWindowSize(): Promise<{ numRows: number; numCols: number } | null> {
-    const maxRows = fileSizeAttributes.maxRow1 || 24;
-    const maxCols = fileSizeAttributes.maxCol1 || 80;
+    const declaredFormats = getAvailableDisplayFormats();
+    const maxRows = declaredFormats.length > 0
+        ? Math.min(...declaredFormats.map(f => f.rows))
+        : (fileSizeAttributes.maxRow1 || 24);
+    const maxCols = declaredFormats.length > 0
+        ? Math.min(...declaredFormats.map(f => f.cols))
+        : (fileSizeAttributes.maxCol1 || 80);
 
     const numRows = await vscode.window.showInputBox({
         title: 'Window Resize - New Size',
@@ -231,7 +254,7 @@ async function collectNewWindowSize(): Promise<{ numRows: number; numCols: numbe
     const numCols = await vscode.window.showInputBox({
         title: 'Window Resize - New Size',
         prompt: `Enter number of columns (1-${maxCols})`,
-        placeHolder: "50", 
+        placeHolder: "50",
         validateInput: (value) => validateNumericRange(value, 1, maxCols, "Number of columns")
     });
     if (!numCols) return null;
@@ -248,13 +271,13 @@ async function collectNewWindowSize(): Promise<{ numRows: number; numCols: numbe
  */
 async function collectWindowPosition(): Promise<WindowPosition | null> {
     const positionOptions: vscode.QuickPickItem[] = [
-        { 
-            label: "CENTERED", 
+        {
+            label: "CENTERED",
             description: "Center the window on screen",
             detail: "Window will be positioned in the center of the display"
         },
-        { 
-            label: "BOTTOM_CENTERED", 
+        {
+            label: "BOTTOM_CENTERED",
             description: "Center horizontally, position at bottom",
             detail: "Window will be centered horizontally and positioned at the bottom"
         }
@@ -273,39 +296,62 @@ async function collectWindowPosition(): Promise<WindowPosition | null> {
 // WINDOW ANALYSIS FUNCTIONS
 
 /**
- * Finds current window dimensions from WINDOW keyword in the record.
+ * Resolves the screen bounds (rows/cols) a WINDOW() line should be positioned within: the declared
+ * display format's own size when the line is conditioned on one, else the file's default size.
+ * @param format - Display format name (e.g. "*DS3") the line is conditioned on, or undefined
+ */
+function getScreenBoundsForFormat(format?: string): { maxRows: number; maxCols: number } {
+    if (format) {
+        const size = getSizeForFormat(format);
+        if (size) {
+            return { maxRows: size.rows, maxCols: size.cols };
+        };
+    };
+
+    return {
+        maxRows: fileSizeAttributes.maxRow1 || 24,
+        maxCols: fileSizeAttributes.maxCol1 || 80
+    };
+};
+
+/**
+ * Finds current window dimensions from every WINDOW keyword line in the record — normally one, but
+ * two when the file declares more than one DSPSIZ display format and the window was created/split
+ * per-format (see `dspf-edit.new-record.ts` and the preview's split-on-edit logic).
  * @param editor - The text editor
  * @param element - The record element
- * @returns Current window dimensions or null if not found
+ * @returns Current window dimensions for each WINDOW() line found, in source order
  */
-function findCurrentWindowDimensions(editor: vscode.TextEditor, element: any): CurrentWindowDimensions | null {
-    const currentRecord = fieldsPerRecords.find(record => 
+function findCurrentWindowDimensions(editor: vscode.TextEditor, element: any): CurrentWindowDimensions[] {
+    const currentRecord = fieldsPerRecords.find(record =>
         element.lineIndex >= record.startIndex && element.lineIndex <= record.endIndex
     );
-    
+
     if (!currentRecord?.attributes) {
-        return null;
+        return [];
     }
 
-    const windowAttribute = currentRecord.attributes.find(attr => 
+    const windowAttributes = currentRecord.attributes.filter(attr =>
         attr.value.startsWith('WINDOW(')
     );
 
-    if (windowAttribute) {
+    const results: CurrentWindowDimensions[] = [];
+    for (const windowAttribute of windowAttributes) {
         // WINDOW(startRow startCol numRows numCols)
         const match = windowAttribute.value.match(/WINDOW\((\d+) (\d+) (\d+) (\d+)(?: [^)]*)?\)/);
         if (match) {
-            return {
+            results.push({
                 startRow: parseInt(match[1]),
                 startCol: parseInt(match[2]),
                 numRows: parseInt(match[3]),
                 numCols: parseInt(match[4]),
-                windowLine : windowAttribute.lineIndex
-            };
+                windowLine: windowAttribute.lineIndex,
+                format: windowAttribute.displayFormat
+            });
         };
     };
 
-    return null;
+    return results;
 };
 
 /**
@@ -322,18 +368,20 @@ function isNextRecord(lineText: string): boolean {
  * Analyzes fields and constants in the record to determine optimal window size.
  * @param editor - The text editor
  * @param element - The record element
+ * @param maxRows - Screen rows to clamp the result within
+ * @param maxCols - Screen columns to clamp the result within
  * @returns Optimal dimensions based on content
  */
-function analyzeRecordContent(editor: vscode.TextEditor, element: any): { numRows: number; numCols: number } {
+function analyzeRecordContent(editor: vscode.TextEditor, element: any, maxRows: number, maxCols: number): { numRows: number; numCols: number } {
     const positions: FieldPosition[] = [];
-    
+
     // Get field and constant positions from the model
     const recordInfo = fieldsPerRecords.find(r => r.record === element.name);
     if (!recordInfo) {
         // If no record info found, return minimum dimensions
         return {
-            numRows: Math.min(5, (fileSizeAttributes.maxRow1 || 24) - 2),
-            numCols: Math.min(20, (fileSizeAttributes.maxCol1 || 80) - 2)
+            numRows: Math.min(5, maxRows - 2),
+            numCols: Math.min(20, maxCols - 2)
         };
     };
 
@@ -366,8 +414,8 @@ function analyzeRecordContent(editor: vscode.TextEditor, element: any): { numRow
     // If no positions found, return minimum dimensions
     if (positions.length === 0) {
         return {
-            numRows: Math.min(5, (fileSizeAttributes.maxRow1 || 24) - 2),
-            numCols: Math.min(20, (fileSizeAttributes.maxCol1 || 80) - 2)
+            numRows: Math.min(5, maxRows - 2),
+            numCols: Math.min(20, maxCols - 2)
         };
     };
 
@@ -385,9 +433,6 @@ function analyzeRecordContent(editor: vscode.TextEditor, element: any): { numRow
     const numCols = Math.max(20, maxCol + 4);       // Minimum 20 columns, +4 for padding
 
     // Ensure we don't exceed screen limits
-    const maxRows = fileSizeAttributes.maxRow1 || 24;
-    const maxCols = fileSizeAttributes.maxCol1 || 80;
-
     return {
         numRows: Math.min(numRows, maxRows - 2), // Leave space for positioning
         numCols: Math.min(numCols, maxCols - 2)
@@ -397,19 +442,21 @@ function analyzeRecordContent(editor: vscode.TextEditor, element: any): { numRow
 // DIMENSION CALCULATION FUNCTIONS
 
 /**
- * Calculates new window dimensions based on resize configuration.
+ * Calculates new dimensions for a single existing WINDOW() line, positioned within its own declared
+ * format's screen bounds (or the file default, when unconditioned).
  * @param config - The resize configuration
- * @param currentWindow - Current window dimensions
+ * @param currentWindow - The existing WINDOW() line being resized
  * @param editor - The text editor
  * @param element - The record element
- * @returns New window dimensions or null if invalid
+ * @returns New window dimensions (carrying the same line/format as `currentWindow`) or null if invalid
  */
-async function calculateNewDimensions(
-    config: WindowResizeConfig, 
+async function calculateNewDimensionsForWindow(
+    config: WindowResizeConfig,
     currentWindow: CurrentWindowDimensions,
     editor: vscode.TextEditor,
     element: any
 ): Promise<CurrentWindowDimensions | null> {
+    const { maxRows, maxCols } = getScreenBoundsForFormat(currentWindow.format);
     let targetSize: { numRows: number; numCols: number };
 
     if (config.operation === 'CHANGE_SIZE' && config.newDimensions) {
@@ -418,32 +465,42 @@ async function calculateNewDimensions(
             numCols: config.newDimensions.numCols
         };
     } else if (config.operation === 'AUTO_ADJUST' && config.autoAdjustConfig) {
-        targetSize = analyzeRecordContent(editor, element);
+        targetSize = analyzeRecordContent(editor, element, maxRows, maxCols);
     } else {
         return null;
     };
 
     // Calculate new position based on size and position preference
-    const position = config.operation === 'CHANGE_SIZE' 
-        ? config.newDimensions!.position 
+    const position = config.operation === 'CHANGE_SIZE'
+        ? config.newDimensions!.position
         : config.autoAdjustConfig!.position;
 
-    return calculateWindowPosition(targetSize, position);
+    const positioned = calculateWindowPosition(targetSize, position, maxRows, maxCols);
+    if (!positioned) {
+        return null;
+    };
+
+    return {
+        ...positioned,
+        windowLine: currentWindow.windowLine,
+        format: currentWindow.format
+    };
 };
 
 /**
- * Calculates window position based on size and position preference.
+ * Calculates window position based on size and position preference, within the given screen bounds.
  * @param size - Target window size
  * @param position - Position preference
+ * @param maxRows - Screen rows to position within
+ * @param maxCols - Screen columns to position within
  * @returns Calculated window dimensions or null if invalid
  */
 function calculateWindowPosition(
-    size: { numRows: number; numCols: number }, 
-    position: WindowPosition
+    size: { numRows: number; numCols: number },
+    position: WindowPosition,
+    maxRows: number,
+    maxCols: number
 ): CurrentWindowDimensions | null {
-    const maxRows = fileSizeAttributes.maxRow1 || 24;
-    const maxCols = fileSizeAttributes.maxCol1 || 80;
-
     // Validate that window fits on screen
     if (size.numRows > maxRows || size.numCols > maxCols) {
         return null;
@@ -469,8 +526,8 @@ function calculateWindowPosition(
     };
 
     // Final validation - ensure window doesn't go off screen
-    if (startRow < 1 || startCol < 1 || 
-        startRow + size.numRows - 1 > maxRows || 
+    if (startRow < 1 || startCol < 1 ||
+        startRow + size.numRows - 1 > maxRows ||
         startCol + size.numCols - 1 > maxCols) {
         return null;
     };
@@ -487,66 +544,32 @@ function calculateWindowPosition(
 // WINDOW UPDATE FUNCTIONS
 
 /**
- * Applies the window resize by updating the WINDOW keyword line.
+ * Applies the window resize by updating every WINDOW() line's keyword parameters, one edit per
+ * line, applied together as a single workspace edit.
  * @param editor - The text editor
- * @param element - The record element
- * @param windowLine - Window line
- * @param newDimensions - New window dimensions
+ * @param newDimensionsList - New dimensions for each existing WINDOW() line (same order/count as
+ * the `currentWindows` they were computed from)
  */
 async function applyWindowResize(
     editor: vscode.TextEditor,
-    element: any,
-    windowLine : number,
-    newDimensions: CurrentWindowDimensions
+    newDimensionsList: CurrentWindowDimensions[]
 ): Promise<boolean> {
-
-/*    const windowLine = findWindowKeywordLine(editor, element);
-    if (windowLine === -1) {
-        throw new Error('Could not find WINDOW keyword line to update');
-    };
-*/
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
-    const line = editor.document.lineAt(windowLine);
-    const lineText = line.text;
 
     // Replace the WINDOW keyword parameters, preserving any trailing suffix (e.g. *NOMSGLIN)
     const oldWindowPattern = /WINDOW\(\d+\s+\d+\s+\d+\s+\d+(\s+[^)]*)?\)/;
 
-    const updatedLine = lineText.replace(
-        oldWindowPattern,
-        (_match, suffix) => `WINDOW(${newDimensions.startRow} ${newDimensions.startCol} ${newDimensions.numRows} ${newDimensions.numCols}${suffix ?? ''})`
-    );
-    workspaceEdit.replace(uri, line.range, updatedLine);
-
-    return applyWorkspaceEdit(workspaceEdit, 'resize the window');
-};
-
-/**
- * Finds the line number containing the WINDOW keyword for the record.
- * @param editor - The text editor
- * @param element - The record element
- * @returns Line number or -1 if not found
- */
-function findWindowKeywordLine(editor: vscode.TextEditor, element: any): number {
-    const startLine = element.lineIndex;
-
-    // Search for WINDOW keyword in record and its attribute lines
-    for (let i = startLine; i < editor.document.lineCount; i++) {
-        const lineText = editor.document.lineAt(i).text;
-
-        // Stop searching when we reach the next record or non-attribute line
-        if (i > startLine && (!lineText.trim().startsWith('A ') || isNextRecord(lineText))) {
-            break;
-        };
-
-        // Look for WINDOW keyword
-        if (lineText.includes('WINDOW(')) {
-            return i;
-        };
+    for (const newDimensions of newDimensionsList) {
+        const line = editor.document.lineAt(newDimensions.windowLine);
+        const updatedLine = line.text.replace(
+            oldWindowPattern,
+            (_match, suffix) => `WINDOW(${newDimensions.startRow} ${newDimensions.startCol} ${newDimensions.numRows} ${newDimensions.numCols}${suffix ?? ''})`
+        );
+        workspaceEdit.replace(uri, line.range, updatedLine);
     };
 
-    return -1;
+    return applyWorkspaceEdit(workspaceEdit, 'resize the window');
 };
 
 // VALIDATION HELPER FUNCTIONS

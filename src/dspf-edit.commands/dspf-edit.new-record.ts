@@ -8,8 +8,8 @@ import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { recordExists, DspsizConfig,
     checkIfDspsizNeeded, collectDspsizConfiguration, generateDspsizLines,
-    checkForEditorAndDocument, applyWorkspaceEdit} from '../dspf-edit.utils/dspf-edit.helper';
-import { fileSizeAttributes } from '../dspf-edit.model/dspf-edit.model';
+    checkForEditorAndDocument, applyWorkspaceEdit, writeDisplayFormatCondition} from '../dspf-edit.utils/dspf-edit.helper';
+import { fileSizeAttributes, getAvailableDisplayFormats } from '../dspf-edit.model/dspf-edit.model';
 
 // INTERFACES AND TYPES
 
@@ -42,10 +42,21 @@ interface WindowDimensions {
 };
 
 /**
+ * A window's dimensions as they apply under one declared DSPSIZ display format. `format` is
+ * undefined when the file has at most one declared format (or the computed dimensions happen to be
+ * identical across every declared format) — in that case a single unconditioned WINDOW() line covers
+ * every format, matching pre-multi-size behavior exactly.
+ */
+interface FormatDimensions {
+    format?: string;
+    dimensions: WindowDimensions;
+};
+
+/**
  * Window configuration including title.
  */
 interface WindowConfig {
-    dimensions: WindowDimensions;
+    dimensionsByFormat: FormatDimensions[];
     title?: string;
 };
 
@@ -284,30 +295,39 @@ async function collectWindowConfiguration(): Promise<WindowConfig | null> {
     const position = await collectWindowPosition();
     if (!position) return null;
 
-    // Calculate actual dimensions based on size and position
-    const dimensions = calculateWindowDimensions(windowSize, position);
-    if (!dimensions) {
-        vscode.window.showErrorMessage("Cannot position window with these dimensions on the current screen size.");
+    // Calculate actual dimensions for every declared display size (DSPSIZ format); when the file
+    // declares more than one, the window keeps the same rows/cols in each but gets its own
+    // position, appropriate to that format's screen size.
+    const dimensionsByFormat = calculateWindowDimensionsForAllFormats(windowSize, position);
+    if (!dimensionsByFormat) {
+        vscode.window.showErrorMessage("Cannot position window with these dimensions on the current screen size(s).");
         return null;
     };
 
-    // Collect window title
-    const title = await collectWindowTitle(dimensions.numCols);
+    // Collect window title (width is the same across every format, since only position varies)
+    const title = await collectWindowTitle(dimensionsByFormat[0].dimensions.numCols);
     if (title === null) return null; // User cancelled
 
     return {
-        dimensions,
+        dimensionsByFormat,
         title: title || undefined
     };
 };
 
 /**
- * Collects window size (rows and columns).
+ * Collects window size (rows and columns). Bounded by the smallest declared display size (DSPSIZ
+ * format), when the file declares more than one, so the same rows/cols fit on every screen the
+ * window will need a line for.
  * @returns Window size or null if cancelled
  */
 async function collectWindowSize(): Promise<WindowSize | null> {
-    const maxRows = fileSizeAttributes.maxRow1 || 24;
-    const maxCols = fileSizeAttributes.maxCol1 || 80;
+    const declaredFormats = getAvailableDisplayFormats();
+    const maxRows = declaredFormats.length > 0
+        ? Math.min(...declaredFormats.map(f => f.rows))
+        : (fileSizeAttributes.maxRow1 || 24);
+    const maxCols = declaredFormats.length > 0
+        ? Math.min(...declaredFormats.map(f => f.cols))
+        : (fileSizeAttributes.maxCol1 || 80);
 
     const numRows = await vscode.window.showInputBox({
         title: 'Window Configuration - Size',
@@ -365,15 +385,15 @@ async function collectWindowPosition(): Promise<WindowPosition | null> {
 };
 
 /**
- * Calculates actual window dimensions based on size and position preferences.
+ * Calculates actual window dimensions based on size and position preferences, for a single screen
+ * size (rows/cols). Called once per declared display format by `calculateWindowDimensionsForAllFormats`.
  * @param size Window size requirements
  * @param position Positioning preference
+ * @param maxRows Screen rows to position within
+ * @param maxCols Screen columns to position within
  * @returns Calculated dimensions or null if invalid
  */
-function calculateWindowDimensions(size: WindowSize, position: WindowPosition): WindowDimensions | null {
-    const maxRows = fileSizeAttributes.maxRow1 || 24;
-    const maxCols = fileSizeAttributes.maxCol1 || 80;
-
+function calculateWindowDimensions(size: WindowSize, position: WindowPosition, maxRows: number, maxCols: number): WindowDimensions | null {
     // Validate that window fits on screen
     if (size.numRows > maxRows || size.numCols > maxCols) {
         return null;
@@ -416,6 +436,50 @@ function calculateWindowDimensions(size: WindowSize, position: WindowPosition): 
         numRows: size.numRows,
         numCols: size.numCols
     };
+};
+
+/**
+ * Calculates window dimensions for every display size (DSPSIZ format) the file declares — same
+ * rows/cols in each, position recalculated per format so the window is actually correctly placed
+ * (e.g. centered) on every screen it can appear on, not just the first. Falls back to a single,
+ * unconditioned entry when the file declares at most one format, or when the computed dimensions
+ * turn out identical across every declared format (e.g. TOP_LEFT positioning) — same source output
+ * as before multi-size support existed.
+ * @param size Window size requirements
+ * @param position Positioning preference
+ * @returns One entry per declared format (or a single unconditioned entry), or null if the window
+ * doesn't fit on at least one declared screen
+ */
+function calculateWindowDimensionsForAllFormats(size: WindowSize, position: WindowPosition): FormatDimensions[] | null {
+    const declaredFormats = getAvailableDisplayFormats();
+
+    if (declaredFormats.length <= 1) {
+        const maxRows = declaredFormats[0]?.rows ?? (fileSizeAttributes.maxRow1 || 24);
+        const maxCols = declaredFormats[0]?.cols ?? (fileSizeAttributes.maxCol1 || 80);
+        const dimensions = calculateWindowDimensions(size, position, maxRows, maxCols);
+        return dimensions ? [{ dimensions }] : null;
+    };
+
+    const perFormat: FormatDimensions[] = [];
+    for (const format of declaredFormats) {
+        const dimensions = calculateWindowDimensions(size, position, format.rows, format.cols);
+        if (!dimensions) {
+            return null;
+        };
+        perFormat.push({ format: format.name, dimensions });
+    };
+
+    // Collapse to a single unconditioned line when every format landed on the same geometry
+    // (e.g. TOP_LEFT is the same regardless of screen size) — avoids redundant identical lines.
+    const first = perFormat[0].dimensions;
+    const allIdentical = perFormat.every(f =>
+        f.dimensions.startRow === first.startRow &&
+        f.dimensions.startCol === first.startCol &&
+        f.dimensions.numRows === first.numRows &&
+        f.dimensions.numCols === first.numCols
+    );
+
+    return allIdentical ? [{ dimensions: first }] : perFormat;
 };
 
 /**
@@ -539,7 +603,7 @@ function generateRecordLines(config: NewRecordConfig): string[] {
     switch (config.type) {
         case 'WINDOW':
             if (config.windowConfig) {
-                lines.push(generateWindowLine(config.windowConfig.dimensions));
+                lines.push(...generateWindowLines(config.windowConfig.dimensionsByFormat));
                 if (config.windowConfig.title) {
                     lines.push(...generateWindowTitleLines(config.windowConfig.title));
                 }
@@ -559,7 +623,7 @@ function generateRecordLines(config: NewRecordConfig): string[] {
         case 'SFLWDW':
             if (config.subfileConfig && config.windowConfig) {
                 lines.push(generateSubfileControlLine(config.name, config.subfileConfig));
-                lines.push(generateWindowLine(config.windowConfig.dimensions));
+                lines.push(...generateWindowLines(config.windowConfig.dimensionsByFormat));
                 if (config.windowConfig.title) {
                     lines.push(...generateWindowTitleLines(config.windowConfig.title));
                 }
@@ -591,16 +655,21 @@ function generateMainRecordLine(config: NewRecordConfig): string {
 };
 
 /**
- * Generates a window specification line.
- * @param dimensions - Window dimensions
- * @returns Formatted window line
+ * Generates one WINDOW() specification line per entry — one per declared display format when the
+ * file declares more than one (see `calculateWindowDimensionsForAllFormats`), each conditioned on
+ * its format name, or a single unconditioned line otherwise (unchanged pre-multi-size output).
+ * @param dimensionsByFormat - Window dimensions, one entry per format (or a single entry)
+ * @returns Formatted WINDOW() lines
  */
-function generateWindowLine(dimensions: WindowDimensions): string {
-    return ' '.repeat(5) + 'A' + ' '.repeat(38) + 'WINDOW(' + 
-           dimensions.startRow + ' ' + 
-           dimensions.startCol + ' ' + 
-           dimensions.numRows + ' ' + 
-           dimensions.numCols + ')';
+function generateWindowLines(dimensionsByFormat: FormatDimensions[]): string[] {
+    return dimensionsByFormat.map(({ format, dimensions }) => {
+        const line = ' '.repeat(5) + 'A' + ' '.repeat(38) + 'WINDOW(' +
+            dimensions.startRow + ' ' +
+            dimensions.startCol + ' ' +
+            dimensions.numRows + ' ' +
+            dimensions.numCols + ')';
+        return writeDisplayFormatCondition(line, format);
+    });
 };
 
 /**

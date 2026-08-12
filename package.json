@@ -8,7 +8,7 @@
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "0.15.0",
+  "version": "0.17.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
@@ -100,6 +100,10 @@
       {
         "command": "dspf-edit.new-record",
         "title": "New Record"
+      },
+      {
+        "command": "dspf-edit.add-display-size",
+        "title": "Add Display Size"
       },
       {
         "command": "dspf-edit.add-buttons",
@@ -394,6 +398,11 @@
           "command": "dspf-edit.add-key",
           "when": "view == dspf-edit.schema-view && viewItem == file",
           "group": "file_navigation2@1"
+        },
+        {
+          "command": "dspf-edit.add-display-size",
+          "when": "view == dspf-edit.schema-view && viewItem == file",
+          "group": "file_navigation2@2"
         },
         {
           "command": "dspf-edit.fill-constant",

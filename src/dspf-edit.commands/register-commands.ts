@@ -15,6 +15,7 @@ import { viewStructure } from './dspf-edit.view-structure';
 import { copyRecord } from './dspf-edit.copy-record';
 import { deleteRecord } from './dspf-edit.delete-record';
 import { newRecord } from './dspf-edit.new-record';
+import { addDisplaySize } from './dspf-edit.add-display-size';
 import { goToLineHandler } from './dspf-edit.goto-line';
 import { addButtons } from './dspf-edit.add-buttons';
 import { addCommandsRecord } from './dspf-edit.add-commands-record';
@@ -50,6 +51,7 @@ export const commands = [
     { name: 'copyRecord', handler: copyRecord, needsTreeProvider: false },
     { name: 'deleteRecord', handler: deleteRecord, needsTreeProvider: false },
     { name: 'newRecord', handler: newRecord, needsTreeProvider: false },
+    { name: 'addDisplaySize', handler: addDisplaySize, needsTreeProvider: false },
     { name: 'goToLine', handler: goToLineHandler, needsTreeProvider: false },
     { name: 'addButtons', handler: addButtons, needsTreeProvider: false },
     { name: 'addCommandsRecord', handler: addCommandsRecord, needsTreeProvider: false },

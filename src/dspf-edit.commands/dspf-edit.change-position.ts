@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { fileSizeAttributes } from '../dspf-edit.model/dspf-edit.model';
+import { fileSizeAttributes, getAvailableDisplayFormats } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 
 // INTERFACES AND TYPES
@@ -25,6 +25,23 @@ interface ElementPosition {
 interface PositionValidation {
     isValid: boolean;
     errorMessage?: string;
+};
+
+/**
+ * Returns the row/column bounds a position must fit within. When the file declares more than one
+ * DSPSIZ display format, a position needs to be reachable regardless of which one is active, so the
+ * bound is the smallest declared screen — not just the first format's.
+ */
+function getPositionBounds(): { maxRow: number; maxCol: number } {
+    const declaredFormats = getAvailableDisplayFormats();
+    if (declaredFormats.length === 0) {
+        return { maxRow: fileSizeAttributes.maxRow1, maxCol: fileSizeAttributes.maxCol1 };
+    };
+
+    return {
+        maxRow: Math.min(...declaredFormats.map(f => f.rows)),
+        maxCol: Math.min(...declaredFormats.map(f => f.cols))
+    };
 };
 
 // COMMAND REGISTRATION
@@ -136,7 +153,7 @@ async function collectNewPosition(elementName: string, currentPosition: ElementP
 async function collectRowPosition(elementName: string, currentRow: number): Promise<number | null> {
     const rowInput = await vscode.window.showInputBox({
         title: `Change Position - Step 1/2: Row for ${elementName}`,
-        prompt: `Enter the new row position (1-${fileSizeAttributes.maxRow1})`,
+        prompt: `Enter the new row position (1-${getPositionBounds().maxRow})`,
         value: String(currentRow),
         placeHolder: String(currentRow),
         validateInput: (value: string) => validateRowPosition(value)
@@ -155,7 +172,7 @@ async function collectRowPosition(elementName: string, currentRow: number): Prom
 async function collectColumnPosition(elementName: string, currentColumn: number): Promise<number | null> {
     const columnInput = await vscode.window.showInputBox({
         title: `Change Position - Step 2/2: Column for ${elementName}`,
-        prompt: `Enter the new column position (1-${fileSizeAttributes.maxCol1})`,
+        prompt: `Enter the new column position (1-${getPositionBounds().maxCol})`,
         value: String(currentColumn),
         placeHolder: String(currentColumn),
         validateInput: (value: string) => validateColumnPosition(value)
@@ -173,7 +190,7 @@ async function collectColumnPosition(elementName: string, currentColumn: number)
  * @returns Error message or null if valid
  */
 function validateRowPosition(value: string): string | null {
-    const validation = validatePositionInput(value, 1, fileSizeAttributes.maxRow1, "Row");
+    const validation = validatePositionInput(value, 1, getPositionBounds().maxRow, "Row");
     return validation.isValid ? null : validation.errorMessage!;
 };
 
@@ -183,7 +200,7 @@ function validateRowPosition(value: string): string | null {
  * @returns Error message or null if valid
  */
 function validateColumnPosition(value: string): string | null {
-    const validation = validatePositionInput(value, 1, fileSizeAttributes.maxCol1, "Column");
+    const validation = validatePositionInput(value, 1, getPositionBounds().maxCol, "Column");
     return validation.isValid ? null : validation.errorMessage!;
 };
 
@@ -230,24 +247,25 @@ function validatePositionInput(value: string, min: number, max: number, fieldNam
  * @returns Validation result with error message if invalid
  */
 function validatePositionBounds(position: ElementPosition): PositionValidation {
+    const bounds = getPositionBounds();
     const rowValidation = validatePositionInput(
-        String(position.row), 
-        1, 
-        fileSizeAttributes.maxRow1, 
+        String(position.row),
+        1,
+        bounds.maxRow,
         "Row"
     );
-    
+
     if (!rowValidation.isValid) {
         return rowValidation;
     };
 
     const columnValidation = validatePositionInput(
-        String(position.column), 
-        1, 
-        fileSizeAttributes.maxCol1, 
+        String(position.column),
+        1,
+        bounds.maxCol,
         "Column"
     );
-    
+
     return columnValidation;
 };
 

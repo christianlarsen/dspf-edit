@@ -5,12 +5,12 @@
 */
 
 import * as vscode from 'vscode';
-import { FieldsPerRecord, DdsSize, DdsAttribute, AttributeWithIndicators, DdsIndicator, fieldsPerRecords, records, getDefaultSize, getAvailableDisplayFormats, getSizeForFormat, SYSTEM_FIELD_PLACEHOLDER, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument, updateTreeProvider, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { FieldsPerRecord, DdsSize, DdsAttribute, AttributeWithIndicators, DdsIndicator, fieldsPerRecords, attributesFileLevel, records, getDefaultSize, getAvailableDisplayFormats, getSizeForFormat, SYSTEM_FIELD_PLACEHOLDER, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
+import { checkForEditorAndDocument, updateTreeProvider, applyWorkspaceEdit, applyDisplayFormatSplitEdit } from '../dspf-edit.utils/dspf-edit.helper';
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
 import { ExtensionState } from '../dspf-edit.states/state';
 import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
-import { resolveRecordSizeForFormat } from '../dspf-edit.parser/dspf-edit.parser';
+import { resolveRecordSizeForFormat, filterForActiveFormat, pickForActiveFormat } from '../dspf-edit.parser/dspf-edit.parser';
 import { editWindowTitleForRecord } from '../dspf-edit.commands/dspf-edit.window-title';
 import { getConstantTextFromUser, insertNewConstant } from '../dspf-edit.commands/dspf-edit.edit-constant';
 import { addFieldAtPosition } from '../dspf-edit.commands/dspf-edit.edit-field';
@@ -295,7 +295,7 @@ function attributeGroupKey(value: string): string {
  * @param recordName - Name of the record to inspect
  * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
  */
-function findWindowAttribute(recordName: string, activeFormat?: string): { startRow: number; startCol: number; numRows: number; numCols: number; lineIndex: number } | undefined {
+function findWindowAttribute(recordName: string, activeFormat?: string): { startRow: number; startCol: number; numRows: number; numCols: number; lineIndex: number; hasOwnMessageLine: boolean } | undefined {
     const record = fieldsPerRecords.find(r => r.record === recordName);
     const candidates = record?.attributes?.filter(a => a.value.toUpperCase().startsWith('WINDOW(')) ?? [];
     const attr = pickForActiveFormat(candidates, activeFormat);
@@ -303,17 +303,23 @@ function findWindowAttribute(recordName: string, activeFormat?: string): { start
         return undefined;
     };
 
-    const match = attr.value.match(/WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)(?:\s+[^)]*)?\s*\)/i);
+    const match = attr.value.match(/WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)((?:\s+[^)]*)?)\s*\)/i);
     if (!match) {
         return undefined;
     };
+
+    // Per the DDS reference (WINDOW keyword, "MSGLIN parameter"): a window's own last content line
+    // is reserved as its message line by default — *NOMSGLIN is what opts OUT of that, moving error
+    // messages back to the bottom of the physical display (or MSGLOC) instead.
+    const hasOwnMessageLine = !/\*NOMSGLIN\b/i.test(match[5] ?? '');
 
     return {
         startRow: parseInt(match[1], 10),
         startCol: parseInt(match[2], 10),
         numRows: parseInt(match[3], 10),
         numCols: parseInt(match[4], 10),
-        lineIndex: attr.lineIndex
+        lineIndex: attr.lineIndex,
+        hasOwnMessageLine
     };
 };
 
@@ -360,6 +366,69 @@ function findWindowTitle(recordName: string, activeFormat?: string): WindowTitle
     };
 
     return undefined;
+};
+
+/** A single function-key command (CAxx/CFxx), as relevant to the preview's legend. */
+interface FunctionKeyCommand {
+    type: 'CA' | 'CF';
+    keyNumber: string;
+    description: string;
+    indicators?: DdsIndicator[];
+    displayFormat?: string;
+};
+
+/**
+ * Parses CAxx()/CFxx() key command lines out of an arbitrary attribute list (a record's own, or the
+ * file's) — same format `dspf-edit.add-keys.ts` generates/reads, kept independent since this also
+ * needs each command's own indicators/display-format condition, which that command's own model
+ * doesn't carry (it's only used there for a flat "current commands" summary).
+ * @param attributes - Attribute lines to scan
+ */
+function extractFunctionKeyCommands(attributes: DdsAttribute[] | undefined): FunctionKeyCommand[] {
+    const commands: FunctionKeyCommand[] = [];
+
+    (attributes ?? []).forEach(attr => {
+        // No length cap on the description here: DDS allows text longer than fits on one source
+        // line (spilling onto a continuation line, already reassembled into `attr.value` by the
+        // parser) — capping the match would silently drop keys with a longer description, e.g. one
+        // that had to wrap (see dspf-edit.add-keys.ts's extractKeyCommandsFromAttributes for the
+        // matching read-side fix, and validateKeyCommandDescription for where 25 legitimately still
+        // applies: only when this tool itself creates a new one).
+        const match = attr.value.match(/^(CA|CF)(\d{2})\(\d{2}\s+'([^']*)'\)$/);
+        if (match) {
+            commands.push({
+                type: match[1] as 'CA' | 'CF',
+                keyNumber: match[2],
+                description: match[3],
+                indicators: attr.indicators,
+                displayFormat: attr.displayFormat
+            });
+        };
+    });
+
+    return commands;
+};
+
+/**
+ * Resolves the candidate function-key commands (CAxx/CFxx) for a record, for the preview's
+ * function-key legend: the record's own, plus the file-level ones (which apply to every record
+ * format) — except for any key number the record already defines itself, which entirely overrides
+ * the file-level one for that number, matching how DDS actually resolves it at runtime. A key
+ * number can still yield more than one candidate here (e.g. two indicator-conditioned alternates,
+ * "CA03 cond. on 50" / "CA03 cond. on N50") — narrowing that down to the one that currently applies
+ * (by display format, then by indicator state) is the caller's job, the same way it's already done
+ * for every other conditionable item in the preview (see `isItemDisplayed`/`filterForActiveFormat`).
+ * @param recordName - Name of the record being previewed
+ */
+function getEffectiveFunctionKeyCommands(recordName: string): FunctionKeyCommand[] {
+    const record = fieldsPerRecords.find(r => r.record === recordName);
+    const recordCommands = extractFunctionKeyCommands(record?.attributes);
+    const overriddenNumbers = new Set(recordCommands.map(cmd => cmd.keyNumber));
+
+    const fileCommands = extractFunctionKeyCommands(attributesFileLevel)
+        .filter(cmd => !overriddenNumbers.has(cmd.keyNumber));
+
+    return [...recordCommands, ...fileCommands];
 };
 
 /** Whether a record's attributes include the SFL keyword (i.e. it's a subfile detail record). */
@@ -479,40 +548,6 @@ function getEffectiveSize(recordName: string, activeFormat?: string): DdsSize | 
 };
 
 /**
- * Filters out attributes/fields/constants conditioned by a display format other than the active
- * one; unconditioned ones (and everything, when no format is active) always pass through.
- * @param items - Items carrying an optional displayFormat condition
- * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
- */
-function filterForActiveFormat<T extends { displayFormat?: string }>(items: T[], activeFormat: string | undefined): T[] {
-    if (!activeFormat) {
-        return items;
-    };
-    return items.filter(item => !item.displayFormat || item.displayFormat === activeFormat);
-};
-
-/**
- * Picks which of several same-keyword candidates applies, when a record/field/constant is
- * conditioned by more than one display format (one line per format, e.g. WDWTITLE or SFLPAG
- * declared once for *DS3 and once for *DS4). Prefers the one matching activeFormat, falling back
- * to an unconditioned one, then to the first candidate — so behavior is unchanged when no format
- * is active.
- * @param candidates - Same-keyword attribute candidates, in source order
- * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
- */
-function pickForActiveFormat<T extends { displayFormat?: string }>(candidates: T[], activeFormat?: string): T | undefined {
-    if (candidates.length === 0) {
-        return undefined;
-    };
-    if (!activeFormat) {
-        return candidates[0];
-    };
-    return candidates.find(c => c.displayFormat === activeFormat)
-        ?? candidates.find(c => !c.displayFormat)
-        ?? candidates[0];
-};
-
-/**
  * Read-only visual preview panel for a single DDS record.
  * Shows fields/constants positioned on a monospace grid matching the record's screen size.
  * WINDOW records are drawn at their real screen position, on a canvas sized to the full display,
@@ -541,7 +576,13 @@ export class RecordPreviewPanel {
             'dspfEditRecordPreview',
             `Preview: ${recordName}`,
             { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
-            { enableScripts: true }
+            // retainContextWhenHidden: without it, VS Code tears down the webview's live page
+            // (canvas, drag state, everything) whenever it's hidden — which moving/dragging the
+            // panel to a different editor group briefly does — and only reloads the static HTML on
+            // return, with nothing to trigger a fresh 'render' message; the canvas just stays blank
+            // until some unrelated state change (editing the document, switching records...) happens
+            // to call render() again. Keeping the page alive in the background avoids that entirely.
+            { enableScripts: true, retainContextWhenHidden: true }
         );
 
         this.panel.webview.html = this.getHtml();
@@ -594,9 +635,11 @@ export class RecordPreviewPanel {
             existing.recordName = recordName;
             existing.treeProvider = treeProvider;
             existing.overlayRecordName = undefined;
-            existing.indicatorsEnabled = false;
+            // indicatorsEnabled (the "Indicators" toggle checkbox) and activeDisplayFormat (the
+            // selected DSPSIZ format, e.g. *DS3) are deliberately NOT reset here — they're panel-wide
+            // view preferences (formats are file-level, not per-record) that should stay as the user
+            // left them when switching which record is previewed.
             existing.activeIndicators = new Set();
-            existing.activeDisplayFormat = undefined;
             existing.panel.title = `Preview: ${recordName}`;
             // Reveal without forcing a column: the user may have moved the panel elsewhere
             // (e.g. to a bottom group), and switching records shouldn't snap it back to "Beside".
@@ -650,10 +693,20 @@ export class RecordPreviewPanel {
             return null;
         };
 
+        const availableFormats = getAvailableDisplayFormats();
+
+        // A previously-selected format can stop being valid for what's being previewed now — the
+        // panel is reused across documents (switching which record is shown doesn't recreate it), so
+        // a format kept from a different file, or one a live edit just dropped from DSPSIZ, must be
+        // let go too. Left in place, the format dropdown would try to select a value with no matching
+        // <option>, which a <select> just renders blank instead of falling back to any real choice.
+        if (this.activeDisplayFormat && !availableFormats.some(f => f.name === this.activeDisplayFormat)) {
+            this.activeDisplayFormat = undefined;
+        };
+
         // Default to the first declared format so a record's WINDOW()/attributes conditioned per
         // format resolve consistently from the very first render, instead of showing every
         // candidate at once. The selector itself stays locked to it when the file only declares one.
-        const availableFormats = getAvailableDisplayFormats();
         if (availableFormats.length > 0 && !this.activeDisplayFormat) {
             this.activeDisplayFormat = availableFormats[0].name;
         };
@@ -776,9 +829,21 @@ export class RecordPreviewPanel {
         const availableRecords = records.filter(name => name !== this.recordName);
         const windowTitle = isWindow ? (findWindowTitle(this.recordName, this.activeDisplayFormat) ?? null) : null;
         const errorMessage = this.resolveErrorMessage(recordInfo);
+
+        // A window reserves its own last content line as a message line unless *NOMSGLIN is coded
+        // on its WINDOW() keyword (DDS reference, WINDOW keyword's MSGLIN parameter) — when that's
+        // the case, an active error shows there instead of at the bottom of the physical display.
+        const windowInfoForMsgLine = isWindow ? findWindowAttribute(this.resolveWindowRecordName(), this.activeDisplayFormat) : undefined;
+        const errorMessageFrame = (errorMessage && windowFrame && (windowInfoForMsgLine?.hasOwnMessageLine ?? true))
+            ? { row: windowFrame.row + windowFrame.rows - 1, col: windowFrame.col, cols: windowFrame.cols }
+            : null;
+
         const sflPagAttr = isSflCtlRecordInfo(recordInfo) ? findOwnSflPagAttribute(recordInfo, this.activeDisplayFormat) : undefined;
         const sflPagMatch = sflPagAttr?.value.match(/SFLPAG\(\s*(\d+)\s*\)/i);
         const sflPag = sflPagMatch ? parseInt(sflPagMatch[1], 10) : null;
+
+        // Function-key legend (e.g. "F3=Exit  F12=Cancel"): file-level + record-level CAxx/CFxx.
+        const functionKeys = this.getVisibleFunctionKeys(this.recordName);
 
         this.panel.webview.postMessage({
             type: 'render',
@@ -789,6 +854,7 @@ export class RecordPreviewPanel {
             outerFrame,
             windowTitle,
             errorMessage,
+            errorMessageFrame,
             sflPag,
             maxSize,
             availableRecords,
@@ -800,7 +866,8 @@ export class RecordPreviewPanel {
             activeDisplayFormat: this.activeDisplayFormat ?? null,
             minDetailRow,
             items,
-            backgroundItems
+            backgroundItems,
+            functionKeys
         });
     };
 
@@ -1026,6 +1093,42 @@ export class RecordPreviewPanel {
             result.push(attr);
         };
         return result;
+    };
+
+    /**
+     * Resolves the function keys to show in the preview's legend for a record: every distinct key
+     * number among its candidate CAxx/CFxx commands (see `getEffectiveFunctionKeyCommands` — record
+     * overriding file), narrowed to the active display format. Unlike a field/constant, a key stays
+     * in the legend even when its own indicator condition currently isn't satisfied — it's still
+     * *defined*, just not presently enabled — so the caller can render it dimmed; `active` says
+     * whether at least one of that key's candidates (there can be more than one — indicator-ANDed,
+     * OR'd alternates, or just unconditioned) is currently satisfied (live simulation, same check
+     * used everywhere else conditionable in the preview). When more than one candidate exists for a
+     * number, the active one's description is shown (falling back to the first candidate's when
+     * none currently apply).
+     * @param recordName - Name of the record being previewed
+     */
+    private getVisibleFunctionKeys(recordName: string): { key: string; description: string; active: boolean }[] {
+        const forFormat = filterForActiveFormat(getEffectiveFunctionKeyCommands(recordName), this.activeDisplayFormat);
+
+        const byKeyNumber = new Map<string, FunctionKeyCommand[]>();
+        for (const cmd of forFormat) {
+            const candidates = byKeyNumber.get(cmd.keyNumber);
+            if (candidates) {
+                candidates.push(cmd);
+            } else {
+                byKeyNumber.set(cmd.keyNumber, [cmd]);
+            };
+        };
+
+        const result: { key: string; description: string; active: boolean }[] = [];
+        for (const [keyNumber, candidates] of byKeyNumber) {
+            const activeCandidate = candidates.find(cmd => this.isItemDisplayed(cmd.indicators, this.indicatorsEnabled));
+            const chosen = activeCandidate ?? candidates[0];
+            result.push({ key: `F${parseInt(keyNumber, 10)}`, description: chosen.description, active: Boolean(activeCandidate) });
+        };
+
+        return result.sort((a, b) => parseInt(a.key.slice(1), 10) - parseInt(b.key.slice(1), 10));
     };
 
     /**
@@ -1426,12 +1529,13 @@ export class RecordPreviewPanel {
      * @param newCols - New window width
      */
     private async resizeWindow(newRows: number, newCols: number): Promise<void> {
-        const windowInfo = findWindowAttribute(this.resolveWindowRecordName(), this.activeDisplayFormat);
+        const windowRecordName = this.resolveWindowRecordName();
+        const windowInfo = findWindowAttribute(windowRecordName, this.activeDisplayFormat);
         if (!windowInfo) {
             return;
         };
 
-        await this.rewriteWindowKeyword(windowInfo.lineIndex, windowInfo.startRow, windowInfo.startCol, newRows, newCols);
+        await this.rewriteWindowKeyword(windowRecordName, windowInfo.startRow, windowInfo.startCol, newRows, newCols);
     };
 
     /**
@@ -1440,12 +1544,13 @@ export class RecordPreviewPanel {
      * @param newCol - New window screen column
      */
     private async moveWindowPosition(newRow: number, newCol: number): Promise<void> {
-        const windowInfo = findWindowAttribute(this.resolveWindowRecordName(), this.activeDisplayFormat);
+        const windowRecordName = this.resolveWindowRecordName();
+        const windowInfo = findWindowAttribute(windowRecordName, this.activeDisplayFormat);
         if (!windowInfo) {
             return;
         };
 
-        await this.rewriteWindowKeyword(windowInfo.lineIndex, newRow, newCol, windowInfo.numRows, windowInfo.numCols);
+        await this.rewriteWindowKeyword(windowRecordName, newRow, newCol, windowInfo.numRows, windowInfo.numCols);
     };
 
     /**
@@ -1454,7 +1559,7 @@ export class RecordPreviewPanel {
      * belongs to a shared window (WINDOW(other-record-name), or an inherited SFL/SFLCTL pair).
      */
     private async editWindowTitle(): Promise<void> {
-        await editWindowTitleForRecord(this.resolveWindowRecordName());
+        await editWindowTitleForRecord(this.resolveWindowRecordName(), this.activeDisplayFormat);
 
         const { editor } = checkForEditorAndDocument();
         if (editor) {
@@ -1508,7 +1613,7 @@ export class RecordPreviewPanel {
             return;
         };
 
-        await this.rewriteWindowKeyword(windowInfo.lineIndex, windowInfo.startRow, newStartCol, windowInfo.numRows, windowInfo.numCols);
+        await this.rewriteWindowKeyword(windowRecordName, windowInfo.startRow, newStartCol, windowInfo.numRows, windowInfo.numCols);
     };
 
     /**
@@ -1569,26 +1674,40 @@ export class RecordPreviewPanel {
     };
 
     /**
-     * Rewrites the record's WINDOW(startRow startCol numRows numCols) keyword in place.
+     * Rewrites the record's WINDOW(startRow startCol numRows numCols) keyword to the given values.
+     * When the file declares more than one display format and the currently-effective WINDOW() line
+     * is the shared unconditioned one, this splits it first (see `applyDisplayFormatSplitEdit`) so
+     * the edit only affects the format currently being previewed, instead of silently changing every
+     * format's window at once.
+     * @param recordName - Name of the record whose WINDOW() line(s) to rewrite
      */
-    private async rewriteWindowKeyword(lineIndex: number, startRow: number, startCol: number, numRows: number, numCols: number): Promise<void> {
+    private async rewriteWindowKeyword(recordName: string, startRow: number, startCol: number, numRows: number, numCols: number): Promise<void> {
         const { editor } = checkForEditorAndDocument();
         if (!editor) {
             return;
         };
 
-        const line = editor.document.lineAt(lineIndex);
-        const updatedLine = line.text.replace(
-            /WINDOW\s*\(\s*\d+\s+\d+\s+\d+\s+\d+(\s+[^)]*)?\s*\)/i,
-            (_match, suffix) => `WINDOW(${startRow} ${startCol} ${numRows} ${numCols}${suffix ?? ''})`
-        );
-
-        if (updatedLine === line.text) {
+        const record = fieldsPerRecords.find(r => r.record === recordName);
+        const candidates = record?.attributes?.filter(a => a.value.toUpperCase().startsWith('WINDOW(')) ?? [];
+        if (candidates.length === 0) {
             return;
         };
 
+        const declaredFormats = getAvailableDisplayFormats().map(f => f.name);
         const workspaceEdit = new vscode.WorkspaceEdit();
-        workspaceEdit.replace(editor.document.uri, line.range, updatedLine);
+
+        applyDisplayFormatSplitEdit(
+            workspaceEdit,
+            editor.document,
+            candidates,
+            this.activeDisplayFormat,
+            declaredFormats,
+            (existingLineText) => existingLineText.replace(
+                /WINDOW\s*\(\s*\d+\s+\d+\s+\d+\s+\d+(\s+[^)]*)?\s*\)/i,
+                (_match, suffix) => `WINDOW(${startRow} ${startCol} ${numRows} ${numCols}${suffix ?? ''})`
+            )
+        );
+
         if (!(await applyWorkspaceEdit(workspaceEdit, 'resize/move the window'))) {
             return;
         };
@@ -1598,7 +1717,10 @@ export class RecordPreviewPanel {
     /**
      * Increments or decrements an SFLCTL record's SFLPAG() (number of subfile rows shown at once),
      * always keeping SFLSIZ() one more than SFLPAG — the common convention that gives the subfile
-     * one row of headroom past what's visible. Both are 4-digit zero-padded numeric literals.
+     * one row of headroom past what's visible. Both are 4-digit zero-padded numeric literals. When
+     * the file declares more than one display format and either keyword's currently-effective line
+     * is still the shared unconditioned one, splits it first (see `applyDisplayFormatSplitEdit`) so
+     * the change only affects the format currently being previewed.
      */
     private async adjustSubfilePageSize(delta: number): Promise<void> {
         const { editor } = checkForEditorAndDocument();
@@ -1611,7 +1733,8 @@ export class RecordPreviewPanel {
             return;
         };
 
-        const pagAttr = findOwnSflPagAttribute(recordInfo, this.activeDisplayFormat);
+        const pagCandidates = recordInfo.attributes?.filter(a => a.value.toUpperCase().startsWith('SFLPAG(')) ?? [];
+        const pagAttr = pickForActiveFormat(pagCandidates, this.activeDisplayFormat);
         const pagMatch = pagAttr?.value.match(/SFLPAG\(\s*(\d+)\s*\)/i);
         if (!pagAttr || !pagMatch) {
             return;
@@ -1624,25 +1747,27 @@ export class RecordPreviewPanel {
         };
         const newSiz = newPag + 1;
 
+        const declaredFormats = getAvailableDisplayFormats().map(f => f.name);
         const workspaceEdit = new vscode.WorkspaceEdit();
 
-        const pagLine = editor.document.lineAt(pagAttr.lineIndex);
-        workspaceEdit.replace(
-            editor.document.uri,
-            pagLine.range,
-            pagLine.text.replace(/SFLPAG\(\s*\d+\s*\)/i, `SFLPAG(${String(newPag).padStart(4, '0')})`)
+        applyDisplayFormatSplitEdit(
+            workspaceEdit,
+            editor.document,
+            pagCandidates,
+            this.activeDisplayFormat,
+            declaredFormats,
+            (existingLineText) => existingLineText.replace(/SFLPAG\(\s*\d+\s*\)/i, `SFLPAG(${String(newPag).padStart(4, '0')})`)
         );
 
         const sizCandidates = recordInfo.attributes?.filter(a => a.value.toUpperCase().startsWith('SFLSIZ(')) ?? [];
-        const sizAttr = pickForActiveFormat(sizCandidates, this.activeDisplayFormat);
-        if (sizAttr) {
-            const sizLine = editor.document.lineAt(sizAttr.lineIndex);
-            workspaceEdit.replace(
-                editor.document.uri,
-                sizLine.range,
-                sizLine.text.replace(/SFLSIZ\(\s*\d+\s*\)/i, `SFLSIZ(${String(newSiz).padStart(4, '0')})`)
-            );
-        };
+        applyDisplayFormatSplitEdit(
+            workspaceEdit,
+            editor.document,
+            sizCandidates,
+            this.activeDisplayFormat,
+            declaredFormats,
+            (existingLineText) => existingLineText.replace(/SFLSIZ\(\s*\d+\s*\)/i, `SFLSIZ(${String(newSiz).padStart(4, '0')})`)
+        );
 
         if (!(await applyWorkspaceEdit(workspaceEdit, 'change the subfile page size'))) {
             return;
@@ -1780,6 +1905,24 @@ export class RecordPreviewPanel {
         border: 1px solid #333333;
         cursor: default;
     }
+    #functionKeyList {
+        display: none;
+        margin-bottom: 6px;
+    }
+    .function-key-badge {
+        display: inline-block;
+        margin: 2px;
+        padding: 1px 6px;
+        border: 1px solid #00ff00;
+        color: #00ff00;
+        background: #000000;
+        font-family: inherit;
+        font-size: 11px;
+    }
+    .function-key-badge.active {
+        color: #000000;
+        background: #00ff00;
+    }
 </style>
 </head>
 <body>
@@ -1812,6 +1955,7 @@ export class RecordPreviewPanel {
     </span>
 </div>
 <div id="indicatorList"></div>
+<div id="functionKeyList"></div>
 <canvas id="screen"></canvas>
 <script>
     const vscode = acquireVsCodeApi();
@@ -1825,6 +1969,7 @@ export class RecordPreviewPanel {
     const indicatorBar = document.getElementById('indicatorBar');
     const indicatorsToggle = document.getElementById('indicatorsToggle');
     const indicatorList = document.getElementById('indicatorList');
+    const functionKeyList = document.getElementById('functionKeyList');
     const sflpagBar = document.getElementById('sflpagBar');
     const sflpagMinusBtn = document.getElementById('sflpagMinusBtn');
     const sflpagPlusBtn = document.getElementById('sflpagPlusBtn');
@@ -1856,6 +2001,7 @@ export class RecordPreviewPanel {
     let currentOuterFrame = null;
     let currentWindowTitle = null;
     let currentErrorMessage = null;
+    let currentErrorMessageFrame = null;
     let currentTitleRect = null;
     let currentMenuIconRect = null;
     let currentCenterIconRect = null;
@@ -2109,19 +2255,28 @@ export class RecordPreviewPanel {
 
         drawGridDots(size, items, currentBackgroundItems, moveDelta, currentOuterFrame, currentWindowFrame);
 
-        // A currently-active ERRMSG() shows on the display's message line — the physical screen's
-        // bottom row, whether or not the record being previewed is itself a window — in white,
-        // overwriting whatever would otherwise be there, same as a real 5250 error line.
+        // A currently-active ERRMSG() shows on the message line, in white, overwriting whatever
+        // would otherwise be there, same as a real 5250 error line. Where that line actually is
+        // depends on the window's own WINDOW() keyword (DDS's MSGLIN parameter, see
+        // findWindowAttribute's hasOwnMessageLine): by default a window reserves its own last
+        // content line for this (currentErrorMessageFrame, set by the extension); only with
+        // *NOMSGLIN coded (or when the record isn't a window at all) does it fall back to the
+        // physical display's own bottom row, spanning the full canvas width.
         if (currentErrorMessage) {
-            const rowY = (size.rows - 1) * CHAR_H;
+            const frame = currentErrorMessageFrame;
+            const rowY = frame ? (frame.row - 1) * CHAR_H : (size.rows - 1) * CHAR_H;
+            const colX = frame ? (frame.col - 1) * CHAR_W : 0;
+            const widthPx = frame ? frame.cols * CHAR_W : canvas.width;
+            const maxChars = frame ? frame.cols : size.cols;
+
             ctx.fillStyle = '#000000';
-            ctx.fillRect(0, rowY, canvas.width, CHAR_H);
+            ctx.fillRect(colX, rowY, widthPx, CHAR_H);
             ctx.fillStyle = '#ffffff';
             ctx.font = (CHAR_H - 4) + 'px ' + fontFamily;
             ctx.textAlign = 'center';
             const text = currentErrorMessage.text;
-            for (let i = 0; i < text.length && i < size.cols; i++) {
-                ctx.fillText(text[i], i * CHAR_W + CHAR_W / 2, rowY + CHAR_H / 2);
+            for (let i = 0; i < text.length && i < maxChars; i++) {
+                ctx.fillText(text[i], colX + i * CHAR_W + CHAR_W / 2, rowY + CHAR_H / 2);
             }
             ctx.textAlign = 'start';
         }
@@ -2698,6 +2853,18 @@ export class RecordPreviewPanel {
         }
     }
 
+    function rebuildFunctionKeyList(functionKeys) {
+        functionKeyList.innerHTML = '';
+
+        for (const fk of functionKeys) {
+            const badge = document.createElement('span');
+            badge.className = 'function-key-badge' + (fk.active ? ' active' : '');
+            badge.textContent = fk.key;
+            badge.title = fk.description;
+            functionKeyList.appendChild(badge);
+        }
+    }
+
     window.addEventListener('message', (event) => {
         const message = event.data;
         if (message.type === 'render') {
@@ -2734,6 +2901,12 @@ export class RecordPreviewPanel {
             indicatorList.style.display = (hasIndicators && message.indicatorsEnabled) ? 'block' : 'none';
             rebuildIndicatorList(message.availableIndicators || [], message.activeIndicators || []);
 
+            // Always shown (no on/off toggle, unlike indicators) — a programmer benefits from
+            // seeing which function keys are defined at a glance, without an extra click.
+            const hasFunctionKeys = message.functionKeys && message.functionKeys.length > 0;
+            functionKeyList.style.display = hasFunctionKeys ? 'block' : 'none';
+            rebuildFunctionKeyList(message.functionKeys || []);
+
             const hasSflPag = typeof message.sflPag === 'number';
             sflpagBar.style.display = hasSflPag ? 'inline-flex' : 'none';
             if (hasSflPag) {
@@ -2749,6 +2922,7 @@ export class RecordPreviewPanel {
                 : baseInfo;
 
             currentErrorMessage = message.errorMessage || null;
+            currentErrorMessageFrame = message.errorMessageFrame || null;
             draw(message.size, message.items, message.backgroundItems, message.windowFrame, message.windowTitle, message.outerFrame);
         } else if (message.type === 'notFound') {
             info.textContent = 'Record no longer exists.';
