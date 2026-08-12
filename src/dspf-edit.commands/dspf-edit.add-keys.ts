@@ -71,21 +71,31 @@ async function handleAddKeyCommandCommand(node: DdsNode): Promise<void> {
         };
 
         let currentKeyCommands: KeyCommandWithIndicators[] = [];
+        // Key numbers already assigned "on the other side" (the file, when working on a record; every
+        // record, when working on the file) — a new key here can't reuse one of these, since a record's
+        // effective key set is the union of its own and the file's, and DDS won't compile the same key
+        // number assigned twice (whether as CA+CF or the same type repeated) within that effective set.
+        let crossLevelKeyNumbers: string[] = [];
 
         switch (node.ddsElement.kind) {
             case 'record':
                 // Get current key commands from the record
                 currentKeyCommands = getCurrentKeyCommandsForRecord(node.ddsElement);
+                crossLevelKeyNumbers = getCurrentKeyCommandsForFile().map(k => k.keyNumber);
                 break;
             case 'file':
                 // Get current key commands from the file
-                currentKeyCommands = getCurrentKeyCommandsForFile(node.ddsElement);
+                currentKeyCommands = getCurrentKeyCommandsForFile();
+                crossLevelKeyNumbers = getAllRecordKeyNumbers();
                 break;
         };
 
 
-        // Get available key numbers (excluding current ones)
-        let availableKeys = getAvailableKeyNumbers(currentKeyCommands.map(k => k.keyNumber));
+        // Get available key numbers (excluding current ones, and any already reserved on the other level)
+        let availableKeys = getAvailableKeyNumbers([
+            ...currentKeyCommands.map(k => k.keyNumber),
+            ...crossLevelKeyNumbers
+        ]);
 
         // Show current key commands if any exist
         if (currentKeyCommands.length > 0) {
@@ -132,8 +142,8 @@ async function handleAddKeyCommandCommand(node: DdsNode): Promise<void> {
                 if (!removed) {
                     return;
                 };
-                // Continue to add new key commands
-                availableKeys = getAvailableKeyNumbers([]);
+                // Continue to add new key commands — still excluding whatever's reserved on the other level
+                availableKeys = getAvailableKeyNumbers(crossLevelKeyNumbers);
 
             }
             // If "Add more key commands", continue with current logic
@@ -197,11 +207,26 @@ async function handleAddKeyCommandCommand(node: DdsNode): Promise<void> {
 function getCurrentKeyCommandsForRecord(element: any): KeyCommandWithIndicators[] {
     // Find the record in the fieldsPerRecords data
     const recordInfo = fieldsPerRecords.find(r => r.record === element.name);
-    if (!recordInfo || !recordInfo.attributes) return [];
+    return extractKeyCommandsFromAttributes(recordInfo?.attributes);
+};
 
+/**
+ * Extracts current key commands from a DDS file (file level).
+ * @returns Array of current key commands
+ */
+function getCurrentKeyCommandsForFile(): KeyCommandWithIndicators[] {
+    return extractKeyCommandsFromAttributes(attributesFileLevel);
+};
+
+/**
+ * Parses CAxx()/CFxx() key command lines out of an arbitrary attribute list (a record's own, or
+ * the file's). Shared by every "current key commands" lookup so they all agree on the same format.
+ * @param attributes - Attribute lines to scan (a record's own, or the file's)
+ */
+function extractKeyCommandsFromAttributes(attributes: any[] | undefined): KeyCommandWithIndicators[] {
     const keyCommands: KeyCommandWithIndicators[] = [];
 
-    recordInfo.attributes.forEach(attr => {
+    (attributes ?? []).forEach(attr => {
         const attribute = attr.value;
 
         // Match CA or CF commands: CA03(03 'End of program') or CF12(12 'Cancel')
@@ -220,33 +245,18 @@ function getCurrentKeyCommandsForRecord(element: any): KeyCommandWithIndicators[
 };
 
 /**
- * Extracts current key commands from a DDS file (file level).
- * @param element - The DDS file element
- * @returns Array of current key commands
+ * Collects every key number (01-24) already assigned to ANY record in the file, own attributes
+ * only — used when adding key commands at file level, since a new file-level CAxx/CFxx applies to
+ * every record format and would conflict with a key number any one of them already assigns itself,
+ * regardless of whether the types match (DDS doesn't compile a key number defined as both CA and
+ * CF for the same record's effective set — a record redeclaring the same type is just as useless).
  */
-function getCurrentKeyCommandsForFile(element: any): KeyCommandWithIndicators[] {
-    // Find the record in the fieldsPerRecords data
-    const fileInfo = attributesFileLevel;
-    if (!fileInfo) return [];
-
-    const keyCommands: KeyCommandWithIndicators[] = [];
-
-    fileInfo.forEach(attr => {
-        const attribute = attr.value;
-
-        // Match CA or CF commands: CA03(03 'End of program') or CF12(12 'Cancel')
-        const commandMatch = attribute ? attribute.match(/^(CA|CF)(\d{2})\(\d{2}\s+'([^']{1,25})'\)$/) : false;
-        if (commandMatch) {
-            keyCommands.push({
-                type: commandMatch[1] as 'CA' | 'CF',
-                keyNumber: commandMatch[2],
-                description: commandMatch[3],
-                indicators: []
-            });
-        };
+function getAllRecordKeyNumbers(): string[] {
+    const keyNumbers = new Set<string>();
+    fieldsPerRecords.forEach(record => {
+        extractKeyCommandsFromAttributes(record.attributes).forEach(cmd => keyNumbers.add(cmd.keyNumber));
     });
-
-    return keyCommands;
+    return [...keyNumbers];
 };
 
 /**

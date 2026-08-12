@@ -5,7 +5,7 @@
 */
 
 import * as vscode from 'vscode';
-import { FieldsPerRecord, DdsSize, DdsAttribute, AttributeWithIndicators, DdsIndicator, fieldsPerRecords, records, getDefaultSize, getAvailableDisplayFormats, getSizeForFormat, SYSTEM_FIELD_PLACEHOLDER, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
+import { FieldsPerRecord, DdsSize, DdsAttribute, AttributeWithIndicators, DdsIndicator, fieldsPerRecords, attributesFileLevel, records, getDefaultSize, getAvailableDisplayFormats, getSizeForFormat, SYSTEM_FIELD_PLACEHOLDER, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, updateTreeProvider, applyWorkspaceEdit, applyDisplayFormatSplitEdit } from '../dspf-edit.utils/dspf-edit.helper';
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
 import { ExtensionState } from '../dspf-edit.states/state';
@@ -362,6 +362,63 @@ function findWindowTitle(recordName: string, activeFormat?: string): WindowTitle
     return undefined;
 };
 
+/** A single function-key command (CAxx/CFxx), as relevant to the preview's legend. */
+interface FunctionKeyCommand {
+    type: 'CA' | 'CF';
+    keyNumber: string;
+    description: string;
+    indicators?: DdsIndicator[];
+    displayFormat?: string;
+};
+
+/**
+ * Parses CAxx()/CFxx() key command lines out of an arbitrary attribute list (a record's own, or the
+ * file's) — same format `dspf-edit.add-keys.ts` generates/reads, kept independent since this also
+ * needs each command's own indicators/display-format condition, which that command's own model
+ * doesn't carry (it's only used there for a flat "current commands" summary).
+ * @param attributes - Attribute lines to scan
+ */
+function extractFunctionKeyCommands(attributes: DdsAttribute[] | undefined): FunctionKeyCommand[] {
+    const commands: FunctionKeyCommand[] = [];
+
+    (attributes ?? []).forEach(attr => {
+        const match = attr.value.match(/^(CA|CF)(\d{2})\(\d{2}\s+'([^']{1,25})'\)$/);
+        if (match) {
+            commands.push({
+                type: match[1] as 'CA' | 'CF',
+                keyNumber: match[2],
+                description: match[3],
+                indicators: attr.indicators,
+                displayFormat: attr.displayFormat
+            });
+        };
+    });
+
+    return commands;
+};
+
+/**
+ * Resolves the candidate function-key commands (CAxx/CFxx) for a record, for the preview's
+ * function-key legend: the record's own, plus the file-level ones (which apply to every record
+ * format) — except for any key number the record already defines itself, which entirely overrides
+ * the file-level one for that number, matching how DDS actually resolves it at runtime. A key
+ * number can still yield more than one candidate here (e.g. two indicator-conditioned alternates,
+ * "CA03 cond. on 50" / "CA03 cond. on N50") — narrowing that down to the one that currently applies
+ * (by display format, then by indicator state) is the caller's job, the same way it's already done
+ * for every other conditionable item in the preview (see `isItemDisplayed`/`filterForActiveFormat`).
+ * @param recordName - Name of the record being previewed
+ */
+function getEffectiveFunctionKeyCommands(recordName: string): FunctionKeyCommand[] {
+    const record = fieldsPerRecords.find(r => r.record === recordName);
+    const recordCommands = extractFunctionKeyCommands(record?.attributes);
+    const overriddenNumbers = new Set(recordCommands.map(cmd => cmd.keyNumber));
+
+    const fileCommands = extractFunctionKeyCommands(attributesFileLevel)
+        .filter(cmd => !overriddenNumbers.has(cmd.keyNumber));
+
+    return [...recordCommands, ...fileCommands];
+};
+
 /** Whether a record's attributes include the SFL keyword (i.e. it's a subfile detail record). */
 function isSflRecordInfo(recordInfo: FieldsPerRecord): boolean {
     return recordInfo.attributes?.some(attr => attr.value === 'SFL') ?? false;
@@ -560,9 +617,11 @@ export class RecordPreviewPanel {
             existing.recordName = recordName;
             existing.treeProvider = treeProvider;
             existing.overlayRecordName = undefined;
-            existing.indicatorsEnabled = false;
+            // indicatorsEnabled (the "Indicators" toggle checkbox) and activeDisplayFormat (the
+            // selected DSPSIZ format, e.g. *DS3) are deliberately NOT reset here — they're panel-wide
+            // view preferences (formats are file-level, not per-record) that should stay as the user
+            // left them when switching which record is previewed.
             existing.activeIndicators = new Set();
-            existing.activeDisplayFormat = undefined;
             existing.panel.title = `Preview: ${recordName}`;
             // Reveal without forcing a column: the user may have moved the panel elsewhere
             // (e.g. to a bottom group), and switching records shouldn't snap it back to "Beside".
@@ -746,6 +805,9 @@ export class RecordPreviewPanel {
         const sflPagMatch = sflPagAttr?.value.match(/SFLPAG\(\s*(\d+)\s*\)/i);
         const sflPag = sflPagMatch ? parseInt(sflPagMatch[1], 10) : null;
 
+        // Function-key legend (e.g. "F3=Exit  F12=Cancel"): file-level + record-level CAxx/CFxx.
+        const functionKeys = this.getVisibleFunctionKeys(this.recordName);
+
         this.panel.webview.postMessage({
             type: 'render',
             recordName: this.recordName,
@@ -766,7 +828,8 @@ export class RecordPreviewPanel {
             activeDisplayFormat: this.activeDisplayFormat ?? null,
             minDetailRow,
             items,
-            backgroundItems
+            backgroundItems,
+            functionKeys
         });
     };
 
@@ -992,6 +1055,42 @@ export class RecordPreviewPanel {
             result.push(attr);
         };
         return result;
+    };
+
+    /**
+     * Resolves the function keys to show in the preview's legend for a record: every distinct key
+     * number among its candidate CAxx/CFxx commands (see `getEffectiveFunctionKeyCommands` — record
+     * overriding file), narrowed to the active display format. Unlike a field/constant, a key stays
+     * in the legend even when its own indicator condition currently isn't satisfied — it's still
+     * *defined*, just not presently enabled — so the caller can render it dimmed; `active` says
+     * whether at least one of that key's candidates (there can be more than one — indicator-ANDed,
+     * OR'd alternates, or just unconditioned) is currently satisfied (live simulation, same check
+     * used everywhere else conditionable in the preview). When more than one candidate exists for a
+     * number, the active one's description is shown (falling back to the first candidate's when
+     * none currently apply).
+     * @param recordName - Name of the record being previewed
+     */
+    private getVisibleFunctionKeys(recordName: string): { key: string; description: string; active: boolean }[] {
+        const forFormat = filterForActiveFormat(getEffectiveFunctionKeyCommands(recordName), this.activeDisplayFormat);
+
+        const byKeyNumber = new Map<string, FunctionKeyCommand[]>();
+        for (const cmd of forFormat) {
+            const candidates = byKeyNumber.get(cmd.keyNumber);
+            if (candidates) {
+                candidates.push(cmd);
+            } else {
+                byKeyNumber.set(cmd.keyNumber, [cmd]);
+            };
+        };
+
+        const result: { key: string; description: string; active: boolean }[] = [];
+        for (const [keyNumber, candidates] of byKeyNumber) {
+            const activeCandidate = candidates.find(cmd => this.isItemDisplayed(cmd.indicators, this.indicatorsEnabled));
+            const chosen = activeCandidate ?? candidates[0];
+            result.push({ key: `F${parseInt(keyNumber, 10)}`, description: chosen.description, active: Boolean(activeCandidate) });
+        };
+
+        return result.sort((a, b) => parseInt(a.key.slice(1), 10) - parseInt(b.key.slice(1), 10));
     };
 
     /**
@@ -1768,6 +1867,24 @@ export class RecordPreviewPanel {
         border: 1px solid #333333;
         cursor: default;
     }
+    #functionKeyList {
+        display: none;
+        margin-bottom: 6px;
+    }
+    .function-key-badge {
+        display: inline-block;
+        margin: 2px;
+        padding: 1px 6px;
+        border: 1px solid #00ff00;
+        color: #00ff00;
+        background: #000000;
+        font-family: inherit;
+        font-size: 11px;
+    }
+    .function-key-badge.active {
+        color: #000000;
+        background: #00ff00;
+    }
 </style>
 </head>
 <body>
@@ -1800,6 +1917,7 @@ export class RecordPreviewPanel {
     </span>
 </div>
 <div id="indicatorList"></div>
+<div id="functionKeyList"></div>
 <canvas id="screen"></canvas>
 <script>
     const vscode = acquireVsCodeApi();
@@ -1813,6 +1931,7 @@ export class RecordPreviewPanel {
     const indicatorBar = document.getElementById('indicatorBar');
     const indicatorsToggle = document.getElementById('indicatorsToggle');
     const indicatorList = document.getElementById('indicatorList');
+    const functionKeyList = document.getElementById('functionKeyList');
     const sflpagBar = document.getElementById('sflpagBar');
     const sflpagMinusBtn = document.getElementById('sflpagMinusBtn');
     const sflpagPlusBtn = document.getElementById('sflpagPlusBtn');
@@ -2686,6 +2805,18 @@ export class RecordPreviewPanel {
         }
     }
 
+    function rebuildFunctionKeyList(functionKeys) {
+        functionKeyList.innerHTML = '';
+
+        for (const fk of functionKeys) {
+            const badge = document.createElement('span');
+            badge.className = 'function-key-badge' + (fk.active ? ' active' : '');
+            badge.textContent = fk.key;
+            badge.title = fk.description;
+            functionKeyList.appendChild(badge);
+        }
+    }
+
     window.addEventListener('message', (event) => {
         const message = event.data;
         if (message.type === 'render') {
@@ -2721,6 +2852,12 @@ export class RecordPreviewPanel {
             indicatorsToggle.checked = Boolean(message.indicatorsEnabled);
             indicatorList.style.display = (hasIndicators && message.indicatorsEnabled) ? 'block' : 'none';
             rebuildIndicatorList(message.availableIndicators || [], message.activeIndicators || []);
+
+            // Always shown (no on/off toggle, unlike indicators) — a programmer benefits from
+            // seeing which function keys are defined at a glance, without an extra click.
+            const hasFunctionKeys = message.functionKeys && message.functionKeys.length > 0;
+            functionKeyList.style.display = hasFunctionKeys ? 'block' : 'none';
+            rebuildFunctionKeyList(message.functionKeys || []);
 
             const hasSflPag = typeof message.sflPag === 'number';
             sflpagBar.style.display = hasSflPag ? 'inline-flex' : 'none';
