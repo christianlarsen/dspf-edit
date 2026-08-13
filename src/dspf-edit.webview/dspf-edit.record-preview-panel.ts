@@ -1853,7 +1853,7 @@ export class RecordPreviewPanel {
         color: #00ff00;
         font-family: var(--vscode-editor-font-family, monospace);
     }
-    #toolbarRow {
+    .toolbar-row {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
@@ -1976,9 +1976,11 @@ export class RecordPreviewPanel {
 </style>
 </head>
 <body>
-<div id="toolbarRow">
+<div id="toolbarRow1" class="toolbar-row">
     <span id="info">Loading...</span>
     <button id="focusModeBtn" title="Hide the source code editor to focus on the preview (tree view stays visible)">🗖 Focus</button>
+</div>
+<div id="toolbarRow2" class="toolbar-row">
     <span id="formatBar">
         <label for="formatSelect">Format: </label>
         <select id="formatSelect"></select>
@@ -1987,23 +1989,27 @@ export class RecordPreviewPanel {
         <label for="overlaySelect">Overlay: </label>
         <select id="overlaySelect"></select>
     </span>
-    <label id="indicatorBar"><input type="checkbox" id="indicatorsToggle"> Indicators</label>
     <span id="sflpagBar">
         <label>Page rows: </label>
         <button id="sflpagMinusBtn" title="Decrease SFLPAG (SFLSIZ stays SFLPAG + 1)">-</button>
         <span id="sflpagValue"></span>
         <button id="sflpagPlusBtn" title="Increase SFLPAG (SFLSIZ stays SFLPAG + 1)">+</button>
     </span>
-    <span id="actionBar">
-        <button id="addFieldBtn" title="Click, then click a point in the screen to place a new field there">+ Field</button>
-        <button id="addConstantBtn" title="Click, then click a point in the screen to place a new constant there">+ Constant</button>
-        <button id="gridDotsBtn" title="Show a dot in every empty character cell, to see spacing between fields/constants">⋅ Grid</button>
-    </span>
     <span id="selectionBar">
         <span id="selectionLabel"></span>
         <button id="selectionCenterBtn" title="Center horizontally">↔ Center</button>
         <button id="selectionMenuBtn" title="More actions (color, attributes...)">⋮ Actions</button>
     </span>
+</div>
+<div id="toolbarRow3" class="toolbar-row">
+    <span id="actionBar">
+        <button id="addFieldBtn" title="Click, then click a point in the screen to place a new field there">+ Field</button>
+        <button id="addConstantBtn" title="Click, then click a point in the screen to place a new constant there">+ Constant</button>
+        <button id="gridDotsBtn" title="Show a dot in every empty character cell, to see spacing between fields/constants">⋅ Grid</button>
+    </span>
+</div>
+<div id="toolbarRow4" class="toolbar-row">
+    <label id="indicatorBar"><input type="checkbox" id="indicatorsToggle"> Indicators</label>
 </div>
 <div id="indicatorList"></div>
 <div id="functionKeyList"></div>

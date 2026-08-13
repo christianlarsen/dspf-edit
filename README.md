@@ -125,8 +125,8 @@ See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
 **0.17.1** - 2026-08-13
-- Added: Preview gained a "Focus" button that hides the DDS source editor to edit from the preview alone (tree view stays visible), restored when turned off or the preview closes. Records can now be reordered by dragging one in the tree view, moving its whole block of lines in the source — blocked with a warning if it would put an SFL (subfile) record after its SFLCTL, or vice versa. Selecting a single field/constant in the preview now shows its position (and width, for constants).
-- Fixed: adding two or more error messages to a field in one operation could merge the last message's continuation line onto the same physical line as its header, producing invalid DDS. The tree/preview could silently stop refreshing after an edit made while the preview panel had focus. Interacting with the tree view (move buttons, clicking an item) while "Focus" was on undid the maximized preview. Deleting a field/constant conditioned by more than 3 ANDed indicators or several OR'd conditions left its indicator continuation lines behind as invalid DDS — root cause was a one-column parsing offset that also affected how Color/Attribute read and rewrote indicators on existing keywords. Creating a numeric field with 0 decimal places (e.g. a 1-digit option field) generated DDS that failed to compile with CPD7408, since the decimal-positions entry was left blank instead of explicit "0".
+- Added: Preview gained a "Focus" button to hide the source editor and work from the preview alone (tree view stays visible), plus a reorganized toolbar and a position/width display when a single field or constant is selected. Records can now be reordered by dragging them in the tree view, moving their lines in the source — blocked if it would break SFL/SFLCTL order.
+- Fixed: several error-message and indicator-related editing issues that could produce invalid DDS, a tree/preview refresh gap while the preview panel had focus, and a case where creating a numeric field with 0 decimals failed to compile (CPD7408).
 
 ### Previous
 **0.17.0** - 2026-08-12
