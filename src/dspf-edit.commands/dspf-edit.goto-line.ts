@@ -6,25 +6,33 @@
 
 import * as vscode from 'vscode';
 import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
+import { RecordPreviewPanel } from '../dspf-edit.webview/dspf-edit.record-preview-panel';
 
 export function goToLineHandler(context: vscode.ExtensionContext): void {
-  const disposable = vscode.commands.registerCommand('ddsEdit.goToLine', (lineNumber: number) => {
+  const disposable = vscode.commands.registerCommand('ddsEdit.goToLine', async (lineNumber: number) => {
 
     // Check for editor and document
     const { editor, document } = checkForEditorAndDocument();
     if (!document || !editor) {
         return;
     };
-    
-    if (vscode.window.activeTextEditor !== editor) {
-      vscode.window.showTextDocument(editor.document, { viewColumn: editor.viewColumn });
-    };
 
     const position = new vscode.Position(lineNumber - 1, 0);
-    const range = new vscode.Range(position, position);
 
-    editor.selection = new vscode.Selection(range.start, range.end);
-    editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+    // Skips stealing focus (and surfacing the source editor's group) when the preview panel's
+    // focus mode is on, so clicking a tree item doesn't undo the maximized preview.
+    if (RecordPreviewPanel.isFocusModeActive()) {
+      editor.selection = new vscode.Selection(position, position);
+      editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+      return;
+    };
+
+    if (vscode.window.activeTextEditor !== editor) {
+      await vscode.window.showTextDocument(editor.document, { viewColumn: editor.viewColumn });
+    };
+
+    editor.selection = new vscode.Selection(position, position);
+    editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
 
   });
 

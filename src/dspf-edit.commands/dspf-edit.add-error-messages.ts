@@ -378,26 +378,25 @@ async function addErrorMessagesToField(
 
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
+    const insertPos = new vscode.Position(insertionPoint, 0);
 
-    // Insert each error message line
-    let crInserted : boolean = false;    
-    let currentInsertionPoint = insertionPoint;
-    for (let i = 0; i < errorMessages.length; i++) {
-        const errorMessageLines = createErrorMessageLines(errorMessages[i]);
-        
-        for (let j = 0; j < errorMessageLines.length; j++) {
-            const insertPos = new vscode.Position(currentInsertionPoint, 0);
+    // Flatten all error message lines (each message may span several continuation lines)
+    const allLines: string[] = [];
+    for (const errorMessage of errorMessages) {
+        allLines.push(...createErrorMessageLines(errorMessage));
+    };
 
-            if (!crInserted && insertPos.line >= editor.document.lineCount) {
-                workspaceEdit.insert(uri, insertPos, '\n');
-                crInserted = true;
-            };
-            workspaceEdit.insert(uri, insertPos, errorMessageLines[j]);
-            if (i < errorMessages.length - 1 || insertPos.line < editor.document.lineCount) {
-                workspaceEdit.insert(uri, insertPos, '\n');
-            };
-        };        
-        currentInsertionPoint++; // Move insertion point for next error message
+    // Insert every line at the same anchor position; VS Code concatenates
+    // same-position edits in the order they are added.
+    if (insertPos.line >= editor.document.lineCount) {
+        workspaceEdit.insert(uri, insertPos, '\n');
+    };
+
+    for (let j = 0; j < allLines.length; j++) {
+        workspaceEdit.insert(uri, insertPos, allLines[j]);
+        if (j < allLines.length - 1 || insertPos.line < editor.document.lineCount) {
+            workspaceEdit.insert(uri, insertPos, '\n');
+        };
     };
 
     return applyWorkspaceEdit(workspaceEdit, 'add the error messages');

@@ -10,6 +10,7 @@ import { DdsElement, DdsGroup, DdsIndicator, groupIndicatorsByCondition } from '
 import { describeDdsField, describeDdsConstant, describeDdsRecord, describeDdsFile, formatDdsIndicators, formatIndicatorCondition } from '../dspf-edit.utils/dspf-edit.helper';
 import { ExtensionState } from '../dspf-edit.states/state';
 import { getResolvedRef, getPendingReferencedFields } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
+import { moveRecordInSource } from '../dspf-edit.commands/dspf-edit.move-record';
 
 /**
  * Estructura para guardar los filtros de un documento específico
@@ -31,7 +32,7 @@ interface DocumentFilter {
  * Provides the TreeDataProvider for DDS elements, supporting filters per document,
  * visibility toggles, and a status bar item indicating active filters.
  */
-export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
+export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode>, vscode.TreeDragAndDropController<DdsNode> {
 	private _onDidChangeTreeData: vscode.EventEmitter<DdsNode | undefined | void> = new vscode.EventEmitter<DdsNode | undefined | void>();
 	readonly onDidChangeTreeData: vscode.Event<DdsNode | undefined | void> = this._onDidChangeTreeData.event;
 
@@ -802,6 +803,58 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode> {
 		for (const child of children) {
 			await this.expandNodeRecursively(child);
 		}
+	}
+
+	// DRAG AND DROP (records only, for now — reordering them in the tree reorders their whole
+	// block of lines in the DDS source; see dspf-edit.move-record.ts for the actual line move)
+
+	readonly dropMimeTypes = ['application/vnd.code.tree.dspf-edit.schema-view'];
+	readonly dragMimeTypes = ['application/vnd.code.tree.dspf-edit.schema-view'];
+
+	/**
+	 * Starts a drag only when exactly one record node is being dragged — any other selection
+	 * (fields, constants, multi-select, group nodes) sets no transfer data, which makes them
+	 * silently non-draggable.
+	 */
+	handleDrag(source: readonly DdsNode[], dataTransfer: vscode.DataTransfer): void {
+		if (source.length !== 1 || source[0].ddsElement.kind !== 'record') {
+			return;
+		};
+
+		dataTransfer.set(
+			this.dragMimeTypes[0],
+			new vscode.DataTransferItem(source[0].ddsElement.lineIndex)
+		);
+	}
+
+	/**
+	 * Resolves the drop target to a line to move the dragged record before, or 'end', and hands
+	 * off to moveRecordInSource. Dropping on the record itself, on a field/constant, on the file
+	 * node, etc. is a no-op. No manual tree refresh needed: the applied edit fires the existing
+	 * onDidChangeTextDocument -> debounceUpdate -> setElements()/refresh() pipeline.
+	 */
+	async handleDrop(target: DdsNode | undefined, dataTransfer: vscode.DataTransfer): Promise<void> {
+		const transferItem = dataTransfer.get(this.dropMimeTypes[0]);
+		if (!transferItem) {
+			return;
+		};
+		const sourceLineIndex = transferItem.value as number;
+
+		let targetLine: number | 'end';
+		if (!target) {
+			// Dropped in empty space below the list — the only way to reach "after the last
+			// record", since dropping on a record always means "insert before it" (VS Code's
+			// drop API doesn't expose above/below-row position within a target).
+			targetLine = 'end';
+		} else if (target.ddsElement.kind === 'record') {
+			targetLine = target.ddsElement.lineIndex;
+		} else if (target.contextValue === 'group:records') {
+			targetLine = 'end';
+		} else {
+			return;
+		};
+
+		await moveRecordInSource(sourceLineIndex, targetLine);
 	}
 }
 

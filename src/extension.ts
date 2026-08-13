@@ -17,8 +17,9 @@ export function activate(context: vscode.ExtensionContext) {
 	const treeProvider = new DdsTreeProvider();
 	
 	// Create the TreeView and register it
-	const treeView = vscode.window.createTreeView('dspf-edit.schema-view', { 
-		treeDataProvider: treeProvider 
+	const treeView = vscode.window.createTreeView('dspf-edit.schema-view', {
+		treeDataProvider: treeProvider,
+		dragAndDropController: treeProvider
 	});
 	
 	// Set the TreeView instance in the provider (needed for expand/collapse)
