@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
-## [0.17.1] - 2026-08-13
+## [0.17.1] - 2026-08-15
 ### Added
 - Preview: new "Focus" button hides the source editor to work from the preview alone (tree view stays visible).
 - Preview: toolbar reorganized into clearer rows (size/Focus, Format/Overlay/paging/selection, field/constant tools, Indicators).
