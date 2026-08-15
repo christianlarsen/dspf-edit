@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fieldsPerRecords, FieldInfo, ConstantInfo } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, applyWorkspaceEdit, parseIndicatorsFromLine } from '../dspf-edit.utils/dspf-edit.helper';
 
 // TYPE DEFINITIONS
 
@@ -88,7 +88,7 @@ async function handleRemoveElementCommand(node: DdsNode): Promise<void> {
         };
 
         // Create deletion plan
-        const deletionPlan = createDeletionPlan(elementInfo, element.kind, element.recordname);
+        const deletionPlan = createDeletionPlan(document, elementInfo, element.kind, element.recordname);
 
         // Show confirmation dialog with details
         const confirmed = await showDeletionConfirmation(deletionPlan);
@@ -159,6 +159,38 @@ function findElementInModel(
     return null;
 };
 
+// INDICATOR CONTINUATION HANDLING
+
+/**
+ * True when a line is a pure indicator continuation line: it carries its own conditioning
+ * indicators (columns 8-16) but no name, position, or keyword text at all — the same shape
+ * dspf-edit.add-indicators.ts generates/consumes for AND/OR condition continuation lines (position
+ * 7 blank/'A' extends the current AND group, 'O' starts a new OR'd one).
+ * @param lineText - The line's raw text
+ */
+function isPureIndicatorContinuationLine(lineText: string): boolean {
+    if (lineText[6] === '*') return false;
+    if (parseIndicatorsFromLine(lineText).length === 0) return false;
+    return lineText.substring(16).trim() === '';
+};
+
+/**
+ * Extends a deletion range's start line upward past any pure indicator continuation lines
+ * directly above it. Without this, deleting a field/constant/attribute conditioned by more than 3
+ * ANDed indicators, or by more than one OR'd group, would leave those continuation lines behind —
+ * dangling indicators with nothing left to condition, which DDS won't compile.
+ * @param document - The DDS source document
+ * @param lineIndex - Line index of the field/constant/attribute's own line
+ */
+function extendRangeUpForIndicatorContinuation(document: vscode.TextDocument, lineIndex: number): number {
+    let startLine = lineIndex;
+    for (let i = lineIndex - 1; i >= 0; i--) {
+        if (!isPureIndicatorContinuationLine(document.lineAt(i).text)) break;
+        startLine = i;
+    };
+    return startLine;
+};
+
 // DELETION PLANNING FUNCTIONS
 
 /**
@@ -167,12 +199,17 @@ function findElementInModel(
  * @param elementType - The type of element
  * @returns Complete deletion plan
  */
-function createDeletionPlan(elementInfo: DeletableElement, elementType: 'field' | 'constant', recordName: string): ElementDeletionPlan {
+function createDeletionPlan(
+    document: vscode.TextDocument,
+    elementInfo: DeletableElement,
+    elementType: 'field' | 'constant',
+    recordName: string
+): ElementDeletionPlan {
     const ranges: DeletionRange[] = [];
 
     // Add the main element range
     ranges.push({
-        startLine: elementInfo.lineIndex,
+        startLine: extendRangeUpForIndicatorContinuation(document, elementInfo.lineIndex),
         endLine: elementInfo.lastLineIndex,
         description: `${elementType.charAt(0).toUpperCase() + elementType.slice(1)} ${elementInfo.name}`
     });
@@ -180,7 +217,7 @@ function createDeletionPlan(elementInfo: DeletableElement, elementType: 'field' 
     // Add ranges for all attributes
     elementInfo.attributes.forEach((attribute, index) => {
         ranges.push({
-            startLine: attribute.lineIndex,
+            startLine: extendRangeUpForIndicatorContinuation(document, attribute.lineIndex),
             endLine: attribute.lastLineIndex,
             description: `Attribute ${index + 1}: ${attribute.value}`
         });

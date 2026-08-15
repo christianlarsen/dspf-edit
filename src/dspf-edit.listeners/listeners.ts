@@ -26,7 +26,11 @@ export function initializeDocumentListeners(
 
     context.subscriptions.push(
         vscode.workspace.onDidChangeTextDocument(event => {
-            if (event.document === vscode.window.activeTextEditor?.document) {
+            // Compare against the tracked DDS document, not vscode.window.activeTextEditor:
+            // the latter is undefined (or points elsewhere) whenever a non-editor part of the UI
+            // has focus — e.g. the preview panel — which would otherwise silently skip refreshing
+            // the tree/preview after edits made while the source editor isn't the focused one.
+            if (event.document === ExtensionState.lastDdsDocument) {
                 debounceUpdate(treeProvider, event.document);
             };
         })

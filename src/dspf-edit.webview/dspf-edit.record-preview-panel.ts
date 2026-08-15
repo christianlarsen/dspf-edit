@@ -568,6 +568,7 @@ export class RecordPreviewPanel {
     private activeDisplayFormat: string | undefined;
     private lastRecordInfo: FieldsPerRecord | undefined;
     private lastSize: DdsSize | undefined;
+    private focusModeActive = false;
 
     private constructor(recordName: string) {
         this.recordName = recordName;
@@ -611,6 +612,48 @@ export class RecordPreviewPanel {
      */
     static getCurrentRecordName(): string | undefined {
         return RecordPreviewPanel.current?.recordName;
+    };
+
+    /**
+     * Whether the open preview panel currently has its "focus mode" on (source editor's group
+     * maximized away). Commands that jump the source editor to a line after an edit — normally
+     * triggered from the tree view — need this to avoid undoing the maximize.
+     */
+    static isFocusModeActive(): boolean {
+        return RecordPreviewPanel.current?.focusModeActive ?? false;
+    };
+
+    /**
+     * Moves the source editor's cursor/selection to `position` and reveals it — the "jump to what
+     * was just edited" step used after tree-driven commands (move field/constant, delete, add...).
+     * When the preview's focus mode is on, this deliberately skips vscode.window.showTextDocument
+     * (which would surface the source editor's hidden group and undo the maximize) and just updates
+     * the editor object directly instead, so the source is at the right spot whenever focus mode
+     * gets turned off. Otherwise behaves as a normal "reveal and focus" jump.
+     * @param editor - The source editor to reveal the position in
+     * @param position - The position to move the cursor to and reveal
+     */
+    static async revealInSourceEditor(editor: vscode.TextEditor, position: vscode.Position): Promise<void> {
+        if (RecordPreviewPanel.isFocusModeActive()) {
+            editor.selection = new vscode.Selection(position, position);
+            editor.revealRange(
+                new vscode.Range(position, position),
+                vscode.TextEditorRevealType.InCenterIfOutsideViewport
+            );
+            return;
+        };
+
+        await vscode.window.showTextDocument(editor.document, {
+            viewColumn: editor.viewColumn,
+            preserveFocus: false
+        });
+        editor.selection = new vscode.Selection(position, position);
+        editor.revealRange(
+            new vscode.Range(position, position),
+            vscode.TextEditorRevealType.InCenterIfOutsideViewport
+        );
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
     };
 
     /**
@@ -1343,6 +1386,24 @@ export class RecordPreviewPanel {
         if (message?.type === 'sflpagDecrement') {
             await this.adjustSubfilePageSize(-1);
         };
+
+        if (message?.type === 'toggleFocusMode') {
+            await this.toggleFocusMode();
+            return;
+        };
+    };
+
+    /**
+     * Toggles "focus mode": maximizes the preview's editor group so it fills the editing area,
+     * hiding the DDS source editor beside it. The Side Bar (tree view) isn't part of the editor
+     * grid, so it stays visible throughout. Uses VS Code's own maximize-group state rather than
+     * tracking layout ourselves, so it only reflects toggles made through this button.
+     */
+    private async toggleFocusMode(): Promise<void> {
+        this.panel.reveal(undefined, false);
+        await vscode.commands.executeCommand('workbench.action.toggleMaximizeEditorGroup');
+        this.focusModeActive = !this.focusModeActive;
+        this.panel.webview.postMessage({ type: 'focusModeChanged', active: this.focusModeActive });
     };
 
     /**
@@ -1356,19 +1417,8 @@ export class RecordPreviewPanel {
             return;
         };
 
-        await vscode.window.showTextDocument(editor.document, {
-            viewColumn: editor.viewColumn,
-            preserveFocus: false
-        });
-
         const position = new vscode.Position(lineIndex, 0);
-        editor.selection = new vscode.Selection(position, position);
-        editor.revealRange(
-            new vscode.Range(position, position),
-            vscode.TextEditorRevealType.InCenterIfOutsideViewport
-        );
-        await vscode.commands.executeCommand('cursorRight');
-        await vscode.commands.executeCommand('cursorLeft');
+        await RecordPreviewPanel.revealInSourceEditor(editor, position);
 
         const treeView = this.treeProvider?.getTreeView();
         if (this.treeProvider && treeView) {
@@ -1803,7 +1853,7 @@ export class RecordPreviewPanel {
         color: #00ff00;
         font-family: var(--vscode-editor-font-family, monospace);
     }
-    #toolbarRow {
+    .toolbar-row {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
@@ -1836,7 +1886,7 @@ export class RecordPreviewPanel {
         align-items: center;
         gap: 6px;
     }
-    #actionBar button, #sflpagBar button, #selectionBar button {
+    #actionBar button, #sflpagBar button, #selectionBar button, #focusModeBtn {
         background: #000000;
         color: #00ff00;
         border: 1px solid #333333;
@@ -1845,7 +1895,7 @@ export class RecordPreviewPanel {
         padding: 2px 6px;
         cursor: pointer;
     }
-    #actionBar button.active {
+    #actionBar button.active, #focusModeBtn.active {
         background: #00ff00;
         color: #000000;
         border-color: #00ff00;
@@ -1926,8 +1976,11 @@ export class RecordPreviewPanel {
 </style>
 </head>
 <body>
-<div id="toolbarRow">
+<div id="toolbarRow1" class="toolbar-row">
     <span id="info">Loading...</span>
+    <button id="focusModeBtn" title="Hide the source code editor to focus on the preview (tree view stays visible)">🗖 Focus</button>
+</div>
+<div id="toolbarRow2" class="toolbar-row">
     <span id="formatBar">
         <label for="formatSelect">Format: </label>
         <select id="formatSelect"></select>
@@ -1936,23 +1989,27 @@ export class RecordPreviewPanel {
         <label for="overlaySelect">Overlay: </label>
         <select id="overlaySelect"></select>
     </span>
-    <label id="indicatorBar"><input type="checkbox" id="indicatorsToggle"> Indicators</label>
     <span id="sflpagBar">
         <label>Page rows: </label>
         <button id="sflpagMinusBtn" title="Decrease SFLPAG (SFLSIZ stays SFLPAG + 1)">-</button>
         <span id="sflpagValue"></span>
         <button id="sflpagPlusBtn" title="Increase SFLPAG (SFLSIZ stays SFLPAG + 1)">+</button>
     </span>
-    <span id="actionBar">
-        <button id="addFieldBtn" title="Click, then click a point in the screen to place a new field there">+ Field</button>
-        <button id="addConstantBtn" title="Click, then click a point in the screen to place a new constant there">+ Constant</button>
-        <button id="gridDotsBtn" title="Show a dot in every empty character cell, to see spacing between fields/constants">⋅ Grid</button>
-    </span>
     <span id="selectionBar">
         <span id="selectionLabel"></span>
         <button id="selectionCenterBtn" title="Center horizontally">↔ Center</button>
         <button id="selectionMenuBtn" title="More actions (color, attributes...)">⋮ Actions</button>
     </span>
+</div>
+<div id="toolbarRow3" class="toolbar-row">
+    <span id="actionBar">
+        <button id="addFieldBtn" title="Click, then click a point in the screen to place a new field there">+ Field</button>
+        <button id="addConstantBtn" title="Click, then click a point in the screen to place a new constant there">+ Constant</button>
+        <button id="gridDotsBtn" title="Show a dot in every empty character cell, to see spacing between fields/constants">⋅ Grid</button>
+    </span>
+</div>
+<div id="toolbarRow4" class="toolbar-row">
+    <label id="indicatorBar"><input type="checkbox" id="indicatorsToggle"> Indicators</label>
 </div>
 <div id="indicatorList"></div>
 <div id="functionKeyList"></div>
@@ -1962,6 +2019,7 @@ export class RecordPreviewPanel {
     const canvas = document.getElementById('screen');
     const ctx = canvas.getContext('2d');
     const info = document.getElementById('info');
+    const focusModeBtn = document.getElementById('focusModeBtn');
     const formatBar = document.getElementById('formatBar');
     const formatSelect = document.getElementById('formatSelect');
     const toolbar = document.getElementById('toolbar');
@@ -2378,7 +2436,12 @@ export class RecordPreviewPanel {
             const noun = kinds.size === 1 ? uniqueByLine[0].kind + 's' : 'fields/constants';
             selectionLabel.textContent = uniqueByLine.length + ' ' + noun + ' selected';
         } else {
-            selectionLabel.textContent = '1 ' + uniqueByLine[0].kind + ' selected';
+            const item = uniqueByLine[0];
+            let label = '1 ' + item.kind + ' selected — row ' + item.row + ', col ' + item.col;
+            if (item.kind === 'constant') {
+                label += ', width ' + item.length;
+            }
+            selectionLabel.textContent = label;
         }
         selectionCenterBtn.style.display = multi ? 'none' : 'inline-block';
         selectionMenuBtn.style.display = multi ? 'none' : 'inline-block';
@@ -2499,6 +2562,10 @@ export class RecordPreviewPanel {
         if (currentSize) {
             draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
         }
+    });
+
+    focusModeBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'toggleFocusMode' });
     });
 
     // Both buttons are only shown (see updateSelectionBar) when exactly one item is selected.
@@ -2930,6 +2997,9 @@ export class RecordPreviewPanel {
         } else if (message.type === 'selectLine') {
             selectedLineIndices = new Set([message.lineIndex]);
             draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+        } else if (message.type === 'focusModeChanged') {
+            focusModeBtn.textContent = message.active ? '🗗 Show code' : '🗖 Focus';
+            focusModeBtn.classList.toggle('active', message.active);
         }
     });
 </script>

@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fileSizeAttributes, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, findEndLineIndex, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { RecordPreviewPanel } from '../dspf-edit.webview/dspf-edit.record-preview-panel';
 
 /**
  * Gets the maximum columns value from fileSizeAttributes
@@ -149,21 +150,10 @@ async function handleMoveConstantCommand(node: DdsNode, offset: number): Promise
             return;
         };
 
-        // Set focus on the editor and position cursor on the constant
-        await vscode.window.showTextDocument(editor.document, {
-            viewColumn: editor.viewColumn,
-            preserveFocus: false
-        });
-
-        // Position cursor at the beginning of the constant
+        // Reveal the constant's new position in the source editor (skips stealing focus if the
+        // preview panel's focus mode is on, so it doesn't undo the maximized preview).
         const constantPosition = new vscode.Position(element.lineIndex, 44); // Start of constant value
-        editor.selection = new vscode.Selection(constantPosition, constantPosition);
-        editor.revealRange(
-            new vscode.Range(constantPosition, constantPosition),
-            vscode.TextEditorRevealType.InCenterIfOutsideViewport
-        );
-        await vscode.commands.executeCommand('cursorRight');
-        await vscode.commands.executeCommand('cursorLeft');
+        await RecordPreviewPanel.revealInSourceEditor(editor, constantPosition);
 
     } catch (error) {
         console.error('Error moving constant:', error);

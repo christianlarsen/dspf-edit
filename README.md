@@ -124,9 +124,9 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.17.0** - 2026-08-12
-- Added: Command Keys now checks across file/record level to prevent a key number being defined as both CA and CF. Preview gained a function-key legend (shows every available `Fnn`, highlighting the ones currently active) and now shows an active `ERRMSG()` on the window's own message line when applicable. The "Indicators" toggle and selected display format persist across switching which record is previewed.
-- Fixed: a CAxx/CFxx description longer than 25 characters (spilling onto a continuation line) was silently dropped instead of shown. The display-format dropdown could go blank after switching records/files. The preview panel could go blank after being dragged to a different editor group.
+**0.17.1** - 2026-08-15
+- Added: Preview gained a "Focus" button to hide the source editor and work from the preview alone (tree view stays visible), plus a reorganized toolbar and a position/width display when a single field or constant is selected. Records can now be reordered by dragging them in the tree view, moving their lines in the source — blocked if it would break SFL/SFLCTL order.
+- Fixed: several error-message and indicator-related editing issues that could produce invalid DDS, a tree/preview refresh gap while the preview panel had focus, and a case where creating a numeric field with 0 decimals failed to compile (CPD7408).
 
 ---
 

@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [0.17.1] - 2026-08-15
+### Added
+- Preview: new "Focus" button hides the source editor to work from the preview alone (tree view stays visible).
+- Preview: toolbar reorganized into clearer rows (size/Focus, Format/Overlay/paging/selection, field/constant tools, Indicators).
+- Preview: selecting a single field or constant now shows its position (and width, for constants).
+- Tree view: records can be reordered by dragging one onto another — moves the whole record in the source. Blocked if it would break SFL/SFLCTL order.
+### Fixed
+- Error Message: adding several messages at once could produce invalid DDS when one of them needed a continuation line.
+- Tree/preview could stop refreshing after an edit made while the preview panel had focus.
+- Preview: some tree/preview actions could unintentionally undo "Focus" mode.
+- Deleting a field/constant with indicators spanning multiple lines could leave invalid leftover lines behind; this also affected how existing indicators were read for Color/Attribute.
+- Add Field: creating a numeric field with 0 decimal places could fail to compile (CPD7408).
+
 ## [0.17.0] - 2026-08-12
 ### Added
 - Command Keys: adding a CAxx/CFxx now also checks the *other* level (the file, when adding to a record; every record, when adding at file level) and excludes any key number already used there from the picker, regardless of whether the type matches — prevents generating a record whose effective key set defines the same key number as both CA and CF (or twice), which DDS won't compile.

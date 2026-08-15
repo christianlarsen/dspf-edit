@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fileSizeAttributes, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, findEndLineIndex, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { RecordPreviewPanel } from '../dspf-edit.webview/dspf-edit.record-preview-panel';
 
 /**
  * Gets the maximum columns value from fileSizeAttributes
@@ -149,21 +150,10 @@ async function handleMoveFieldCommand(node: DdsNode, offset: number): Promise<vo
             return;
         };
 
-        // Set focus on the editor and position cursor on the field
-        await vscode.window.showTextDocument(editor.document, {
-            viewColumn: editor.viewColumn,
-            preserveFocus: false
-        });
-
-        // Position cursor at the beginning of the field name
+        // Reveal the field's new position in the source editor (skips stealing focus if the
+        // preview panel's focus mode is on, so it doesn't undo the maximized preview).
         const fieldPosition = new vscode.Position(element.lineIndex, 18); // Start of field name
-        editor.selection = new vscode.Selection(fieldPosition, fieldPosition);
-        editor.revealRange(
-            new vscode.Range(fieldPosition, fieldPosition),
-            vscode.TextEditorRevealType.InCenterIfOutsideViewport
-        );
-        await vscode.commands.executeCommand('cursorRight');
-        await vscode.commands.executeCommand('cursorLeft');
+        await RecordPreviewPanel.revealInSourceEditor(editor, fieldPosition);
 
     } catch (error) {
         console.error('Error moving field:', error);

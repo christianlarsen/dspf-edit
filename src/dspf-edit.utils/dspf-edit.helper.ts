@@ -942,15 +942,18 @@ export async function applyWorkspaceEdit(workspaceEdit: vscode.WorkspaceEdit, co
 };
 
 /**
- * Parses indicators from a DDS line at positions 7-9, 10-12, 13-15.
+ * Parses indicators from a DDS line at positions 8-10, 11-13, 14-16.
  * @param lineText - The DDS line text
  * @returns Array of indicator codes found
  */
 export function parseIndicatorsFromLine(lineText: string): string[] {
     const indicators: string[] = [];
 
-    // Check positions 7-9, 10-12, 13-15 (0-based: 6-8, 9-11, 12-14)
-    const positions = [6, 9, 12];
+    // Check positions 8-10, 11-13, 14-16 (0-based: 7-9, 10-12, 13-15) — column 7 (0-based 6) is
+    // the condition marker (blank/'A'/'O'), not part of any indicator slot; see
+    // dspf-edit.add-indicators.ts's setIndicatorsOnLine/createIndicatorContinuationLine, which
+    // write indicators at this same offset.
+    const positions = [7, 10, 13];
 
     for (const pos of positions) {
         if (lineText.length > pos + 2) {

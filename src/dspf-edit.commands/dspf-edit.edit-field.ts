@@ -459,10 +459,16 @@ function generateQuickFieldLines(name: string, isNumeric: boolean, usage: FieldU
     line = replaceAt(line, FIELD_CONSTANTS.SIZE_COLUMN_START, size.length.toString().padStart(5, ' '));
 
     if (isNumeric) {
-        line = replaceAt(line, 34, 'Y');
-        if (size.decimals) {
-            line = replaceAt(line, 35, size.decimals.toString().padStart(2, ' '));
-        };
+        // Decimal positions (36-37) must always be written explicitly, even "0" — per the DDS
+        // reference, leaving them blank makes the field CHARACTER type regardless of what's in
+        // the type column, which is exactly what produced CPD7408 ("decimal positions or field
+        // length not valid") for a numeric field with 0 decimal places. The keyboard shift the
+        // system itself assigns is 'S' (signed numeric) unless an editing keyword is present
+        // (added below as EDTWRD when there are decimals), in which case it's 'Y' (numeric
+        // only) — same S/Y pairing STRSDA itself generates.
+        const decimals = size.decimals ?? 0;
+        line = replaceAt(line, 34, decimals ? 'Y' : 'S');
+        line = replaceAt(line, 35, decimals.toString().padStart(2, ' '));
     };
 
     if (usage.type !== 'O') {
@@ -1196,8 +1202,12 @@ function generateNewFieldLine(config: NewFieldConfig): string {
         }
         
         line = replaceAt(line, 34, fieldType.keyboardShift);
-        
-        if (fieldType.hasDecimals && config.typeConfig.size.decimals !== undefined && config.typeConfig.size.decimals > 0) {
+
+        // Decimal positions (36-37) must always be written explicitly, even "0" — leaving them
+        // blank makes DDS treat the field as character type regardless of the keyboard shift
+        // above, producing CPD7408 ("decimal positions or field length not valid") for a
+        // numeric type (Y/S/N/F) with 0 decimal places.
+        if (fieldType.hasDecimals && config.typeConfig.size.decimals !== undefined) {
             const decStr = config.typeConfig.size.decimals.toString().padStart(2, ' ');
             line = replaceAt(line, 35, decStr);
         };
