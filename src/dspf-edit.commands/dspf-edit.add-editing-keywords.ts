@@ -605,6 +605,11 @@ async function addEditingToField(
         if (insertionPoint === -1) {
             throw new Error('Could not find insertion point for field editing');
         };
+        // EDTCDE/EDTWRD require numeric-only (Y); upgrade from signed numeric (S) if needed.
+        // The field's own line isn't otherwise touched in this branch, so this is a standalone edit.
+        if (editing.some(edit => edit.type === 'EDTCDE' || edit.type === 'EDTWRD')) {
+            upgradeSignedTypeOnFieldLine(editor.document, workspaceEdit, uri, element);
+        };
         await addAdditionalEditingLines(editing, insertionPoint, workspaceEdit, uri, editor);
     };
 
@@ -649,6 +654,48 @@ function hasExistingAttributeLines(editor: vscode.TextEditor, element: any): boo
     return false;
 };
 
+// DDS column 35 (0-indexed 34): data type / keyboard shift.
+const FIELD_TYPE_COLUMN = 34;
+
+/**
+ * Returns `line` with its type/keyboard-shift column upgraded from signed numeric (S) to
+ * numeric-only (Y) when it's currently S, otherwise unchanged. DDS does not allow EDTCDE/EDTWRD
+ * on an S field ("You cannot specify S in position 35 if you also specify the EDTCDE or EDTWRD
+ * keyword", per the DDS reference) — STRSDA itself makes this same S-to-Y switch automatically
+ * the moment you attach an edit code, which is what this mirrors.
+ * @param line - The field's DDS source line
+ */
+function upgradeSignedTypeChar(line: string): string {
+    if (line.length <= FIELD_TYPE_COLUMN || line.charAt(FIELD_TYPE_COLUMN).toUpperCase() !== 'S') {
+        return line;
+    };
+    return line.substring(0, FIELD_TYPE_COLUMN) + 'Y' + line.substring(FIELD_TYPE_COLUMN + 1);
+};
+
+/**
+ * Upgrades the field's own line from signed numeric (S) to numeric-only (Y) in place, for the case
+ * where the editing keyword is being written to a separate attribute line rather than appended to
+ * the field's own line (so nothing else already touches that line in the same edit).
+ * @param document - The active document
+ * @param workspaceEdit - The workspace edit to add the change to
+ * @param uri - The document URI
+ * @param element - The DDS field element
+ */
+function upgradeSignedTypeOnFieldLine(
+    document: vscode.TextDocument,
+    workspaceEdit: vscode.WorkspaceEdit,
+    uri: vscode.Uri,
+    element: any
+): void {
+    const lineText = document.lineAt(element.lineIndex).text;
+    if (lineText.length <= FIELD_TYPE_COLUMN || lineText.charAt(FIELD_TYPE_COLUMN).toUpperCase() !== 'S') {
+        return;
+    };
+    const start = new vscode.Position(element.lineIndex, FIELD_TYPE_COLUMN);
+    const end = new vscode.Position(element.lineIndex, FIELD_TYPE_COLUMN + 1);
+    workspaceEdit.replace(uri, new vscode.Range(start, end), 'Y');
+};
+
 /**
  * Adds the first editing keyword to the field line itself.
  * @param editor - The text editor
@@ -666,11 +713,16 @@ async function addFirstEditingToFieldLine(
 ): Promise<void> {
     const fieldLine = editor.document.lineAt(element.lineIndex);
     const fieldLineText = fieldLine.text;
-    
+
     // Ensure line is at least 44 characters (pad with spaces if needed)
     let updatedLine = fieldLineText;
     while (updatedLine.length < 44) {
         updatedLine += ' ';
+    };
+
+    // EDTCDE/EDTWRD require numeric-only (Y); upgrade from signed numeric (S) if needed.
+    if (editing.type === 'EDTCDE' || editing.type === 'EDTWRD') {
+        updatedLine = upgradeSignedTypeChar(updatedLine);
     };
 
     // Add the editing keyword
