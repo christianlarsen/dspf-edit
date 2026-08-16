@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [0.17.2] - 2026-08-16
+### Fixed
+- Add Editing Keywords: adding `EDTCDE`/`EDTWRD` to a signed-numeric (S) field left it as type S, which DDS does not allow together with an edit code or edit word — the generated source failed to compile with CPD7554. The field's type is now automatically upgraded to numeric-only (Y) when the editing keyword is added, matching STRSDA's own behavior.
+
 ## [0.17.1] - 2026-08-15
 ### Added
 - Preview: new "Focus" button hides the source editor to work from the preview alone (tree view stays visible).

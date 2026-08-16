@@ -124,9 +124,8 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.17.1** - 2026-08-15
-- Added: Preview gained a "Focus" button to hide the source editor and work from the preview alone (tree view stays visible), plus a reorganized toolbar and a position/width display when a single field or constant is selected. Records can now be reordered by dragging them in the tree view, moving their lines in the source — blocked if it would break SFL/SFLCTL order.
-- Fixed: several error-message and indicator-related editing issues that could produce invalid DDS, a tree/preview refresh gap while the preview panel had focus, and a case where creating a numeric field with 0 decimals failed to compile (CPD7408).
+**0.17.2** - 2026-08-16
+- Fixed: adding an edit code or edit word (`EDTCDE`/`EDTWRD`) to a signed-numeric (S) field generated DDS that failed to compile (CPD7554), since DDS doesn't allow S together with an edit code. The field's type is now automatically upgraded to numeric-only (Y) when the editing keyword is added, matching STRSDA's own behavior.
 
 ---
 
