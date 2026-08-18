@@ -231,6 +231,70 @@ function getContinuedFieldWidth(attributes: AttributeWithIndicators[] | undefine
     return width ? Number(width) : null;
 };
 
+/** True when a field carries SNGCHCFLD or MLTCHCFLD (a single- or multiple-choice selection field). */
+function isChoiceField(attributes: AttributeWithIndicators[] | undefined): boolean {
+    return Boolean(attributes?.some(attr => /^(SNGCHCFLD|MLTCHCFLD)\b/i.test(attr.value)));
+};
+
+/** A selection field's choice-list arrangement: how many choices per row/column, and the gap between columns. */
+interface ChoiceLayout {
+    numCols?: number;
+    numRows?: number;
+    gutter: number;
+};
+
+/**
+ * Extracts a SNGCHCFLD/MLTCHCFLD field's layout parameters — *NUMCOL (n choices per row, filling
+ * row by row) or *NUMROW (n choices per column, filling column by column); DDS treats the two as
+ * mutually exclusive. *GUTTER sets the blank space between columns (DDS default: 3). With neither
+ * *NUMCOL nor *NUMROW coded, the field's own default is a single vertical column.
+ * @param attributes - The field's DDS attributes
+ */
+function getChoiceLayout(attributes: AttributeWithIndicators[] | undefined): ChoiceLayout {
+    const attr = attributes?.find(a => /^(SNGCHCFLD|MLTCHCFLD)\b/i.test(a.value));
+    if (!attr) { return { gutter: 3 }; };
+
+    const numCols = attr.value.match(/\*NUMCOL\s+(\d+)/i)?.[1];
+    const numRows = attr.value.match(/\*NUMROW\s+(\d+)/i)?.[1];
+    const gutter = attr.value.match(/\*GUTTER\s+(\d+)/i)?.[1];
+
+    return {
+        numCols: numCols ? Number(numCols) : undefined,
+        numRows: numRows ? Number(numRows) : undefined,
+        gutter: gutter ? Number(gutter) : 3
+    };
+};
+
+/** One CHOICE() option belonging to a SNGCHCFLD/MLTCHCFLD field, in source order. */
+interface ChoiceOption {
+    number: string;
+    text: string;
+    lineIndex: number;
+};
+
+/**
+ * Extracts a selection field's CHOICE() options, in source order — the same order a real 5250
+ * lists them in (confirmed against STRSDA), one per line as "N. text", below/right of the field's
+ * own input box. Only a literal 'text' choice can be shown; a program-to-system field reference
+ * (&fieldname) has no compile-time value, so it falls back to showing the field name itself.
+ * @param attributes - The field's DDS attributes
+ */
+function getChoiceOptions(attributes: AttributeWithIndicators[] | undefined): ChoiceOption[] {
+    if (!attributes) { return []; };
+
+    const options: ChoiceOption[] = [];
+    for (const attr of attributes) {
+        const match = attr.value.match(/^CHOICE\(\s*(\d+)\s+(.+?)\)\s*;?$/i);
+        if (!match) { continue; };
+
+        const [, number, rest] = match;
+        const quoted = rest.match(/^'([^']*)'/);
+        const text = quoted ? quoted[1] : rest.replace(/^&/, '').trim();
+        options.push({ number, text, lineIndex: attr.lineIndex });
+    };
+    return options;
+};
+
 /** Default 5250-style green, used when a field/constant has no COLOR() keyword. */
 const DEFAULT_COLOR = '#00ff00';
 
@@ -1037,6 +1101,52 @@ export class RecordPreviewPanel {
                     };
                 } else {
                     items.push({ ...baseItem, text, row: trueRow + rowOffset, length: text.length });
+                };
+
+                // SNGCHCFLD/MLTCHCFLD: confirmed against STRSDA — the field's own input box
+                // (already pushed above) sits to the left of the choice list, each CHOICE()
+                // rendered as "<number>. <text>" (MLTCHCFLD lets the user type several numbers into
+                // that same box; the choice list itself looks identical). With neither *NUMCOL nor
+                // *NUMROW coded, that's a single vertical column starting on the field's own row
+                // (fillSize 1 below degenerates the row-major layout to exactly that). *NUMCOL(n)
+                // fills n choices per row before wrapping to the next row; *NUMROW(n) fills n
+                // choices per column before starting the next column — same options, different
+                // reading order. Every column uses one uniform width (the longest choice label,
+                // plus the gutter), matching how SDA/RDi lay these out. Purely informational
+                // (isInteractive false): CHOICE lines have no row/col of their own in DDS to
+                // drag/reposition.
+                //
+                // PSHBTNFLD/PSHBTNCHC(), unlike SNGCHCFLD/MLTCHCFLD, was confirmed against STRSDA to
+                // have *no* text fallback at all on a plain 5250 — the field just shows as an
+                // ordinary input box, with no special handling here.
+                if (isChoiceField(activeAttrs)) {
+                    const options = getChoiceOptions(activeAttrs);
+                    const layout = getChoiceLayout(activeAttrs);
+                    const maxLabelLength = Math.max(0, ...options.map(o => `${o.number}. ${o.text}`.length));
+                    const columnWidth = maxLabelLength + layout.gutter;
+                    const columnMajor = layout.numRows !== undefined;
+                    const fillSize = (columnMajor ? layout.numRows : layout.numCols) ?? 1;
+                    const choiceCol = trueCol + colOffset + effectiveLength + 1;
+
+                    options.forEach((option, index) => {
+                        const rowIndex = columnMajor ? index % fillSize : Math.floor(index / fillSize);
+                        const colIndex = columnMajor ? Math.floor(index / fillSize) : index % fillSize;
+                        const label = `${option.number}. ${option.text}`;
+                        items.push({
+                            ...baseItem,
+                            name: `${field.name}_CHOICE_${option.number}`,
+                            text: label,
+                            row: trueRow + rowOffset + rowIndex,
+                            col: choiceCol + colIndex * columnWidth,
+                            length: label.length,
+                            lineIndex: option.lineIndex,
+                            reverseImage: false,
+                            underline: false,
+                            isInteractive: false,
+                            isInputCapable: false,
+                            isReferenced: false
+                        });
+                    });
                 };
             };
         };

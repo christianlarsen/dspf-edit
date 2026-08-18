@@ -124,8 +124,9 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.17.2** - 2026-08-16
-- Fixed: adding an edit code or edit word (`EDTCDE`/`EDTWRD`) to a signed-numeric (S) field generated DDS that failed to compile (CPD7554), since DDS doesn't allow S together with an edit code. The field's type is now automatically upgraded to numeric-only (Y) when the editing keyword is added, matching STRSDA's own behavior.
+**0.17.2** - 2026-08-17
+- Added: Preview now renders `SNGCHCFLD`/`MLTCHCFLD` selection fields with their `CHOICE()` options ("`N.` text") laid out next to the field, following its `*NUMCOL`/`*NUMROW`/`*GUTTER` parameters (a single vertical column when none are coded) — confirmed against STRSDA.
+- Fixed: Add Editing Keywords no longer generates uncompilable DDS when adding `EDTCDE`/`EDTWRD` to a signed-numeric (S) field — the field is now auto-upgraded to numeric-only (Y), matching STRSDA.
 
 ---
 
