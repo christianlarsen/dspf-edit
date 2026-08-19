@@ -6,8 +6,9 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { getRecordSize, SYSTEM_FIELD_PLACEHOLDER } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { getRecordSize, getAvailableDisplayFormats, SYSTEM_FIELD_PLACEHOLDER } from '../dspf-edit.model/dspf-edit.model';
+import { resolveRecordSizeForFormat } from '../dspf-edit.parser/dspf-edit.parser';
+import { checkForEditorAndDocument, applyWorkspaceEdit, pickDisplayFormat } from '../dspf-edit.utils/dspf-edit.helper';
 
 // POSITION CENTERING FUNCTIONALITY
 
@@ -18,8 +19,8 @@ import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.util
  */
 export function centerPosition(context: vscode.ExtensionContext): void {
     context.subscriptions.push(
-        vscode.commands.registerCommand("dspf-edit.center", async (node: DdsNode) => {
-            await handleCenterCommand(node);
+        vscode.commands.registerCommand("dspf-edit.center", async (node: DdsNode, activeFormat?: string) => {
+            await handleCenterCommand(node, activeFormat);
         })
     );
 };
@@ -30,8 +31,10 @@ export function centerPosition(context: vscode.ExtensionContext): void {
  * Handles the center position command for a given DDS node.
  * Validates the element, calculates the center position, and applies the changes.
  * @param node - The DDS node to center
+ * @param activeFormat - The display format (e.g. "*DS4") currently being previewed, if invoked from
+ * the preview panel; when omitted on a file with more than one declared format, the user is asked.
  */
-async function handleCenterCommand(node: DdsNode): Promise<void> {
+async function handleCenterCommand(node: DdsNode, activeFormat?: string): Promise<void> {
     try {
         // Check for editor and document
         const { editor, document } = checkForEditorAndDocument();
@@ -51,7 +54,21 @@ async function handleCenterCommand(node: DdsNode): Promise<void> {
         if (!('recordname' in element)) {
             return;
         };
-        const windowSize = getRecordSize(element.recordname);
+
+        // A record's width isn't fixed when the file declares more than one DSPSIZ format — using
+        // the default (first-declared) one regardless of which format is actually being previewed
+        // silently centered against the wrong width (e.g. always 80 cols on a *DS3/*DS4 file, even
+        // while previewing *DS4's 132). Resolve against the caller's active format when known, or
+        // ask which one to use otherwise.
+        const declaredFormats = getAvailableDisplayFormats();
+        let windowSize = getRecordSize(element.recordname);
+        if (declaredFormats.length > 1) {
+            const formatName = activeFormat ?? await pickDisplayFormat(declaredFormats);
+            if (!formatName) {
+                return;
+            };
+            windowSize = resolveRecordSizeForFormat(element.recordname, formatName);
+        };
         if (!windowSize) {
             vscode.window.showWarningMessage("Unable to retrieve window size.");
             return;

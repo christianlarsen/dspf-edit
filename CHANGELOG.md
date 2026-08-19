@@ -8,11 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
-## [0.17.2] - 2026-08-17
+## [0.18.0] - 2026-08-19
 ### Added
 - Preview: single- and multiple-choice selection fields (`SNGCHCFLD`/`MLTCHCFLD`) now render their `CHOICE()` options as "`N.` text" next to the field itself, laid out per the field's own `*NUMCOL`/`*NUMROW`/`*GUTTER` parameters (defaulting to a single vertical column when none are coded) — confirmed against STRSDA.
+- Preview: a window's border now reflects its actual `WDWBORDER()` keyword (file-level and/or record-level, combined per the DDS reference) — its real color, display attributes (reverse image, high intensity, underline, blink), and its 8 border characters — instead of a plain decorative rectangle. Falls back to DDS's own defaults (blue, `.`/`:`) when none is coded.
+- Preview: a window's `WDWTITLE()` now inherits the border's color/display attributes when it doesn't specify its own, matching real DDS behavior.
+- Preview: fields and constants can now be resized by dragging a small triangular handle on their right edge — a field's length is written directly; a constant grows/shrinks its trailing blank padding, never its visible text. Windows use the same handle shape for their own corner resize.
+- Fill Constant with Characters: the total size can now be picked from another field/constant instead of typed by hand — aligned to end where a same-row one begins, or to match the width of one on another row (e.g. lining up a column of menu options).
 ### Fixed
+- Preview: a window title's default alignment now follows the DDS reference (left-aligned in the bottom border, centered in the top) instead of always centering.
 - Add Editing Keywords: adding `EDTCDE`/`EDTWRD` to a signed-numeric (S) field left it as type S, which DDS does not allow together with an edit code or edit word — the generated source failed to compile with CPD7554. The field's type is now automatically upgraded to numeric-only (Y) when the editing keyword is added, matching STRSDA's own behavior.
+- Center Constant/Field On Screen: on a file declaring more than one display size, always centered against the default (first-declared) size's width, even while previewing a different one — e.g. always 80 columns on a *DS3/*DS4 file, even with *DS4 (132 columns) selected in the preview. Centering from the preview now uses the size actually being previewed; from the tree, it asks which declared size to use.
+- Add Buttons: on a file declaring more than one display size, always laid buttons out for the default (first-declared) size, regardless of which one was intended, and wrote them unconditioned so they'd also show, mispositioned, on the other size(s). Now asks which declared size to lay the buttons out for, and conditions the generated lines on it.
 
 ## [0.17.1] - 2026-08-15
 ### Added
