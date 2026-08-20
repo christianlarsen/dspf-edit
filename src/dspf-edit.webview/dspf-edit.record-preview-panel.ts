@@ -12,7 +12,7 @@ import { ExtensionState } from '../dspf-edit.states/state';
 import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 import { resolveRecordSizeForFormat, filterForActiveFormat, pickForActiveFormat } from '../dspf-edit.parser/dspf-edit.parser';
 import { editWindowTitleForRecord } from '../dspf-edit.commands/dspf-edit.window-title';
-import { getConstantTextFromUser, insertNewConstant } from '../dspf-edit.commands/dspf-edit.edit-constant';
+import { getConstantTextFromUser, insertNewConstant, updateExistingConstant } from '../dspf-edit.commands/dspf-edit.edit-constant';
 import { addFieldAtPosition } from '../dspf-edit.commands/dspf-edit.edit-field';
 
 /**
@@ -57,6 +57,15 @@ interface PreviewItem {
      * instead of pretending to know its size.
      */
     isReferenced?: boolean;
+    /**
+     * True only for a field whose displayed width equals its raw DDS length one-to-one — a plain
+     * alphanumeric or unedited numeric field, not referenced, not a system keyword (DATE, USER...),
+     * and not carrying an editing mask (EDTCDE/EDTWRD widen the display beyond the raw length).
+     * Drives whether the preview offers a drag handle on its right edge to resize it.
+     */
+    isResizable?: boolean;
+    /** For a resizable field: the shortest length its own type allows (decimals + 1 for a numeric field with decimals, else 1). */
+    minLength?: number;
 };
 
 /** A rectangle in the coordinates of the canvas being drawn (the full display size). */
@@ -231,6 +240,70 @@ function getContinuedFieldWidth(attributes: AttributeWithIndicators[] | undefine
     return width ? Number(width) : null;
 };
 
+/** True when a field carries SNGCHCFLD or MLTCHCFLD (a single- or multiple-choice selection field). */
+function isChoiceField(attributes: AttributeWithIndicators[] | undefined): boolean {
+    return Boolean(attributes?.some(attr => /^(SNGCHCFLD|MLTCHCFLD)\b/i.test(attr.value)));
+};
+
+/** A selection field's choice-list arrangement: how many choices per row/column, and the gap between columns. */
+interface ChoiceLayout {
+    numCols?: number;
+    numRows?: number;
+    gutter: number;
+};
+
+/**
+ * Extracts a SNGCHCFLD/MLTCHCFLD field's layout parameters — *NUMCOL (n choices per row, filling
+ * row by row) or *NUMROW (n choices per column, filling column by column); DDS treats the two as
+ * mutually exclusive. *GUTTER sets the blank space between columns (DDS default: 3). With neither
+ * *NUMCOL nor *NUMROW coded, the field's own default is a single vertical column.
+ * @param attributes - The field's DDS attributes
+ */
+function getChoiceLayout(attributes: AttributeWithIndicators[] | undefined): ChoiceLayout {
+    const attr = attributes?.find(a => /^(SNGCHCFLD|MLTCHCFLD)\b/i.test(a.value));
+    if (!attr) { return { gutter: 3 }; };
+
+    const numCols = attr.value.match(/\*NUMCOL\s+(\d+)/i)?.[1];
+    const numRows = attr.value.match(/\*NUMROW\s+(\d+)/i)?.[1];
+    const gutter = attr.value.match(/\*GUTTER\s+(\d+)/i)?.[1];
+
+    return {
+        numCols: numCols ? Number(numCols) : undefined,
+        numRows: numRows ? Number(numRows) : undefined,
+        gutter: gutter ? Number(gutter) : 3
+    };
+};
+
+/** One CHOICE() option belonging to a SNGCHCFLD/MLTCHCFLD field, in source order. */
+interface ChoiceOption {
+    number: string;
+    text: string;
+    lineIndex: number;
+};
+
+/**
+ * Extracts a selection field's CHOICE() options, in source order — the same order a real 5250
+ * lists them in (confirmed against STRSDA), one per line as "N. text", below/right of the field's
+ * own input box. Only a literal 'text' choice can be shown; a program-to-system field reference
+ * (&fieldname) has no compile-time value, so it falls back to showing the field name itself.
+ * @param attributes - The field's DDS attributes
+ */
+function getChoiceOptions(attributes: AttributeWithIndicators[] | undefined): ChoiceOption[] {
+    if (!attributes) { return []; };
+
+    const options: ChoiceOption[] = [];
+    for (const attr of attributes) {
+        const match = attr.value.match(/^CHOICE\(\s*(\d+)\s+(.+?)\)\s*;?$/i);
+        if (!match) { continue; };
+
+        const [, number, rest] = match;
+        const quoted = rest.match(/^'([^']*)'/);
+        const text = quoted ? quoted[1] : rest.replace(/^&/, '').trim();
+        options.push({ number, text, lineIndex: attr.lineIndex });
+    };
+    return options;
+};
+
 /** Default 5250-style green, used when a field/constant has no COLOR() keyword. */
 const DEFAULT_COLOR = '#00ff00';
 
@@ -328,6 +401,10 @@ interface WindowTitle {
     text: string;
     position: 'TOP' | 'BOTTOM';
     align: 'LEFT' | 'CENTER' | 'RIGHT';
+    /** The title's own *COLOR code (e.g. "GRN"), if coded — defaults to the border's color otherwise. */
+    color?: string;
+    /** The title's own *DSPATR codes, if coded — defaults to the border's display attributes otherwise. */
+    dspatr?: string[];
 };
 
 /**
@@ -357,15 +434,104 @@ function findWindowTitle(recordName: string, activeFormat?: string): WindowTitle
         };
 
         const upperValue = attr.value.toUpperCase();
+        const position = upperValue.includes('*BOTTOM') ? 'BOTTOM' : 'TOP';
+        // Per the DDS reference: centered by default when embedded in the top border, left-aligned
+        // by default in the bottom border — *LEFT/*RIGHT/*CENTER always overrides either default.
+        const align = upperValue.includes('*RIGHT') ? 'RIGHT'
+            : upperValue.includes('*LEFT') ? 'LEFT'
+            : (position === 'BOTTOM' ? 'LEFT' : 'CENTER');
 
-        return {
-            text: textMatch[1],
-            position: upperValue.includes('*BOTTOM') ? 'BOTTOM' : 'TOP',
-            align: upperValue.includes('*RIGHT') ? 'RIGHT' : upperValue.includes('*LEFT') ? 'LEFT' : 'CENTER'
-        };
+        const color = upperValue.match(/\(\s*\*COLOR\s+(\w+)\s*\)/)?.[1];
+        const dspatrList = upperValue.match(/\(\s*\*DSPATR((?:\s+\w+)+)\s*\)/)?.[1];
+        const dspatr = dspatrList ? dspatrList.trim().split(/\s+/) : undefined;
+
+        return { text: textMatch[1], position, align, color, dspatr };
     };
 
     return undefined;
+};
+
+/**
+ * Resolves a window title's final on-screen appearance: its own *COLOR/*DSPATR when coded on the
+ * WDWTITLE() keyword itself, defaulting to the border's own otherwise (per the DDS reference) — and
+ * whether it gets a padding space on each side, which DDS only adds when the title specifies a
+ * color or display attribute of its own; otherwise the border characters flow right up to the
+ * title's first/last character.
+ * @param title - The parsed WDWTITLE() info
+ * @param border - The window's resolved border (see `resolveWindowBorder`)
+ */
+function resolveTitleAppearance(title: WindowTitle, border: WindowBorder): WindowTitle & {
+    hexColor: string;
+    reverseImage: boolean;
+    highIntensity: boolean;
+    underline: boolean;
+    blink: boolean;
+    padded: boolean;
+} {
+    const dspatr = title.dspatr;
+    return {
+        ...title,
+        hexColor: (title.color && DDS_COLOR_MAP[title.color]) || border.color,
+        reverseImage: dspatr ? dspatr.includes('RI') : border.reverseImage,
+        highIntensity: dspatr ? dspatr.includes('HI') : border.highIntensity,
+        underline: dspatr ? dspatr.includes('UL') : border.underline,
+        blink: dspatr ? dspatr.includes('BL') : border.blink,
+        padded: Boolean(title.color || dspatr)
+    };
+};
+
+/** A window's resolved border: color, display attributes, and its 8 border characters (WDWBORDER). */
+interface WindowBorder {
+    color: string;
+    reverseImage: boolean;
+    highIntensity: boolean;
+    underline: boolean;
+    blink: boolean;
+    chars: string[];
+};
+
+// WDWBORDER's own default when no *CHAR is coded at any level (DDS reference): period for the top
+// border/corners, colon for the sides/bottom corners. Order: top-left, top, top-right, left, right,
+// bottom-left, bottom, bottom-right.
+const DEFAULT_WDWBORDER_CHARS = ['.', '.', '.', ':', ':', ':', '.', ':'];
+
+/** WDWBORDER's own default color when none is coded at any level. */
+const DEFAULT_WDWBORDER_COLOR = 'BLU';
+
+/**
+ * Parses the *COLOR/*DSPATR/*CHAR parameters out of one WDWBORDER(...) keyword's raw value —
+ * whichever subset it specifies (at least one is required, but never all three).
+ * @param value - The raw WDWBORDER(...) keyword text
+ */
+function parseWdwBorderParams(value: string): { color?: string; dspatr?: string[]; chars?: string[] } {
+    const color = value.match(/\(\s*\*COLOR\s+(\w+)\s*\)/i)?.[1]?.toUpperCase();
+    const dspatrList = value.match(/\(\s*\*DSPATR((?:\s+\w+)+)\s*\)/i)?.[1];
+    const dspatr = dspatrList ? dspatrList.trim().toUpperCase().split(/\s+/) : undefined;
+    const charText = value.match(/\(\s*\*CHAR\s+'([^']*)'\s*\)/i)?.[1];
+    const chars = charText !== undefined ? [...charText.padEnd(8, ' ')].slice(0, 8) : undefined;
+
+    return { color, dspatr, chars };
+};
+
+/**
+ * Combines every active WDWBORDER() candidate at one level (the file's, or one record's) into a
+ * single set of parameters — DDS allows more than one WDWBORDER at the same level, combining
+ * whichever parameters each one specifies; when two specify the *same* parameter, the first wins.
+ * @param values - Raw WDWBORDER(...) keyword texts, in source order
+ */
+function combineWdwBorderLevel(values: string[]): { color?: string; dspatr?: string[]; chars?: string[] } {
+    let color: string | undefined;
+    let dspatr: string[] | undefined;
+    let chars: string[] | undefined;
+
+    for (const value of values) {
+        const parsed = parseWdwBorderParams(value);
+        color = color ?? parsed.color;
+        dspatr = dspatr ?? parsed.dspatr;
+        chars = chars ?? parsed.chars;
+    };
+
+    return { color, dspatr, chars };
 };
 
 /** A single function-key command (CAxx/CFxx), as relevant to the preview's legend. */
@@ -870,7 +1036,9 @@ export class RecordPreviewPanel {
             : null;
 
         const availableRecords = records.filter(name => name !== this.recordName);
-        const windowTitle = isWindow ? (findWindowTitle(this.recordName, this.activeDisplayFormat) ?? null) : null;
+        const rawWindowTitle = isWindow ? (findWindowTitle(this.recordName, this.activeDisplayFormat) ?? null) : null;
+        const windowBorder = isWindow ? this.resolveWindowBorder(this.resolveWindowRecordName()) : null;
+        const windowTitle = (rawWindowTitle && windowBorder) ? resolveTitleAppearance(rawWindowTitle, windowBorder) : rawWindowTitle;
         const errorMessage = this.resolveErrorMessage(recordInfo);
 
         // A window reserves its own last content line as a message line unless *NOMSGLIN is coded
@@ -896,6 +1064,7 @@ export class RecordPreviewPanel {
             windowFrame,
             outerFrame,
             windowTitle,
+            windowBorder,
             errorMessage,
             errorMessageFrame,
             sflPag,
@@ -999,12 +1168,24 @@ export class RecordPreviewPanel {
                 // text.length already reflects.
                 const effectiveLength = resolvedRef?.length ?? field.length;
                 const effectiveDecimals = resolvedRef?.decimals ?? field.decimals ?? 0;
+                const editingMask = getEditingMask(activeAttrs, effectiveLength, effectiveDecimals);
                 const text = isReferenced
                     ? getFieldPlaceholderText(field.name, field.type, field.usage, 1)
-                    : getFieldPlaceholderText(field.name, resolvedRef?.type ?? field.type, field.usage, effectiveLength, getEditingMask(activeAttrs, effectiveLength, effectiveDecimals));
+                    : getFieldPlaceholderText(field.name, resolvedRef?.type ?? field.type, field.usage, effectiveLength, editingMask);
                 const color = isReferenced || (field.referenced && activeAttrs.length === 0)
                     ? REFERENCED_FIELD_COLOR
                     : getDisplayColor(activeAttrs, hasDisplayAttribute(activeAttrs, 'HI'));
+                // A drag handle to resize a field only makes sense when its displayed width maps
+                // 1:1 back to its raw DDS length: not a referenced field (its length lives in the
+                // external database field, not this source), not a system keyword like DATE/USER
+                // (fixed width, no real length column), not carrying an editing mask (EDTCDE/EDTWRD
+                // widen the display for the decimal point/commas/sign beyond the raw length), and
+                // not PSHBTNFLD (DDS requires it to be exactly length 2 — resizing it would produce
+                // uncompilable DDS).
+                const isSystemField = Boolean(SYSTEM_FIELD_PLACEHOLDER[field.name.trim().toUpperCase()]);
+                const isPushButtonField = activeAttrs.some(attr => /^PSHBTNFLD\b/i.test(attr.value));
+                const isResizable = !field.referenced && !isSystemField && !editingMask && !isPushButtonField;
+                const minLength = effectiveDecimals > 0 ? effectiveDecimals + 1 : 1;
                 const baseItem = {
                     kind: 'field' as const,
                     name: field.name,
@@ -1022,21 +1203,71 @@ export class RecordPreviewPanel {
                     isBackground,
                     isInteractive: !isBackground,
                     isInputCapable: usageCode === 'I' || usageCode === 'B',
-                    isReferenced
+                    isReferenced,
+                    isResizable,
+                    minLength
                 };
 
                 // CNTFLD(n) wraps a field too long for one line across multiple rows, n characters
                 // per row, all starting at the same column — matching how RDi previews it — instead
-                // of a single run that overflows past the record's right edge.
+                // of a single run that overflows past the record's right edge. A wrapped line's own
+                // width isn't the field's real length, so it's never individually resizable.
                 const continuedWidth = getContinuedFieldWidth(activeAttrs);
                 if (continuedWidth && continuedWidth > 0 && text.length > continuedWidth) {
                     const chunkCount = Math.ceil(text.length / continuedWidth);
                     for (let chunk = 0; chunk < chunkCount; chunk++) {
                         const chunkText = text.substr(chunk * continuedWidth, continuedWidth);
-                        items.push({ ...baseItem, text: chunkText, row: trueRow + rowOffset + chunk, length: chunkText.length });
+                        items.push({ ...baseItem, text: chunkText, row: trueRow + rowOffset + chunk, length: chunkText.length, isResizable: false });
                     };
                 } else {
                     items.push({ ...baseItem, text, row: trueRow + rowOffset, length: text.length });
+                };
+
+                // SNGCHCFLD/MLTCHCFLD: confirmed against STRSDA — the field's own input box
+                // (already pushed above) sits to the left of the choice list, each CHOICE()
+                // rendered as "<number>. <text>" (MLTCHCFLD lets the user type several numbers into
+                // that same box; the choice list itself looks identical). With neither *NUMCOL nor
+                // *NUMROW coded, that's a single vertical column starting on the field's own row
+                // (fillSize 1 below degenerates the row-major layout to exactly that). *NUMCOL(n)
+                // fills n choices per row before wrapping to the next row; *NUMROW(n) fills n
+                // choices per column before starting the next column — same options, different
+                // reading order. Every column uses one uniform width (the longest choice label,
+                // plus the gutter), matching how SDA/RDi lay these out. Purely informational
+                // (isInteractive false): CHOICE lines have no row/col of their own in DDS to
+                // drag/reposition.
+                //
+                // PSHBTNFLD/PSHBTNCHC(), unlike SNGCHCFLD/MLTCHCFLD, was confirmed against STRSDA to
+                // have *no* text fallback at all on a plain 5250 — the field just shows as an
+                // ordinary input box, with no special handling here.
+                if (isChoiceField(activeAttrs)) {
+                    const options = getChoiceOptions(activeAttrs);
+                    const layout = getChoiceLayout(activeAttrs);
+                    const maxLabelLength = Math.max(0, ...options.map(o => `${o.number}. ${o.text}`.length));
+                    const columnWidth = maxLabelLength + layout.gutter;
+                    const columnMajor = layout.numRows !== undefined;
+                    const fillSize = (columnMajor ? layout.numRows : layout.numCols) ?? 1;
+                    const choiceCol = trueCol + colOffset + effectiveLength + 1;
+
+                    options.forEach((option, index) => {
+                        const rowIndex = columnMajor ? index % fillSize : Math.floor(index / fillSize);
+                        const colIndex = columnMajor ? Math.floor(index / fillSize) : index % fillSize;
+                        const label = `${option.number}. ${option.text}`;
+                        items.push({
+                            ...baseItem,
+                            name: `${field.name}_CHOICE_${option.number}`,
+                            text: label,
+                            row: trueRow + rowOffset + rowIndex,
+                            col: choiceCol + colIndex * columnWidth,
+                            length: label.length,
+                            lineIndex: option.lineIndex,
+                            reverseImage: false,
+                            underline: false,
+                            isInteractive: false,
+                            isInputCapable: false,
+                            isReferenced: false,
+                            isResizable: false
+                        });
+                    });
                 };
             };
         };
@@ -1056,7 +1287,8 @@ export class RecordPreviewPanel {
                 const activeAttrs = this.getActiveAttributes(constant.attributes, useLiveIndicators);
                 // Same reasoning as the field loop above: a bare system keyword (DATE, USER...)
                 // renders at its own fixed width, not the raw constant text's length.
-                const text = SYSTEM_FIELD_PLACEHOLDER[constant.name.trim().toUpperCase()] || constant.name;
+                const isSystemConstant = Boolean(SYSTEM_FIELD_PLACEHOLDER[constant.name.trim().toUpperCase()]);
+                const text = isSystemConstant ? SYSTEM_FIELD_PLACEHOLDER[constant.name.trim().toUpperCase()] : constant.name;
                 items.push({
                     kind: 'constant',
                     name: constant.name,
@@ -1076,7 +1308,14 @@ export class RecordPreviewPanel {
                     colOffset,
                     isBackground,
                     isInteractive: !isBackground,
-                    isInputCapable: false
+                    isInputCapable: false,
+                    // A constant has no LENGTH keyword of its own in DDS — its width *is* its quoted
+                    // literal's character count — so it's only resizable when it's a genuine literal
+                    // (not a bare system keyword like DATE/USER, whose real display text isn't its
+                    // stored name at all). Shrinking below its own trimmed (non-blank) text is never
+                    // offered — only trailing blank padding can be added/removed.
+                    isResizable: !isSystemConstant,
+                    minLength: Math.max(constant.name.replace(/\s+$/, '').length, 1)
                 });
             };
         };
@@ -1305,6 +1544,16 @@ export class RecordPreviewPanel {
             return;
         };
 
+        if (message?.type === 'resizeField' && typeof message.lineIndex === 'number' && typeof message.newLength === 'number') {
+            await this.resizeField(message.lineIndex, message.newLength);
+            return;
+        };
+
+        if (message?.type === 'resizeConstant' && typeof message.lineIndex === 'number' && typeof message.newLength === 'number') {
+            await this.resizeConstant(message.lineIndex, message.newLength);
+            return;
+        };
+
         if (message?.type === 'resize' && typeof message.newRows === 'number' && typeof message.newCols === 'number') {
             await this.resizeWindow(message.newRows, message.newCols);
             return;
@@ -1476,6 +1725,63 @@ export class RecordPreviewPanel {
     };
 
     /**
+     * Applies a drag-to-resize from the preview (dragging a field's own right-edge handle): writes
+     * its new length into the raw "Length" column (29-34, the same 5-character zone the tree's
+     * "Edit field" command writes), leaving decimals and everything else on the line untouched.
+     * Only ever triggered for a field whose displayed width already equals its raw length one-to-one
+     * (see PreviewItem.isResizable) — the webview itself won't offer the handle otherwise.
+     * @param lineIndex - The field's own source line
+     * @param newLength - The new length to write (already clamped in the webview against the
+     * field's own minimum and the record/window's own width)
+     */
+    private async resizeField(lineIndex: number, newLength: number): Promise<void> {
+        const { editor } = checkForEditorAndDocument();
+        if (!editor || lineIndex >= editor.document.lineCount) {
+            return;
+        };
+
+        const workspaceEdit = new vscode.WorkspaceEdit();
+        workspaceEdit.replace(editor.document.uri, new vscode.Range(lineIndex, 29, lineIndex, 34), String(newLength).padStart(5, ' '));
+
+        if (!(await applyWorkspaceEdit(workspaceEdit, 'resize the field'))) {
+            return;
+        };
+        this.forceReparse(editor.document);
+    };
+
+    /**
+     * Applies a drag-to-resize from the preview (dragging a constant's own right-edge handle): a
+     * constant has no LENGTH keyword of its own — its width *is* its quoted literal's character
+     * count — so "resizing" it means growing/shrinking its trailing blank padding, never its actual
+     * visible text (the webview only ever offers this drag down to the constant's own trimmed
+     * length — see PreviewItem.minLength). Reuses the tree's "Edit constant" rewrite logic, which
+     * already handles a constant growing past the single-line threshold into multiple lines (or
+     * collapsing back).
+     * @param lineIndex - The constant's own source line
+     * @param newLength - The new total character count to write (already clamped in the webview)
+     */
+    private async resizeConstant(lineIndex: number, newLength: number): Promise<void> {
+        const { editor } = checkForEditorAndDocument();
+        if (!editor || lineIndex >= editor.document.lineCount) {
+            return;
+        };
+
+        const constant = fieldsPerRecords.flatMap(r => r.constants).find(c => c.lineIndex === lineIndex);
+        if (!constant) {
+            return;
+        };
+
+        const newText = newLength >= constant.name.length
+            ? constant.name + ' '.repeat(newLength - constant.name.length)
+            : constant.name.slice(0, newLength);
+
+        if (!(await updateExistingConstant(editor, { lineIndex }, newText))) {
+            return;
+        };
+        this.forceReparse(editor.document);
+    };
+
+    /**
      * Places a brand-new constant at a screen position picked directly in the preview (the
      * "+ Constant" button's placement mode): converts the click back to a record-local row/col,
      * validates it's actually within the previewed record's own area, then reuses the same
@@ -1571,6 +1877,47 @@ export class RecordPreviewPanel {
      */
     private resolveWindowRecordName(): string {
         return getEffectiveSize(this.recordName, this.activeDisplayFormat)?.sharedFromRecord ?? this.recordName;
+    };
+
+    /**
+     * The WDWBORDER() candidates from one attribute list (a record's own, or the file's) currently
+     * in effect: matching the active display format, and whose own option indicator (if any) is
+     * satisfied — same gating as everywhere else conditionable in the preview.
+     * @param attributes - Attribute lines to scan (a record's own, or `attributesFileLevel`)
+     */
+    private activeWdwBorderValues(attributes: DdsAttribute[] | undefined): string[] {
+        const forFormat = filterForActiveFormat(attributes ?? [], this.activeDisplayFormat);
+        return forFormat
+            .filter(attr => /^WDWBORDER\(/i.test(attr.value))
+            .filter(attr => this.isItemDisplayed(attr.indicators, this.indicatorsEnabled))
+            .map(attr => attr.value);
+    };
+
+    /**
+     * Resolves a window's border — color, display attributes (RI/HI/UL/BL), and its 8 border
+     * characters — from its own WDWBORDER() keyword(s), combined with the file-level one(s) per the
+     * DDS reference: a record-level value wins over a file-level one for the same parameter (see
+     * `combineWdwBorderLevel` for same-level combining). Falls back to DDS's own defaults (blue, no
+     * display attributes, "." for the top/corners and ":" for the sides) when nothing is coded.
+     * @param recordName - Name of the window/pull-down record (its own, or the one it shares a window with)
+     */
+    private resolveWindowBorder(recordName: string): WindowBorder {
+        const record = fieldsPerRecords.find(r => r.record === recordName);
+        const recordLevel = combineWdwBorderLevel(this.activeWdwBorderValues(record?.attributes));
+        const fileLevel = combineWdwBorderLevel(this.activeWdwBorderValues(attributesFileLevel));
+
+        const color = recordLevel.color ?? fileLevel.color ?? DEFAULT_WDWBORDER_COLOR;
+        const dspatr = recordLevel.dspatr ?? fileLevel.dspatr ?? [];
+        const chars = recordLevel.chars ?? fileLevel.chars ?? DEFAULT_WDWBORDER_CHARS;
+
+        return {
+            color: DDS_COLOR_MAP[color] ?? DDS_COLOR_MAP[DEFAULT_WDWBORDER_COLOR],
+            reverseImage: dspatr.includes('RI'),
+            highIntensity: dspatr.includes('HI'),
+            underline: dspatr.includes('UL'),
+            blink: dspatr.includes('BL'),
+            chars
+        };
     };
 
     /**
@@ -1679,7 +2026,7 @@ export class RecordPreviewPanel {
         if (!node) {
             return;
         };
-        await vscode.commands.executeCommand('dspf-edit.center', node);
+        await vscode.commands.executeCommand('dspf-edit.center', node, this.activeDisplayFormat);
 
         const { editor } = checkForEditorAndDocument();
         if (editor) {
@@ -2045,6 +2392,20 @@ export class RecordPreviewPanel {
     const BLINK_INTERVAL_MS = 600;
     const HANDLE_SIZE = 8;
     const MENU_ICON_SIZE = 16;
+
+    // A resize handle (window corner, field right edge) is a small triangle rather than a solid
+    // square — filling only the lower-right half of its own HANDLE_SIZE box, its outer corner
+    // sitting exactly in the corner being dragged.
+    function drawResizeHandleTriangle(boxX, boxY) {
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.moveTo(boxX + HANDLE_SIZE, boxY);
+        ctx.lineTo(boxX, boxY + HANDLE_SIZE);
+        ctx.lineTo(boxX + HANDLE_SIZE, boxY + HANDLE_SIZE);
+        ctx.closePath();
+        ctx.fill();
+    }
+
     // Mirrors WINDOW_BORDER_* on the host: content sits 1 row/col inside the border, except on
     // the right, where it's 2 (verified against a real window's on-screen footprint).
     const WINDOW_BORDER_TOP = 1;
@@ -2058,6 +2419,7 @@ export class RecordPreviewPanel {
     let currentWindowFrame = null;
     let currentOuterFrame = null;
     let currentWindowTitle = null;
+    let currentWindowBorder = null;
     let currentErrorMessage = null;
     let currentErrorMessageFrame = null;
     let currentTitleRect = null;
@@ -2070,6 +2432,8 @@ export class RecordPreviewPanel {
     let dragState = null;
     let resizeState = null;
     let moveWindowState = null;
+    let elementResizeState = null;
+    let currentElementHandleRect = null;
     let selectedLineIndices = new Set();
     let currentRecordName = null;
     let placingKind = null; // null | 'constant' | 'field'
@@ -2106,7 +2470,7 @@ export class RecordPreviewPanel {
 
         const isSelected = selectedLineIndices.has(item.lineIndex);
         const { row, col } = resolveItemRowCol(item, moveDelta);
-        const isDragged = Boolean(dragState && dragState.items.some(d => d.item === item));
+        const isDragged = Boolean(item.isBeingResized || (dragState && dragState.items.some(d => d.item === item)));
 
         const x = (col - 1) * CHAR_W;
         const y = (row - 1) * CHAR_H;
@@ -2294,8 +2658,61 @@ export class RecordPreviewPanel {
 
             ctx.fillStyle = '#000000';
             ctx.fillRect(fx, fy, fw, fh);
-            ctx.strokeStyle = '#666666';
-            ctx.strokeRect(fx + 0.5, fy + 0.5, fw - 1, fh - 1);
+
+            // WDWBORDER: a real 5250 window border is one character thick on every side, drawn with
+            // the record's/file's resolved color, display attributes, and its own 8 border
+            // characters (top-left, top, top-right, left, right, bottom-left, bottom, bottom-right)
+            // — not a plain decorative rectangle. A blinking border fully disappears during the off
+            // phase, same as any other blinking item (see drawItem).
+            if (currentWindowBorder && !(currentWindowBorder.blink && !blinkOn)) {
+                const border = currentWindowBorder;
+                const topRow = currentOuterFrame.row;
+                const bottomRow = currentOuterFrame.row + currentOuterFrame.rows - 1;
+                const leftCol = currentOuterFrame.col;
+                const rightCol = currentOuterFrame.col + currentOuterFrame.cols - 1;
+                const [tl, top, tr, left, right, bl, bottom, br] = border.chars;
+                const fg = border.reverseImage ? '#000000' : border.color;
+                const bg = border.reverseImage ? border.color : '#000000';
+
+                ctx.font = (border.highIntensity ? 'bold ' : '') + (CHAR_H - 4) + 'px ' + fontFamily;
+                ctx.textAlign = 'center';
+
+                const paintBorderCell = (row, col, ch) => {
+                    const x = (col - 1) * CHAR_W;
+                    const y = (row - 1) * CHAR_H;
+                    ctx.fillStyle = bg;
+                    ctx.fillRect(x, y, CHAR_W, CHAR_H);
+                    if (ch !== ' ') {
+                        ctx.fillStyle = fg;
+                        ctx.fillText(ch, x + CHAR_W / 2, y + CHAR_H / 2);
+                    }
+                    if (border.underline) {
+                        ctx.strokeStyle = fg;
+                        ctx.beginPath();
+                        ctx.moveTo(x + 1, y + CHAR_H - 1.5);
+                        ctx.lineTo(x + CHAR_W - 1, y + CHAR_H - 1.5);
+                        ctx.stroke();
+                    }
+                };
+
+                for (let col = leftCol; col <= rightCol; col++) {
+                    paintBorderCell(topRow, col, col === leftCol ? tl : col === rightCol ? tr : top);
+                    if (bottomRow !== topRow) {
+                        paintBorderCell(bottomRow, col, col === leftCol ? bl : col === rightCol ? br : bottom);
+                    }
+                }
+                for (let row = topRow + 1; row < bottomRow; row++) {
+                    paintBorderCell(row, leftCol, left);
+                    if (rightCol !== leftCol) {
+                        paintBorderCell(row, rightCol, right);
+                    }
+                }
+
+                ctx.textAlign = 'start';
+            } else if (!currentWindowBorder) {
+                ctx.strokeStyle = '#666666';
+                ctx.strokeRect(fx + 0.5, fy + 0.5, fw - 1, fh - 1);
+            }
         }
 
         if (sameWindowItems.length) {
@@ -2308,10 +2725,44 @@ export class RecordPreviewPanel {
         }
 
         for (const item of items) {
-            drawItem(item, fontFamily, moveDelta);
+            // Field/constant resize preview: while dragging its handle, the element's own text
+            // stretches/shrinks live to the currently-dragged length — nothing is actually written
+            // back until the drag ends (mouseup). A field repeats its own placeholder character; a
+            // constant has no such placeholder, so it grows/shrinks its own trailing blank padding
+            // instead, same as the actual edit applied on mouseup (see resizeConstant on the host).
+            if (elementResizeState && item === elementResizeState.item) {
+                const newLength = elementResizeState.newLength;
+                const ghostText = item.kind === 'constant'
+                    ? (newLength >= item.name.length ? item.name + ' '.repeat(newLength - item.name.length) : item.name.slice(0, newLength))
+                    : (item.text.charAt(0) || ' ').repeat(newLength);
+                drawItem(Object.assign({}, item, { text: ghostText, length: newLength, isBeingResized: true }), fontFamily, moveDelta);
+            } else {
+                drawItem(item, fontFamily, moveDelta);
+            }
         }
 
         drawGridDots(size, items, currentBackgroundItems, moveDelta, currentOuterFrame, currentWindowFrame);
+
+        // Element resize handle: shown only while exactly one resizable field/constant is selected —
+        // a small grip just past its right edge (outside its own text, so it never overlaps it even
+        // at width 1, addressing how cramped a narrow one would otherwise feel) that drags its length.
+        currentElementHandleRect = null;
+        if (selectedLineIndices.size === 1) {
+            const selectedLineIndex = [...selectedLineIndices][0];
+            const handleItem = items.find(i => i.lineIndex === selectedLineIndex && (i.kind === 'field' || i.kind === 'constant') && i.isResizable);
+            if (handleItem) {
+                const { row, col } = resolveItemRowCol(handleItem, moveDelta);
+                const width = elementResizeState ? elementResizeState.newLength : Math.max(handleItem.length, handleItem.text.length, 1);
+                // Bottom-anchored within the row, same corner convention as the window's own handle
+                // (its outer tip sits exactly at the element's own bottom-right corner) — reads more
+                // like a familiar resize grip than one centered on the row.
+                const hx = (col - 1 + width) * CHAR_W;
+                const hy = row * CHAR_H - HANDLE_SIZE;
+                currentElementHandleRect = { x: hx, y: hy, width: HANDLE_SIZE, height: HANDLE_SIZE, item: handleItem };
+
+                drawResizeHandleTriangle(hx, hy);
+            }
+        }
 
         // A currently-active ERRMSG() shows on the message line, in white, overwriting whatever
         // would otherwise be there, same as a real 5250 error line. Where that line actually is
@@ -2342,8 +2793,7 @@ export class RecordPreviewPanel {
         if (currentOuterFrame) {
             const hx = (currentOuterFrame.col - 1 + currentOuterFrame.cols) * CHAR_W;
             const hy = (currentOuterFrame.row - 1 + currentOuterFrame.rows) * CHAR_H;
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(hx - HANDLE_SIZE, hy - HANDLE_SIZE, HANDLE_SIZE, HANDLE_SIZE);
+            drawResizeHandleTriangle(hx - HANDLE_SIZE, hy - HANDLE_SIZE);
         }
 
         currentTitleRect = null;
@@ -2355,9 +2805,12 @@ export class RecordPreviewPanel {
             const fh = currentOuterFrame.rows * CHAR_H;
 
             const titleY = currentWindowTitle.position === 'BOTTOM' ? fy + fh - CHAR_H : fy;
-            const text = ' ' + currentWindowTitle.text + ' ';
+            // WDWTITLE: padded with a space on each side only when it specifies its own *COLOR or
+            // *DSPATR — otherwise the border characters flow right up to the title's own text
+            // (DDS reference).
+            const text = currentWindowTitle.padded ? ' ' + currentWindowTitle.text + ' ' : currentWindowTitle.text;
 
-            ctx.font = (CHAR_H - 4) + 'px ' + fontFamily;
+            ctx.font = (currentWindowTitle.highIntensity ? 'bold ' : '') + (CHAR_H - 4) + 'px ' + fontFamily;
             const textWidth = Math.min(ctx.measureText(text).width, fw - 4);
 
             let textX;
@@ -2369,12 +2822,29 @@ export class RecordPreviewPanel {
                 textX = fx + (fw - textWidth) / 2;
             }
 
-            ctx.fillStyle = '#000000';
-            ctx.fillRect(textX, titleY, textWidth, CHAR_H);
-            ctx.fillStyle = '#ffffff';
-            ctx.fillText(text, textX, titleY + CHAR_H / 2);
-
             currentTitleRect = { x: textX, y: titleY, width: textWidth, height: CHAR_H };
+
+            // Defaults to the border's own color/attributes when the title doesn't specify its own
+            // (see resolveTitleAppearance) — so a colored/reverse-image border carries through to
+            // its embedded title instead of always showing plain white-on-black. A blinking title
+            // fully disappears during the off phase, same as the border/any other blinking item.
+            if (!(currentWindowTitle.blink && !blinkOn)) {
+                const fg = currentWindowTitle.reverseImage ? '#000000' : currentWindowTitle.hexColor;
+                const bg = currentWindowTitle.reverseImage ? currentWindowTitle.hexColor : '#000000';
+
+                ctx.fillStyle = bg;
+                ctx.fillRect(textX, titleY, textWidth, CHAR_H);
+                ctx.fillStyle = fg;
+                ctx.fillText(text, textX, titleY + CHAR_H / 2);
+
+                if (currentWindowTitle.underline) {
+                    ctx.strokeStyle = fg;
+                    ctx.beginPath();
+                    ctx.moveTo(textX + 1, titleY + CHAR_H - 1.5);
+                    ctx.lineTo(textX + textWidth - 1, titleY + CHAR_H - 1.5);
+                    ctx.stroke();
+                }
+            }
         }
 
         currentMenuIconRect = null;
@@ -2486,6 +2956,17 @@ export class RecordPreviewPanel {
         const hx = (currentOuterFrame.col - 1 + currentOuterFrame.cols) * CHAR_W;
         const hy = (currentOuterFrame.row - 1 + currentOuterFrame.rows) * CHAR_H;
         return px >= hx - HANDLE_SIZE && px <= hx && py >= hy - HANDLE_SIZE && py <= hy;
+    }
+
+    function isOverElementResizeHandle(ev) {
+        if (!currentElementHandleRect) {
+            return false;
+        }
+        const rect = canvas.getBoundingClientRect();
+        const px = ev.clientX - rect.left;
+        const py = ev.clientY - rect.top;
+        return px >= currentElementHandleRect.x && px <= currentElementHandleRect.x + currentElementHandleRect.width &&
+               py >= currentElementHandleRect.y && py <= currentElementHandleRect.y + currentElementHandleRect.height;
     }
 
     function isOverWindowFrame(ev) {
@@ -2603,6 +3084,27 @@ export class RecordPreviewPanel {
             return;
         }
 
+        if (isOverElementResizeHandle(ev)) {
+            const item = currentElementHandleRect.item;
+            // The element's left edge (item.col) stays fixed — only its right edge can move — so the
+            // longest it can grow to is however many columns remain to the record/window's own
+            // right edge from there.
+            let maxRightCol = currentSize.cols;
+            if (currentWindowFrame && !item.isBackground) {
+                maxRightCol = currentWindowFrame.col + currentWindowFrame.cols - 1;
+            }
+            const maxLength = Math.max(maxRightCol - item.col + 1, item.minLength || 1);
+
+            elementResizeState = {
+                item,
+                startLength: item.length,
+                newLength: item.length,
+                minLength: item.minLength || 1,
+                maxLength
+            };
+            return;
+        }
+
         if (isOverResizeHandle(ev)) {
             resizeState = {
                 contentRows: currentOuterFrame.rows - WINDOW_BORDER_TOP - WINDOW_BORDER_BOTTOM,
@@ -2716,6 +3218,19 @@ export class RecordPreviewPanel {
             return;
         }
 
+        if (elementResizeState) {
+            const { col } = cellAt(ev);
+            const item = elementResizeState.item;
+            const desiredLength = col - item.col + 1;
+            const newLength = clamp(desiredLength, elementResizeState.minLength, elementResizeState.maxLength);
+
+            if (newLength !== elementResizeState.newLength) {
+                elementResizeState.newLength = newLength;
+                draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+            }
+            return;
+        }
+
         if (moveWindowState) {
             const { row, col } = cellAt(ev);
             const limitRow = Math.max(currentSize.rows - currentOuterFrame.rows + 1, 1);
@@ -2733,6 +3248,12 @@ export class RecordPreviewPanel {
 
         if (!dragState) {
             updateWindowHoverState(ev);
+
+            if (isOverElementResizeHandle(ev)) {
+                canvas.style.cursor = 'ew-resize';
+                canvas.title = '';
+                return;
+            }
 
             const overHandle = isOverResizeHandle(ev);
             if (overHandle) {
@@ -2805,6 +3326,17 @@ export class RecordPreviewPanel {
     });
 
     window.addEventListener('mouseup', () => {
+        if (elementResizeState) {
+            const { item, newLength, startLength } = elementResizeState;
+            elementResizeState = null;
+            if (newLength !== startLength) {
+                vscode.postMessage({ type: item.kind === 'constant' ? 'resizeConstant' : 'resizeField', lineIndex: item.lineIndex, newLength });
+            } else {
+                draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+            }
+            return;
+        }
+
         if (resizeState) {
             const { contentRows, contentCols } = resizeState;
             resizeState = null;
@@ -2990,6 +3522,7 @@ export class RecordPreviewPanel {
 
             currentErrorMessage = message.errorMessage || null;
             currentErrorMessageFrame = message.errorMessageFrame || null;
+            currentWindowBorder = message.windowBorder || null;
             draw(message.size, message.items, message.backgroundItems, message.windowFrame, message.windowTitle, message.outerFrame);
         } else if (message.type === 'notFound') {
             info.textContent = 'Record no longer exists.';

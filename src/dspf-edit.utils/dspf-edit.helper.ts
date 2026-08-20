@@ -679,6 +679,21 @@ function findDspsizInsertionPoint(editor: vscode.TextEditor): number {
 };
 
 /**
+ * Asks which declared display format (e.g. *DS3/*DS4) an operation should use, for a command with
+ * no display format of its own to go by (i.e. invoked from the tree rather than the preview panel,
+ * which always has one active). Only meant to be called once the caller has already confirmed the
+ * file declares more than one format — with just one, there's nothing to ask.
+ * @param declaredFormats - The file's declared DSPSIZ formats (from `getAvailableDisplayFormats`)
+ */
+export async function pickDisplayFormat(declaredFormats: Array<{ name: string; rows: number; cols: number }>): Promise<string | undefined> {
+    const picked = await vscode.window.showQuickPick(
+        declaredFormats.map(f => ({ label: f.name, description: `${f.rows}x${f.cols}` })),
+        { placeHolder: 'This file declares more than one display size — which one should this use?' }
+    );
+    return picked?.label;
+};
+
+/**
  * Stamps (or clears) a display-format condition (e.g. "*DS3") onto a DDS line, in the same 9-character
  * zone (columns 8-16, 0-based 7-15) that normally holds indicators — see `parseDisplayFormatCondition`
  * in the parser for the read side of this convention, and `setIndicatorsOnLine` in

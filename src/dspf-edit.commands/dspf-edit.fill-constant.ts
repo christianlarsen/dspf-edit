@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { DdsConstant } from '../dspf-edit.model/dspf-edit.model';
+import { DdsConstant, fieldsPerRecords, SYSTEM_FIELD_PLACEHOLDER } from '../dspf-edit.model/dspf-edit.model';
 import { updateExistingConstant } from './dspf-edit.edit-constant';
 import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
 
@@ -16,6 +16,25 @@ interface FillInformation {
     fillCharacter: string;
     fillEnd: string;
     totalSize : number;
+};
+
+/**
+ * A field/constant offered as an alignment target for a fill — either on the same row, positioned
+ * right after the constant's own text ("alignColumn": the fill ends exactly where it begins), or on
+ * a different row ("matchWidth": the fill matches its total character width, for lining up a whole
+ * column of menu-style lines that don't share a row).
+ */
+interface FillTarget {
+    name: string;
+    kind: 'field' | 'constant';
+    row: number;
+    col: number;
+    mode: 'alignColumn' | 'matchWidth';
+    size: number;
+};
+
+interface FillTargetPickItem extends vscode.QuickPickItem {
+    target?: FillTarget;
 };
 
 // To "fill" a string like "Customer", then you should write,
@@ -61,7 +80,7 @@ async function handleFillConstantCommand(node: DdsNode): Promise<void> {
         };
 
         // Collect information to fill the constant
-        const fillInformation : (FillInformation | undefined) = await collectFillInformationFromUser(node.ddsElement.name);
+        const fillInformation : (FillInformation | undefined) = await collectFillInformationFromUser(node.ddsElement as DdsConstant);
 
         if (fillInformation === undefined) {
             vscode.window.showInformationMessage('No fill information added.');
@@ -87,7 +106,7 @@ async function handleFillConstantCommand(node: DdsNode): Promise<void> {
 
 // USER INTERACTION FUNCTIONS
 
-async function collectFillInformationFromUser(constant: string): Promise<FillInformation | undefined> {
+async function collectFillInformationFromUser(constant: DdsConstant): Promise<FillInformation | undefined> {
 
     // Step 1: fill character(s)
     const fillChar = await vscode.window.showInputBox({
@@ -114,8 +133,103 @@ async function collectFillInformationFromUser(constant: string): Promise<FillInf
     });
     if (!endChar) return undefined;
 
-    // Step 3: total size of the final constant
-    const trimmedConstant = constant.slice(1, -1);
+    // Step 3: total size of the final constant — typed directly, or aligned to another field/
+    // constant already on the same row, so the fill ends exactly where that one begins.
+    const trimmedConstant = constant.name.slice(1, -1);
+    const totalSize = await collectTotalSize(constant, trimmedConstant);
+    if (totalSize === undefined) return undefined;
+
+    return {
+        fillCharacter: fillChar,
+        fillEnd: endChar,
+        totalSize
+      };
+
+};
+
+/**
+ * Finds every other field/constant that can serve as an alignment target for the fill: on the same
+ * row, positioned after where its own text already ends ("alignColumn" — the fill ends exactly
+ * where it begins, e.g. a label immediately before an input field); or on a different row
+ * ("matchWidth" — the fill matches its total width instead, e.g. lining up a column of menu options
+ * that each sit on their own row). A bare system-keyword constant (DATE, USER...) is never offered:
+ * its stored name isn't its real display text, so neither its column nor its width means anything
+ * useful here. Likewise a referenced field, whose length lives outside this source.
+ * @param constant - The constant being filled
+ * @param trimmedLength - Its own text length (without the surrounding quotes)
+ */
+function collectFillTargets(constant: DdsConstant, trimmedLength: number): FillTarget[] {
+    const record = fieldsPerRecords.find(r => r.record === constant.recordname);
+    if (!record) return [];
+
+    const ownTextEndCol = constant.column + trimmedLength;
+    const sameRow: FillTarget[] = [];
+    const otherRows: FillTarget[] = [];
+
+    for (const f of record.fields ?? []) {
+        if (f.lineIndex === constant.lineIndex || f.referenced) continue;
+        if (f.row === constant.row) {
+            if (f.col > ownTextEndCol) {
+                sameRow.push({ name: f.name, kind: 'field', row: f.row, col: f.col, mode: 'alignColumn', size: f.col - constant.column });
+            };
+        } else if (f.length > trimmedLength) {
+            otherRows.push({ name: f.name, kind: 'field', row: f.row, col: f.col, mode: 'matchWidth', size: f.length });
+        };
+    };
+
+    for (const c of record.constants ?? []) {
+        if (c.lineIndex === constant.lineIndex || SYSTEM_FIELD_PLACEHOLDER[c.name.trim().toUpperCase()]) continue;
+        if (c.row === constant.row) {
+            if (c.col > ownTextEndCol) {
+                sameRow.push({ name: c.name, kind: 'constant', row: c.row, col: c.col, mode: 'alignColumn', size: c.col - constant.column });
+            };
+        } else if (c.name.length > trimmedLength) {
+            otherRows.push({ name: c.name, kind: 'constant', row: c.row, col: c.col, mode: 'matchWidth', size: c.name.length });
+        };
+    };
+
+    sameRow.sort((a, b) => a.col - b.col);
+    otherRows.sort((a, b) => a.row - b.row || a.col - b.col);
+
+    return [...sameRow, ...otherRows];
+};
+
+/**
+ * Collects the fill's total size: offers every field/constant that can serve as an alignment
+ * target as a pick — same-row ones first — falling back to typing a number directly (the original
+ * flow) when there's nothing to align to, or when the user picks that option explicitly.
+ * @param constant - The constant being filled
+ * @param trimmedConstant - Its own text (without the surrounding quotes)
+ */
+async function collectTotalSize(constant: DdsConstant, trimmedConstant: string): Promise<number | undefined> {
+    const targets = collectFillTargets(constant, trimmedConstant.length);
+
+    if (targets.length > 0) {
+        const manualItem: FillTargetPickItem = { label: '$(edit) Enter a size manually…' };
+        const picked = await vscode.window.showQuickPick<FillTargetPickItem>(
+            [
+                manualItem,
+                ...targets.map((t): FillTargetPickItem => ({
+                    label: `$(${t.kind === 'field' ? 'symbol-field' : 'symbol-string'}) ${t.name}`,
+                    description: t.mode === 'alignColumn' ? `${t.kind}, column ${t.col}` : `${t.kind}, row ${t.row}`,
+                    detail: t.mode === 'alignColumn'
+                        ? `Fill up to column ${t.col} — total size ${t.size}`
+                        : `Match its width — total size ${t.size}`,
+                    target: t
+                }))
+            ],
+            {
+                title: 'Total Size of the Final Constant',
+                placeHolder: 'Align the fill to another field/constant, or enter a size manually'
+            }
+        );
+        if (!picked) return undefined;
+        if (picked.target) {
+            return picked.target.size;
+        };
+        // Fell through: the user picked "Enter a size manually" — continue below.
+    };
+
     const totalSizeStr = await vscode.window.showInputBox({
         title: `Total Size of the Final Constant`,
         prompt: `Enter total size (must be greater than constant length = ${trimmedConstant.length})`,
@@ -131,14 +245,7 @@ async function collectFillInformationFromUser(constant: string): Promise<FillInf
     });
     if (!totalSizeStr) return undefined;
 
-    const totalSize = parseInt(totalSizeStr, 10);
-
-    return {
-        fillCharacter: fillChar,
-        fillEnd: endChar,
-        totalSize
-      };
-      
+    return parseInt(totalSizeStr, 10);
 };
 
 // DDS MODIFICATION FUNCTIONS

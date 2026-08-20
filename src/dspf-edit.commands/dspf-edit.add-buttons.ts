@@ -6,8 +6,9 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from './../dspf-edit.providers/dspf-edit.providers';
-import { getRecordSize, fieldsPerRecords, DdsSize, getDefaultSize } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { getRecordSize, fieldsPerRecords, DdsSize, getDefaultSize, getAvailableDisplayFormats } from '../dspf-edit.model/dspf-edit.model';
+import { resolveRecordSizeForFormat } from '../dspf-edit.parser/dspf-edit.parser';
+import { checkForEditorAndDocument, applyWorkspaceEdit, pickDisplayFormat, writeDisplayFormatCondition } from '../dspf-edit.utils/dspf-edit.helper';
 
 // TYPE DEFINITIONS
 
@@ -91,8 +92,21 @@ async function handleAddButtonsCommand(node: DdsNode): Promise<void> {
             return;
         };
 
+        // A record's size isn't fixed when the file declares more than one DSPSIZ format (e.g. a
+        // WINDOW() line per format, or simply a wider/taller *DS4 screen) — this command has no
+        // preview panel to take an active format from (it's tree-only), so ask which one to lay
+        // the buttons out for.
+        const declaredFormats = getAvailableDisplayFormats();
+        let format: string | undefined;
+        if (declaredFormats.length > 1) {
+            format = await pickDisplayFormat(declaredFormats);
+            if (!format) {
+                return;
+            };
+        };
+
         // Get record information
-        const recordInfo = getRecordInformation(node.ddsElement.name);
+        const recordInfo = getRecordInformation(node.ddsElement.name, format);
         if (!recordInfo) {
             vscode.window.showErrorMessage('Record size or info not found.');
             return;
@@ -102,7 +116,7 @@ async function handleAddButtonsCommand(node: DdsNode): Promise<void> {
         const layout = calculateButtonLayout(buttons, recordInfo);
 
         // Generate and apply DDS lines
-        await applyButtonsToRecord(editor, buttons, recordInfo, layout);
+        await applyButtonsToRecord(editor, buttons, recordInfo, layout, format);
 
     } catch (error) {
         console.error('Error adding buttons:', error);
@@ -219,36 +233,44 @@ function validateButtonLabel(value: string): string {
  * Gets comprehensive record information needed for button placement.
  * Prioritizes WINDOW attributes over file-level size information.
  * @param recordName - The name of the record
+ * @param format - Display format (e.g. "*DS3") to resolve the record's size for, when the file
+ * declares more than one; resolves the WINDOW() line (or screen size) conditioned on that specific
+ * format rather than just whichever candidate happens to come first in the source.
  * @returns Complete record information or null if not found
  */
-function getRecordInformation(recordName: string): RecordInformation | null {
+function getRecordInformation(recordName: string, format?: string): RecordInformation | null {
     const recordInfo = fieldsPerRecords.find(r => r.record === recordName);
-    
+
     if (!recordInfo) {
         return null;
     };
 
-    // Check if this record has WINDOW attribute (highest priority)
     let effectiveSize: DdsSize | null = null;
     let isWindow = false;
-    
-    if (recordInfo.attributes) {
+
+    if (format) {
+        effectiveSize = resolveRecordSizeForFormat(recordName, format);
+        isWindow = effectiveSize.source === 'window';
+    };
+
+    // Check if this record has WINDOW attribute (highest priority)
+    if (!effectiveSize && recordInfo.attributes) {
         const windowAttribute = recordInfo.attributes.find(attr =>
             attr.value.toUpperCase().includes('WINDOW(')
         );
-        
+
         if (windowAttribute) {
             // Extract WINDOW size directly from attribute
             const windowMatch = windowAttribute.value.match(
                 /WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)(?:\s+[^)]*)?\s*\)/i
             );
-            
+
             if (windowMatch) {
                 const startRow = parseInt(windowMatch[1], 10);
                 const startCol = parseInt(windowMatch[2], 10);
                 const rows = parseInt(windowMatch[3], 10);
                 const cols = parseInt(windowMatch[4], 10);
-                
+
                 effectiveSize = {
                     rows,
                     cols,
@@ -261,13 +283,13 @@ function getRecordInformation(recordName: string): RecordInformation | null {
             };
         };
     };
-    
+
     // Fallback 1: Use parsed size from parser (may be WINDOW or default)
     if (!effectiveSize && recordInfo.size) {
         effectiveSize = recordInfo.size;
         isWindow = recordInfo.size.source === 'window';
     };
-    
+
     // Fallback 2: Use legacy getRecordSize function
     if (!effectiveSize) {
         const legacySize = getRecordSize(recordName);
@@ -275,12 +297,12 @@ function getRecordInformation(recordName: string): RecordInformation | null {
             effectiveSize = legacySize;
         };
     };
-    
+
     // Fallback 3: Use default size from file attributes
     if (!effectiveSize) {
         effectiveSize = getDefaultSize();
     };
-    
+
     // Final validation
     if (!effectiveSize || effectiveSize.rows <= 0 || effectiveSize.cols <= 0) {
         console.error(`Invalid size information for record ${recordName}:`, effectiveSize);
@@ -343,12 +365,16 @@ function calculateButtonLayout(buttons: ButtonDefinition[], recordInfo: RecordIn
  * @param buttons - Array of button definitions
  * @param recordInfo - Record information
  * @param layout - Layout information
+ * @param format - Display format the layout was computed for (when the file declares more than
+ * one); the generated lines are conditioned on it, so they don't also show, mispositioned, on the
+ * other declared format(s).
  */
 async function applyButtonsToRecord(
     editor: vscode.TextEditor,
     buttons: ButtonDefinition[],
     recordInfo: RecordInformation,
-    layout: ButtonLayout
+    layout: ButtonLayout,
+    format?: string
 ): Promise<void> {
     const edit = new vscode.WorkspaceEdit();
     const doc = editor.document;
@@ -368,7 +394,7 @@ async function applyButtonsToRecord(
         };
 
         // Create DDS line for this button
-        const ddsLine = createButtonDdsLine(text, currentRow, currentCol);
+        const ddsLine = writeDisplayFormatCondition(createButtonDdsLine(text, currentRow, currentCol), format);
         const insertPos = new vscode.Position(recordInfo.endLineIndex, 0);
 
         // Ensure proper line breaks

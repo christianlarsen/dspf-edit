@@ -124,9 +124,14 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.17.1** - 2026-08-15
-- Added: Preview gained a "Focus" button to hide the source editor and work from the preview alone (tree view stays visible), plus a reorganized toolbar and a position/width display when a single field or constant is selected. Records can now be reordered by dragging them in the tree view, moving their lines in the source — blocked if it would break SFL/SFLCTL order.
-- Fixed: several error-message and indicator-related editing issues that could produce invalid DDS, a tree/preview refresh gap while the preview panel had focus, and a case where creating a numeric field with 0 decimals failed to compile (CPD7408).
+**0.18.0** - 2026-08-20
+- Added: Preview now renders `SNGCHCFLD`/`MLTCHCFLD` selection fields with their `CHOICE()` options ("`N.` text") laid out next to the field, following its `*NUMCOL`/`*NUMROW`/`*GUTTER` parameters (a single vertical column when none are coded) — confirmed against STRSDA.
+- Added: A window's border in the preview now reflects its real `WDWBORDER()` color, display attributes, and border characters, instead of a plain decorative rectangle — and its `WDWTITLE()` inherits that same color/attributes when it doesn't specify its own.
+- Added: Fields and constants can be resized directly in the preview by dragging a small triangular handle on their right edge (windows now use the same handle shape too).
+- Added: Fill Constant with Characters can align its total size to another field/constant — same row (ends where it begins) or a different row (matches its width) — instead of only typing a number.
+- Fixed: Add Editing Keywords no longer generates uncompilable DDS when adding `EDTCDE`/`EDTWRD` to a signed-numeric (S) field — the field is now auto-upgraded to numeric-only (Y), matching STRSDA.
+- Fixed: Centering a field/constant and adding buttons now respect which declared display size (e.g. *DS3/*DS4) they should be laid out for, instead of always using the default one.
+- Fixed: A window title's default alignment now matches DDS (left in the bottom border, centered in the top).
 
 ---
 
