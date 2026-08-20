@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
-## [0.18.0] - 2026-08-19
+## [0.18.0] - 2026-08-20
 ### Added
 - Preview: single- and multiple-choice selection fields (`SNGCHCFLD`/`MLTCHCFLD`) now render their `CHOICE()` options as "`N.` text" next to the field itself, laid out per the field's own `*NUMCOL`/`*NUMROW`/`*GUTTER` parameters (defaulting to a single vertical column when none are coded) — confirmed against STRSDA.
 - Preview: a window's border now reflects its actual `WDWBORDER()` keyword (file-level and/or record-level, combined per the DDS reference) — its real color, display attributes (reverse image, high intensity, underline, blink), and its 8 border characters — instead of a plain decorative rectangle. Falls back to DDS's own defaults (blue, `.`/`:`) when none is coded.

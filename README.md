@@ -124,7 +124,7 @@ Some features may not work as expected. Please leave an issue if something is no
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**0.18.0** - 2026-08-19
+**0.18.0** - 2026-08-20
 - Added: Preview now renders `SNGCHCFLD`/`MLTCHCFLD` selection fields with their `CHOICE()` options ("`N.` text") laid out next to the field, following its `*NUMCOL`/`*NUMROW`/`*GUTTER` parameters (a single vertical column when none are coded) — confirmed against STRSDA.
 - Added: A window's border in the preview now reflects its real `WDWBORDER()` color, display attributes, and border characters, instead of a plain decorative rectangle — and its `WDWTITLE()` inherits that same color/attributes when it doesn't specify its own.
 - Added: Fields and constants can be resized directly in the preview by dragging a small triangular handle on their right edge (windows now use the same handle shape too).
