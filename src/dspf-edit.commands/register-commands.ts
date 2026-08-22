@@ -39,6 +39,9 @@ import { moveConstantLeft1, moveConstantLeft5, moveConstantRight1, moveConstantR
 import { moveFieldLeft1, moveFieldLeft5, moveFieldRight1, moveFieldRight5 } from './dspf-edit.move-fields';
 import { previewRecord } from './dspf-edit.preview-record';
 import { resolveReferencedFieldCommand, resolveAllReferencedFieldsCommand } from './dspf-edit.resolve-referenced-field';
+import { PreviewColorsPanel } from '../dspf-edit.webview/dspf-edit.preview-colors-panel';
+import { RecordPreviewPanel } from '../dspf-edit.webview/dspf-edit.record-preview-panel';
+import { resetPreviewColors } from '../dspf-edit.utils/dspf-edit.preview-colors';
 
 export const commands = [
     { name: 'viewStructure', handler: viewStructure, needsTreeProvider: true },
@@ -122,8 +125,22 @@ export function registerCommands(
 
         vscode.commands.registerCommand('dspf-edit.toggleConstants', () => {
             treeProvider.toggleVisibility('constant');
+        }),
+
+        vscode.commands.registerCommand('dspf-edit.reset-preview-colors', async () => {
+            const resetAny = await resetPreviewColors();
+            RecordPreviewPanel.refreshTheme();
+            vscode.window.showInformationMessage(
+                resetAny
+                    ? 'DSPF Edit: preview colors reset to default.'
+                    : 'DSPF Edit: preview colors were already at their default.'
+            );
+        }),
+
+        vscode.commands.registerCommand('dspf-edit.configure-preview-colors', () => {
+            PreviewColorsPanel.show();
         })
-        
+
     );
 
 };

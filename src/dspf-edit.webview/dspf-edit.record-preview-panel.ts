@@ -7,6 +7,7 @@
 import * as vscode from 'vscode';
 import { FieldsPerRecord, DdsSize, DdsAttribute, AttributeWithIndicators, DdsIndicator, fieldsPerRecords, attributesFileLevel, records, getDefaultSize, getAvailableDisplayFormats, getSizeForFormat, SYSTEM_FIELD_PLACEHOLDER, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, updateTreeProvider, applyWorkspaceEdit, applyDisplayFormatSplitEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { getBackgroundColor, getDdsColorMap, getReferencedFieldColor } from '../dspf-edit.utils/dspf-edit.preview-colors';
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
 import { ExtensionState } from '../dspf-edit.states/state';
 import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
@@ -304,26 +305,6 @@ function getChoiceOptions(attributes: AttributeWithIndicators[] | undefined): Ch
     return options;
 };
 
-/** Default 5250-style green, used when a field/constant has no COLOR() keyword. */
-const DEFAULT_COLOR = '#00ff00';
-
-/** What DSPATR(HI) alone (no explicit COLOR()) renders as — matching a real 5250 display. */
-const HIGH_INTENSITY_COLOR = '#ffffff';
-
-/** Marker color for a referenced field (REFFLD), distinct from every DDS_COLOR_MAP value. */
-const REFERENCED_FIELD_COLOR = '#ff8800';
-
-/** Maps DDS COLOR() keyword codes to their on-screen color. */
-const DDS_COLOR_MAP: Record<string, string> = {
-    BLU: '#6a8ef0',
-    GRN: '#00ff00',
-    WHT: '#ffffff',
-    RED: '#ff4136',
-    TRQ: '#00e5ff',
-    YLW: '#ffe600',
-    PNK: '#ff66ff'
-};
-
 /**
  * Determines the display color for a field/constant based on its COLOR() DDS keyword, if any —
  * falling back to white (not the default green) when DSPATR(HI) is set without an explicit color,
@@ -333,13 +314,14 @@ const DDS_COLOR_MAP: Record<string, string> = {
  * @returns A CSS color string
  */
 function getDisplayColor(attributes: AttributeWithIndicators[] | undefined, highIntensity: boolean): string {
+    const ddsColorMap = getDdsColorMap();
     const colorAttr = attributes?.find(attr => /^COLOR\([A-Z]{3}\)$/.test(attr.value));
     if (!colorAttr) {
-        return highIntensity ? HIGH_INTENSITY_COLOR : DEFAULT_COLOR;
+        return highIntensity ? ddsColorMap.WHT : ddsColorMap.GRN;
     };
 
     const code = colorAttr.value.match(/^COLOR\(([A-Z]{3})\)$/)?.[1];
-    return (code && DDS_COLOR_MAP[code]) || (highIntensity ? HIGH_INTENSITY_COLOR : DEFAULT_COLOR);
+    return (code && ddsColorMap[code]) || (highIntensity ? ddsColorMap.WHT : ddsColorMap.GRN);
 };
 
 /**
@@ -471,7 +453,7 @@ function resolveTitleAppearance(title: WindowTitle, border: WindowBorder): Windo
     const dspatr = title.dspatr;
     return {
         ...title,
-        hexColor: (title.color && DDS_COLOR_MAP[title.color]) || border.color,
+        hexColor: (title.color && getDdsColorMap()[title.color]) || border.color,
         reverseImage: dspatr ? dspatr.includes('RI') : border.reverseImage,
         highIntensity: dspatr ? dspatr.includes('HI') : border.highIntensity,
         underline: dspatr ? dspatr.includes('UL') : border.underline,
@@ -833,6 +815,18 @@ export class RecordPreviewPanel {
     };
 
     /**
+     * Rebuilds and re-renders the open preview panel's HTML — used after a preview color
+     * changes (see dspf-edit.utils/dspf-edit.preview-colors.ts), since `getHtml()` only runs
+     * once at construction otherwise. No-op if no panel is open.
+     */
+    static refreshTheme(): void {
+        const panel = RecordPreviewPanel.current;
+        if (!panel) { return; };
+        panel.panel.webview.html = panel.getHtml();
+        panel.render();
+    };
+
+    /**
      * Gets the single preview panel, retargeting it to the given record if it already exists,
      * or creates a new one.
      * @param recordName - Name of the record to preview
@@ -1173,7 +1167,7 @@ export class RecordPreviewPanel {
                     ? getFieldPlaceholderText(field.name, field.type, field.usage, 1)
                     : getFieldPlaceholderText(field.name, resolvedRef?.type ?? field.type, field.usage, effectiveLength, editingMask);
                 const color = isReferenced || (field.referenced && activeAttrs.length === 0)
-                    ? REFERENCED_FIELD_COLOR
+                    ? getReferencedFieldColor()
                     : getDisplayColor(activeAttrs, hasDisplayAttribute(activeAttrs, 'HI'));
                 // A drag handle to resize a field only makes sense when its displayed width maps
                 // 1:1 back to its raw DDS length: not a referenced field (its length lives in the
@@ -1640,6 +1634,16 @@ export class RecordPreviewPanel {
             await this.toggleFocusMode();
             return;
         };
+
+        if (message?.type === 'openConfiguration') {
+            // Guards the same rule the button's own disabled state already enforces: opening the
+            // Configuration panel "beside" this one would silently drop focus mode (see
+            // 'focusModeChanged' in the injected script) instead of respecting it.
+            if (!this.focusModeActive) {
+                await vscode.commands.executeCommand('dspf-edit.configure-preview-colors');
+            };
+            return;
+        };
     };
 
     /**
@@ -1909,9 +1913,10 @@ export class RecordPreviewPanel {
         const color = recordLevel.color ?? fileLevel.color ?? DEFAULT_WDWBORDER_COLOR;
         const dspatr = recordLevel.dspatr ?? fileLevel.dspatr ?? [];
         const chars = recordLevel.chars ?? fileLevel.chars ?? DEFAULT_WDWBORDER_CHARS;
+        const ddsColorMap = getDdsColorMap();
 
         return {
-            color: DDS_COLOR_MAP[color] ?? DDS_COLOR_MAP[DEFAULT_WDWBORDER_COLOR],
+            color: ddsColorMap[color] ?? ddsColorMap[DEFAULT_WDWBORDER_COLOR],
             reverseImage: dspatr.includes('RI'),
             highIntensity: dspatr.includes('HI'),
             underline: dspatr.includes('UL'),
@@ -2188,6 +2193,8 @@ export class RecordPreviewPanel {
      * drags, resizes and overlay selection back.
      */
     private getHtml(): string {
+        const bg = getBackgroundColor();
+        const fg = getDdsColorMap().GRN;
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2196,8 +2203,8 @@ export class RecordPreviewPanel {
     body {
         margin: 0;
         padding: 8px;
-        background: #000000;
-        color: #00ff00;
+        background: ${bg};
+        color: ${fg};
         font-family: var(--vscode-editor-font-family, monospace);
     }
     .toolbar-row {
@@ -2218,8 +2225,8 @@ export class RecordPreviewPanel {
         gap: 4px;
     }
     #formatBar select, #toolbar select {
-        background: #000000;
-        color: #00ff00;
+        background: ${bg};
+        color: ${fg};
         border: 1px solid #333333;
         font-family: inherit;
     }
@@ -2233,9 +2240,9 @@ export class RecordPreviewPanel {
         align-items: center;
         gap: 6px;
     }
-    #actionBar button, #sflpagBar button, #selectionBar button, #focusModeBtn {
-        background: #000000;
-        color: #00ff00;
+    #actionBar button, #sflpagBar button, #selectionBar button, #focusModeBtn, #configBtn {
+        background: ${bg};
+        color: ${fg};
         border: 1px solid #333333;
         font-family: inherit;
         font-size: 12px;
@@ -2243,11 +2250,11 @@ export class RecordPreviewPanel {
         cursor: pointer;
     }
     #actionBar button.active, #focusModeBtn.active {
-        background: #00ff00;
-        color: #000000;
-        border-color: #00ff00;
+        background: ${fg};
+        color: ${bg};
+        border-color: ${fg};
     }
-    #actionBar button:disabled, #sflpagBar button:disabled {
+    #actionBar button:disabled, #sflpagBar button:disabled, #configBtn:disabled {
         color: #666666;
         border-color: #222222;
         cursor: default;
@@ -2287,18 +2294,18 @@ export class RecordPreviewPanel {
         text-align: center;
         border: 1px solid #555555;
         color: #888888;
-        background: #000000;
+        background: ${bg};
         cursor: pointer;
         font-family: inherit;
         font-size: 11px;
     }
     .indicator-btn.on {
-        color: #000000;
-        background: #00ff00;
-        border-color: #00ff00;
+        color: ${bg};
+        background: ${fg};
+        border-color: ${fg};
     }
     canvas {
-        background: #000000;
+        background: ${bg};
         border: 1px solid #333333;
         cursor: default;
     }
@@ -2310,15 +2317,15 @@ export class RecordPreviewPanel {
         display: inline-block;
         margin: 2px;
         padding: 1px 6px;
-        border: 1px solid #00ff00;
-        color: #00ff00;
-        background: #000000;
+        border: 1px solid ${fg};
+        color: ${fg};
+        background: ${bg};
         font-family: inherit;
         font-size: 11px;
     }
     .function-key-badge.active {
-        color: #000000;
-        background: #00ff00;
+        color: ${bg};
+        background: ${fg};
     }
 </style>
 </head>
@@ -2326,6 +2333,7 @@ export class RecordPreviewPanel {
 <div id="toolbarRow1" class="toolbar-row">
     <span id="info">Loading...</span>
     <button id="focusModeBtn" title="Hide the source code editor to focus on the preview (tree view stays visible)">🗖 Focus</button>
+    <button id="configBtn" title="Configure the preview (colors)">⚙ Configuration</button>
 </div>
 <div id="toolbarRow2" class="toolbar-row">
     <span id="formatBar">
@@ -2367,6 +2375,7 @@ export class RecordPreviewPanel {
     const ctx = canvas.getContext('2d');
     const info = document.getElementById('info');
     const focusModeBtn = document.getElementById('focusModeBtn');
+    const configBtn = document.getElementById('configBtn');
     const formatBar = document.getElementById('formatBar');
     const formatSelect = document.getElementById('formatSelect');
     const toolbar = document.getElementById('toolbar');
@@ -2481,7 +2490,7 @@ export class RecordPreviewPanel {
         if (item.reverseImage) {
             ctx.fillStyle = item.color;
             ctx.fillRect(x, y, w, CHAR_H);
-            ctx.fillStyle = '#000000';
+            ctx.fillStyle = '${bg}';
         } else {
             ctx.fillStyle = item.color;
         }
@@ -2500,7 +2509,7 @@ export class RecordPreviewPanel {
         ctx.textAlign = 'start';
 
         if (item.underline || item.isInputCapable) {
-            ctx.strokeStyle = item.reverseImage ? '#000000' : item.color;
+            ctx.strokeStyle = item.reverseImage ? '${bg}' : item.color;
             ctx.beginPath();
             ctx.moveTo(x, y + CHAR_H - 2.5);
             ctx.lineTo(x + w, y + CHAR_H - 2.5);
@@ -2621,7 +2630,7 @@ export class RecordPreviewPanel {
 
         const fontFamily = getComputedStyle(document.body).getPropertyValue('--vscode-editor-font-family').trim() || 'monospace';
 
-        ctx.fillStyle = '#000000';
+        ctx.fillStyle = '${bg}';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.textBaseline = 'middle';
 
@@ -2656,7 +2665,7 @@ export class RecordPreviewPanel {
             const fw = currentOuterFrame.cols * CHAR_W;
             const fh = currentOuterFrame.rows * CHAR_H;
 
-            ctx.fillStyle = '#000000';
+            ctx.fillStyle = '${bg}';
             ctx.fillRect(fx, fy, fw, fh);
 
             // WDWBORDER: a real 5250 window border is one character thick on every side, drawn with
@@ -2671,8 +2680,8 @@ export class RecordPreviewPanel {
                 const leftCol = currentOuterFrame.col;
                 const rightCol = currentOuterFrame.col + currentOuterFrame.cols - 1;
                 const [tl, top, tr, left, right, bl, bottom, br] = border.chars;
-                const fg = border.reverseImage ? '#000000' : border.color;
-                const bg = border.reverseImage ? border.color : '#000000';
+                const fg = border.reverseImage ? '${bg}' : border.color;
+                const bg = border.reverseImage ? border.color : '${bg}';
 
                 ctx.font = (border.highIntensity ? 'bold ' : '') + (CHAR_H - 4) + 'px ' + fontFamily;
                 ctx.textAlign = 'center';
@@ -2778,7 +2787,7 @@ export class RecordPreviewPanel {
             const widthPx = frame ? frame.cols * CHAR_W : canvas.width;
             const maxChars = frame ? frame.cols : size.cols;
 
-            ctx.fillStyle = '#000000';
+            ctx.fillStyle = '${bg}';
             ctx.fillRect(colX, rowY, widthPx, CHAR_H);
             ctx.fillStyle = '#ffffff';
             ctx.font = (CHAR_H - 4) + 'px ' + fontFamily;
@@ -2829,8 +2838,8 @@ export class RecordPreviewPanel {
             // its embedded title instead of always showing plain white-on-black. A blinking title
             // fully disappears during the off phase, same as the border/any other blinking item.
             if (!(currentWindowTitle.blink && !blinkOn)) {
-                const fg = currentWindowTitle.reverseImage ? '#000000' : currentWindowTitle.hexColor;
-                const bg = currentWindowTitle.reverseImage ? currentWindowTitle.hexColor : '#000000';
+                const fg = currentWindowTitle.reverseImage ? '${bg}' : currentWindowTitle.hexColor;
+                const bg = currentWindowTitle.reverseImage ? currentWindowTitle.hexColor : '${bg}';
 
                 ctx.fillStyle = bg;
                 ctx.fillRect(textX, titleY, textWidth, CHAR_H);
@@ -2856,7 +2865,7 @@ export class RecordPreviewPanel {
                 ctx.strokeStyle = '#666666';
                 ctx.strokeRect(x + 0.5, y + 0.5, MENU_ICON_SIZE - 1, MENU_ICON_SIZE - 1);
 
-                ctx.fillStyle = '#000000';
+                ctx.fillStyle = '${bg}';
                 ctx.font = (MENU_ICON_SIZE - 2) + 'px ' + fontFamily;
                 const glyphWidth = ctx.measureText(glyph).width;
                 ctx.fillText(glyph, x + (MENU_ICON_SIZE - glyphWidth) / 2, y + MENU_ICON_SIZE / 2);
@@ -3047,6 +3056,10 @@ export class RecordPreviewPanel {
 
     focusModeBtn.addEventListener('click', () => {
         vscode.postMessage({ type: 'toggleFocusMode' });
+    });
+
+    configBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'openConfiguration' });
     });
 
     // Both buttons are only shown (see updateSelectionBar) when exactly one item is selected.
@@ -3533,6 +3546,14 @@ export class RecordPreviewPanel {
         } else if (message.type === 'focusModeChanged') {
             focusModeBtn.textContent = message.active ? '🗗 Show code' : '🗖 Focus';
             focusModeBtn.classList.toggle('active', message.active);
+            // Opening the Configuration panel "beside" this one forces VS Code to un-maximize
+            // a maximized editor group to make room — silently dropping focus mode instead of
+            // actually opening the panel maximized, which looks broken. Simplest fix: only allow
+            // it once focus mode is off.
+            configBtn.disabled = message.active;
+            configBtn.title = message.active
+                ? 'Turn off Focus mode first to configure the preview'
+                : "Configure the preview (colors)";
         }
     });
 </script>
