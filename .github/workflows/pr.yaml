@@ -32,7 +32,7 @@ jobs:
       - name: Install Dependencies
         run: |
           npm install
-          npm install -g vsce
+          npm install -g @vscode/vsce
 
       - name: Build Extension
         run: vsce package
