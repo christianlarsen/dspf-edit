@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.0.0] - 2026-08-22
+### Added
+- Preview: background color, the 7 DDS `COLOR()` colors (blue, red, white, green, turquoise, yellow, pink), and the referenced-field marker color are now configurable, instead of being fixed — useful for personal color preferences and for contrast/accessibility. A new "⚙ Configuration" button in the preview toolbar (disabled while Focus mode is on) opens a small panel to pick each one visually (native color picker, no hex typing), with a reset-to-default button per color and one for all of them at once — also available as the "DSPF Edit: Configure Preview Colors..." / "...Reset Preview Colors to Default" commands. Saved in the extension's own storage (not a VS Code setting), so changes persist without cluttering Settings, and apply immediately to any open preview panel. Defaults match the previous fixed colors.
+### Changed
+- No longer marked as a Preview extension. After many releases, deep DDS/STRSDA-accuracy work, and real user feedback, DSPF-edit is stable enough to drop the label.
+### Fixed
+- Add Color: its color/action pickers and indicator input could close themselves immediately after opening — most noticeable on trackpads — instead of staying open like every other interactive command in the extension. They now set `ignoreFocusOut`, matching the rest.
+
 ## [0.18.0] - 2026-08-20
 ### Added
 - Preview: single- and multiple-choice selection fields (`SNGCHCFLD`/`MLTCHCFLD`) now render their `CHOICE()` options as "`N.` text" next to the field itself, laid out per the field's own `*NUMCOL`/`*NUMROW`/`*GUTTER` parameters (defaulting to a single vertical column when none are coded) — confirmed against STRSDA.

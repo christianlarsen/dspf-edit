@@ -8,7 +8,7 @@
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "0.18.0",
+  "version": "1.0.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
@@ -39,7 +39,6 @@
   ],
   "activationEvents": [],
   "main": "./out/extension.js",
-  "preview": true,
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -253,6 +252,16 @@
         "command": "dspf-edit.moveFieldRight5",
         "title": "Move Field Right(5)",
         "icon": "$(chevron-right)"
+      },
+      {
+        "command": "dspf-edit.reset-preview-colors",
+        "title": "Reset Preview Colors to Default",
+        "category": "DSPF Edit"
+      },
+      {
+        "command": "dspf-edit.configure-preview-colors",
+        "title": "Configure Preview Colors...",
+        "category": "DSPF Edit"
       }
     ],
     "menus": {

@@ -13,6 +13,10 @@ import { initializeDocumentListeners } from './dspf-edit.listeners/listeners';
 // Activate extension
 export function activate(context: vscode.ExtensionContext) {
 
+	// Store the extension context (needed by anything using its own persisted storage,
+	// e.g. the preview's colors — see dspf-edit.utils/dspf-edit.preview-colors.ts)
+	ExtensionState.context = context;
+
 	// Create the tree data provider
 	const treeProvider = new DdsTreeProvider();
 	

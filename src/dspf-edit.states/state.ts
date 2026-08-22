@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 
 export class ExtensionState {
 
+    static context: vscode.ExtensionContext;
     static lastDdsDocument: vscode.TextDocument | undefined;
     static lastDdsEditor: vscode.TextEditor | undefined;
     static updateTimeout: NodeJS.Timeout | undefined;

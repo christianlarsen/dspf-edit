@@ -70,7 +70,8 @@ async function handleAddColorCommand(node: DdsNode): Promise<void> {
                 ['Add more colors', 'Replace all colors', 'Remove all colors'],
                 {
                     title: `Current colors: ${currentColorsList}`,
-                    placeHolder: 'Choose how to manage colors'
+                    placeHolder: 'Choose how to manage colors',
+                    ignoreFocusOut: true
                 }
             );
 
@@ -209,7 +210,8 @@ async function collectColorsWithIndicatorsFromUser(availableColors: string[]): P
             remainingColors,
             {
                 title: `Add Color (${selectedColors.length} selected) - Press ESC to finish`,
-                placeHolder: 'Select color from list'
+                placeHolder: 'Select color from list',
+                ignoreFocusOut: true
             }
         );
 
@@ -242,6 +244,7 @@ async function collectIndicatorsForColor(color: string): Promise<string[]> {
             title: `Indicators for COLOR(${color}) - ${indicators.length}/3 added`,
             prompt: `Enter indicator ${indicators.length + 1} (e.g., '50', 'N50', or leave empty to finish)`,
             placeHolder: 'Indicator (1-99, optional N prefix)',
+            ignoreFocusOut: true,
             validateInput: (value: string) => {
                 if (!value.trim()) return null; // Empty is OK to finish
                 if (!/^N?[0-9]{1,2}$/.test(value.trim())) {
