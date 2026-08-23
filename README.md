@@ -7,7 +7,6 @@
 
 **DSPF-edit** brings a live schema view, a drag-and-drop screen preview, and deep DDS keyword coverage to editing IBM i **display files** — right inside VS Code. No more counting columns in SEU, no more round-trips through STRSDA on a 5250 session, no more guessing how a `WINDOW`, an indicator condition, or a `CHOICE()` field will actually render until you compile.
 
-<!-- 🎥 Replace this with your recorded GIF: see "Adding your demo video" below for how to generate it -->
 ![DSPF-edit demo](assets/demo.gif)
 
 ---
