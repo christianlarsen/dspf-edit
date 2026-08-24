@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.0.1] - 2026-08-24
+### Fixed
+- Preview: window border/content positioning corrected to match real STRSDA.
+- A window can no longer be positioned at row 1 and column 1 at the same time, matching STRSDA.
+- Preview: fixed a case where a field/constant dragged inside a window couldn't be moved back to its original position.
+
 ## [1.0.0] - 2026-08-22
 ### Added
 - Preview: background color, the 7 DDS `COLOR()` colors (blue, red, white, green, turquoise, yellow, pink), and the referenced-field marker color are now configurable, instead of being fixed — useful for personal color preferences and for contrast/accessibility. A new "⚙ Configuration" button in the preview toolbar (disabled while Focus mode is on) opens a small panel to pick each one visually (native color picker, no hex typing), with a reset-to-default button per color and one for all of them at once — also available as the "DSPF Edit: Configure Preview Colors..." / "...Reset Preview Colors to Default" commands. Saved in the extension's own storage (not a VS Code setting), so changes persist without cluttering Settings, and apply immediately to any open preview panel. Defaults match the previous fixed colors.

@@ -143,19 +143,15 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
+**1.0.1** - 2026-08-24
+- Fixed: Preview window border/content positioning, now matching real STRSDA.
+- Fixed: A window can no longer be positioned at row 1 and column 1 at the same time, matching STRSDA.
+- Fixed: A field/constant dragged inside a window could get stuck and not move back to its original position.
+
 **1.0.0** - 2026-08-22
 - Added: Preview colors — background, the 7 DDS `COLOR()` colors (blue, red, white, green, turquoise, yellow, pink), and the referenced-field marker — are now configurable instead of fixed, via a new "⚙ Configuration" button in the preview toolbar with a native color picker, and a reset-to-default per color or for all of them at once.
 - Changed: No longer marked as a Preview extension.
 - Fixed: Add Color's pickers could close themselves immediately after opening (most noticeable on trackpads) instead of staying open.
-
-**0.18.0** - 2026-08-20
-- Added: Preview now renders `SNGCHCFLD`/`MLTCHCFLD` selection fields with their `CHOICE()` options ("`N.` text") laid out next to the field, following its `*NUMCOL`/`*NUMROW`/`*GUTTER` parameters (a single vertical column when none are coded) — confirmed against STRSDA.
-- Added: A window's border in the preview now reflects its real `WDWBORDER()` color, display attributes, and border characters, instead of a plain decorative rectangle — and its `WDWTITLE()` inherits that same color/attributes when it doesn't specify its own.
-- Added: Fields and constants can be resized directly in the preview by dragging a small triangular handle on their right edge (windows now use the same handle shape too).
-- Added: Fill Constant with Characters can align its total size to another field/constant — same row (ends where it begins) or a different row (matches its width) — instead of only typing a number.
-- Fixed: Add Editing Keywords no longer generates uncompilable DDS when adding `EDTCDE`/`EDTWRD` to a signed-numeric (S) field — the field is now auto-upgraded to numeric-only (Y), matching STRSDA.
-- Fixed: Centering a field/constant and adding buttons now respect which declared display size (e.g. *DS3/*DS4) they should be laid out for, instead of always using the default one.
-- Fixed: A window title's default alignment now matches DDS (left in the bottom border, centered in the top).
 
 ---
 
