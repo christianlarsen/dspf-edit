@@ -525,6 +525,17 @@ function calculateWindowPosition(
             return null;
     };
 
+    // STRSDA never allows a window at row 1 and column 1 at the same time - nudge off the corner.
+    if (startRow === 1 && startCol === 1) {
+        if (startCol + size.numCols <= maxCols) {
+            startCol = 2;
+        } else if (startRow + size.numRows <= maxRows) {
+            startRow = 2;
+        } else {
+            return null;
+        };
+    };
+
     // Final validation - ensure window doesn't go off screen
     if (startRow < 1 || startCol < 1 ||
         startRow + size.numRows - 1 > maxRows ||

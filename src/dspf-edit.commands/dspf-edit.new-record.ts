@@ -367,10 +367,10 @@ async function collectWindowPosition(): Promise<WindowPosition | null> {
             description: "Center horizontally, position at bottom",
             detail: "Window will be centered horizontally and positioned at the bottom"
         },
-        { 
-            label: "TOP_LEFT", 
+        {
+            label: "TOP_LEFT",
             description: "Position at top-left corner",
-            detail: "Window will be positioned at row 1, column 1"
+            detail: "Window will be positioned at row 1, column 2 (STRSDA never allows row 1 and column 1 together)"
         }
     ];
 
@@ -405,7 +405,7 @@ function calculateWindowDimensions(size: WindowSize, position: WindowPosition, m
     switch (position) {
         case 'TOP_LEFT':
             startRow = 1;
-            startCol = 1;
+            startCol = 2;
             break;
 
         case 'CENTERED':
@@ -423,9 +423,20 @@ function calculateWindowDimensions(size: WindowSize, position: WindowPosition, m
             return null;
     };
 
+    // STRSDA never allows a window at row 1 and column 1 at the same time - nudge off the corner.
+    if (startRow === 1 && startCol === 1) {
+        if (startCol + size.numCols <= maxCols) {
+            startCol = 2;
+        } else if (startRow + size.numRows <= maxRows) {
+            startRow = 2;
+        } else {
+            return null;
+        };
+    };
+
     // Final validation - ensure window doesn't go off screen
-    if (startRow < 1 || startCol < 1 || 
-        startRow + size.numRows - 1 > maxRows || 
+    if (startRow < 1 || startCol < 1 ||
+        startRow + size.numRows - 1 > maxRows ||
         startCol + size.numCols - 1 > maxCols) {
         return null;
     };

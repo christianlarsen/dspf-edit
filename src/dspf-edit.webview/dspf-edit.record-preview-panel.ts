@@ -78,12 +78,12 @@ interface WindowFrame {
 };
 
 // A WINDOW(row col numRows numCols) keyword gives the *border's* corner and the *content* area's
-// size. The content sits inset from the border: 1 row above/below, 1 column to the left, and
-// 2 columns to the right (confirmed against a real window: WINDOW(17 25 6 29) borders rows 17-24
-// and columns 25-56, with content usable across its full width up to the last column).
+// size. The content sits inset from the border: 1 row above/below, and 2 columns to the left and
+// right (confirmed against real STRSDA output: the border sits at column 0, column 1 stays blank,
+// and content starts at column 2 — symmetric on the right).
 const WINDOW_BORDER_TOP = 1;
 const WINDOW_BORDER_BOTTOM = 1;
-const WINDOW_BORDER_LEFT = 1;
+const WINDOW_BORDER_LEFT = 2;
 const WINDOW_BORDER_RIGHT = 2;
 
 /** Placeholder character shown across a field's width, keyed by [isNumeric][usage]. */
@@ -924,10 +924,11 @@ export class RecordPreviewPanel {
         const isWindow = size.source === 'window';
 
         // A window is drawn at its real screen position, on a canvas sized to the full display,
-        // so its own fields/constants (which are stored record-local) need shifting by its origin.
-        // Content starts 1 row/col past the border's own corner (see WINDOW_BORDER_* above).
-        const rowOffset = isWindow ? size.originRow : 0;
-        const colOffset = isWindow ? size.originCol : 0;
+        // so its own fields/constants (which are stored record-local, 1-based) need shifting by
+        // its origin plus the border inset (see WINDOW_BORDER_* above): local col 1 must land on
+        // originCol + WINDOW_BORDER_LEFT, so the offset itself is one less than that.
+        const rowOffset = isWindow ? size.originRow + (WINDOW_BORDER_TOP - 1) : 0;
+        const colOffset = isWindow ? size.originCol + (WINDOW_BORDER_LEFT - 1) : 0;
 
         // A subfile detail (SFL) record's own rows shouldn't be draggable up into the area already
         // occupied by its SFLCTL header's static content (labels, titles...) — that's not a valid
@@ -1091,8 +1092,8 @@ export class RecordPreviewPanel {
 
         const size = getEffectiveSize(recordName, this.activeDisplayFormat);
         const isWin = size?.source === 'window';
-        const rOffset = isWin && size ? size.originRow : 0;
-        const cOffset = isWin && size ? size.originCol : 0;
+        const rOffset = isWin && size ? size.originRow + (WINDOW_BORDER_TOP - 1) : 0;
+        const cOffset = isWin && size ? size.originCol + (WINDOW_BORDER_LEFT - 1) : 0;
 
         const items = this.buildItems(record, rOffset, cOffset, true);
         if (isSflRecordInfo(record)) {
@@ -2415,11 +2416,11 @@ export class RecordPreviewPanel {
         ctx.fill();
     }
 
-    // Mirrors WINDOW_BORDER_* on the host: content sits 1 row/col inside the border, except on
-    // the right, where it's 2 (verified against a real window's on-screen footprint).
+    // Mirrors WINDOW_BORDER_* on the host: content sits 1 row inside the border top/bottom, and
+    // 2 columns inside the border left/right (verified against real STRSDA output).
     const WINDOW_BORDER_TOP = 1;
     const WINDOW_BORDER_BOTTOM = 1;
-    const WINDOW_BORDER_LEFT = 1;
+    const WINDOW_BORDER_LEFT = 2;
     const WINDOW_BORDER_RIGHT = 2;
 
     let currentItems = [];
@@ -3248,8 +3249,17 @@ export class RecordPreviewPanel {
             const { row, col } = cellAt(ev);
             const limitRow = Math.max(currentSize.rows - currentOuterFrame.rows + 1, 1);
             const limitCol = Math.max(currentSize.cols - currentOuterFrame.cols + 1, 1);
-            const newRow = clamp(row - moveWindowState.grabRowOffset, 1, limitRow);
-            const newCol = clamp(col - moveWindowState.grabColOffset, 1, limitCol);
+            let newRow = clamp(row - moveWindowState.grabRowOffset, 1, limitRow);
+            let newCol = clamp(col - moveWindowState.grabColOffset, 1, limitCol);
+
+            // STRSDA never allows a window at row 1 and column 1 at the same time - nudge off the corner.
+            if (newRow === 1 && newCol === 1) {
+                if (limitCol >= 2) {
+                    newCol = 2;
+                } else if (limitRow >= 2) {
+                    newRow = 2;
+                }
+            }
 
             if (newRow !== currentOuterFrame.row || newCol !== currentOuterFrame.col) {
                 currentOuterFrame = Object.assign({}, currentOuterFrame, { row: newRow, col: newCol });
@@ -3311,9 +3321,9 @@ export class RecordPreviewPanel {
             if (currentWindowFrame && !item.isBackground) {
                 itemMinRow = currentWindowFrame.row;
                 itemMaxRow = Math.max(currentWindowFrame.row + currentWindowFrame.rows - 1, itemMinRow);
-                // The window's own first content column can't be written to; the rest of its width,
-                // including the last column, is usable.
-                itemMinCol = currentWindowFrame.col + 1;
+                // currentWindowFrame.col is already the first writable content column (the border
+                // inset is baked into WINDOW_BORDER_LEFT/windowFrame, not added again here).
+                itemMinCol = currentWindowFrame.col;
                 itemMaxCol = Math.max(currentWindowFrame.col + currentWindowFrame.cols - width, itemMinCol);
             }
             // A subfile detail record's own rows can't be dragged up into its header's static content.
