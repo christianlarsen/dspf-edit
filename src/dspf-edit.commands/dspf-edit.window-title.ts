@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { DdsAttribute, FieldsPerRecord, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
+import { DdsAttribute, FieldsPerRecord, fieldsPerRecords, getAvailableDisplayFormats } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, applyWorkspaceEdit, writeDisplayFormatCondition } from '../dspf-edit.utils/dspf-edit.helper';
 import { pickForActiveFormat } from '../dspf-edit.parser/dspf-edit.parser';
 import { generateWindowTitleLines } from './dspf-edit.new-record';
@@ -129,8 +129,15 @@ export async function editWindowTitleForRecord(recordName: string, activeFormat?
 
         // A brand-new title (no existing WDWTITLE() line yet) only needs to be conditioned on the
         // active format when this record actually has more than one declared format's window — a
-        // single declared format (or none) means "applies everywhere" already, unconditioned.
-        const conditionFormat = !existing && windowCandidates.length > 1 ? activeFormat : undefined;
+        // single declared format (or none) means "applies everywhere" already, unconditioned. And
+        // DDS forbids explicitly conditioning a line on the *primary* display size's own name (see
+        // writeDisplayFormatCondition in dspf-edit.helper.ts) — activeFormat can be the primary here
+        // (e.g. passed straight from the preview panel's currently-previewed format, bypassing
+        // pickTargetFormat's own already-safe choices), so that case also falls back to unconditioned.
+        const primaryFormat = getAvailableDisplayFormats()[0]?.name;
+        const conditionFormat = !existing && windowCandidates.length > 1 && activeFormat !== primaryFormat
+            ? activeFormat
+            : undefined;
 
         const anchorLineIndex = windowAttr.lastLineIndex ?? windowAttr.lineIndex;
         if (!(await applyWindowTitle(editor, anchorLineIndex, existing, text, align, position, conditionFormat))) {

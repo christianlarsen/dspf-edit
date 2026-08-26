@@ -8,13 +8,18 @@ import * as vscode from 'vscode';
 import { FieldsPerRecord, DdsSize, DdsAttribute, AttributeWithIndicators, DdsIndicator, fieldsPerRecords, attributesFileLevel, records, getDefaultSize, getAvailableDisplayFormats, getSizeForFormat, SYSTEM_FIELD_PLACEHOLDER, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, updateTreeProvider, applyWorkspaceEdit, applyDisplayFormatSplitEdit } from '../dspf-edit.utils/dspf-edit.helper';
 import { getBackgroundColor, getDdsColorMap, getReferencedFieldColor } from '../dspf-edit.utils/dspf-edit.preview-colors';
-import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
+import { DdsTreeProvider, DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { ExtensionState } from '../dspf-edit.states/state';
 import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 import { resolveRecordSizeForFormat, filterForActiveFormat, pickForActiveFormat } from '../dspf-edit.parser/dspf-edit.parser';
 import { editWindowTitleForRecord } from '../dspf-edit.commands/dspf-edit.window-title';
 import { getConstantTextFromUser, insertNewConstant, updateExistingConstant } from '../dspf-edit.commands/dspf-edit.edit-constant';
 import { addFieldAtPosition } from '../dspf-edit.commands/dspf-edit.edit-field';
+import { addColorToMultipleElements } from '../dspf-edit.commands/dspf-edit.add-color';
+import { addAttributeToMultipleElements } from '../dspf-edit.commands/dspf-edit.add-attribute';
+import { removeElements } from '../dspf-edit.commands/dspf-edit.remove-element';
+import { copyFieldToPosition } from '../dspf-edit.commands/dspf-edit.copy-field';
+import { copyConstantToPosition } from '../dspf-edit.commands/dspf-edit.copy-constant';
 
 /**
  * Item sent to the webview for rendering (a single field or constant on the screen grid).
@@ -67,6 +72,13 @@ interface PreviewItem {
     isResizable?: boolean;
     /** For a resizable field: the shortest length its own type allows (decimals + 1 for a numeric field with decimals, else 1). */
     minLength?: number;
+    /**
+     * A field's real DDS length/decimals, for display in the preview's selection bar — omitted
+     * for constants and for a referenced field whose real length dspf-edit has no way to read
+     * (see `isReferenced`), since there's nothing true to show there.
+     */
+    dataLength?: number;
+    decimals?: number;
 };
 
 /** A rectangle in the coordinates of the canvas being drawn (the full display size). */
@@ -717,6 +729,9 @@ export class RecordPreviewPanel {
     private lastRecordInfo: FieldsPerRecord | undefined;
     private lastSize: DdsSize | undefined;
     private focusModeActive = false;
+    /** The field/constant node armed by the Actions menu's "Copy...", waiting for the webview to
+     * report a canvas click (`copyElementAt`) to actually place it. Cleared once consumed. */
+    private pendingCopySource: DdsNode | undefined;
 
     private constructor(recordName: string) {
         this.recordName = recordName;
@@ -1200,7 +1215,9 @@ export class RecordPreviewPanel {
                     isInputCapable: usageCode === 'I' || usageCode === 'B',
                     isReferenced,
                     isResizable,
-                    minLength
+                    minLength,
+                    dataLength: isReferenced ? undefined : effectiveLength,
+                    decimals: isReferenced ? undefined : effectiveDecimals
                 };
 
                 // CNTFLD(n) wraps a field too long for one line across multiple rows, n characters
@@ -1579,8 +1596,8 @@ export class RecordPreviewPanel {
             return;
         };
 
-        if (message?.type === 'elementMenu' && typeof message.lineIndex === 'number') {
-            await this.showElementMenu(message.lineIndex);
+        if (message?.type === 'elementMenu' && Array.isArray(message.lineIndices)) {
+            await this.showElementMenu(message.lineIndices);
             return;
         };
 
@@ -1591,6 +1608,11 @@ export class RecordPreviewPanel {
 
         if (message?.type === 'addFieldAt' && typeof message.row === 'number' && typeof message.col === 'number') {
             await this.addFieldAt(message.row, message.col);
+            return;
+        };
+
+        if (message?.type === 'copyElementAt' && typeof message.row === 'number' && typeof message.col === 'number') {
+            await this.copyElementAt(message.row, message.col);
             return;
         };
 
@@ -2041,26 +2063,42 @@ export class RecordPreviewPanel {
     };
 
     /**
-     * Shows a compact actions menu for the selected field/constant (the "⋮ Actions" button in the
-     * "Selection actions" bar), offering the same color/attribute commands as the tree's context
-     * menu, run against the same tree node — kept short on purpose so the preview doesn't grow a
-     * second full context menu; anything not offered here is still reachable from the tree.
-     * @param lineIndex - Zero-based source line index of the selected field/constant
+     * Shows a compact actions menu for the selected field(s)/constant(s) (the "⋮ Actions" button in
+     * the "Selection actions" bar), offering the same color/attribute/delete commands as the tree's
+     * context menu — kept short on purpose so the preview doesn't grow a second full context menu;
+     * anything not offered here is still reachable from the tree. With a single element selected,
+     * this runs the exact same per-element commands the tree uses (full indicator prompting,
+     * existing-value replace/remove, per-element delete confirmation). With more than one selected,
+     * it instead applies the same color/attribute/delete to all of them at once — no indicator
+     * prompting there, since indicators aren't a value that makes sense shared across a group of
+     * differently-conditioned elements (see `addColorToMultipleElements`/`addAttributeToMultipleElements`/`removeElements`).
+     * Copy is offered only for a single selection: it doesn't apply/insert anything itself, it
+     * arms `pendingCopySource` and puts the webview into its click-to-place mode (see
+     * `copyElementAt`) — the same "click a spot in the preview" gesture the "+ Field"/"+ Constant"
+     * buttons already use, just for a copy of an existing element instead of a brand-new one.
+     * @param lineIndices - Zero-based source line indices of the selected fields/constants
      */
-    private async showElementMenu(lineIndex: number): Promise<void> {
-        const node = await this.treeProvider?.findFieldOrConstantNode(lineIndex);
-        if (!node || (node.ddsElement.kind !== 'field' && node.ddsElement.kind !== 'constant')) {
+    private async showElementMenu(lineIndices: number[]): Promise<void> {
+        const resolved = await Promise.all(lineIndices.map(li => this.treeProvider?.findFieldOrConstantNode(li)));
+        const nodes = resolved.filter((n): n is DdsNode =>
+            !!n && (n.ddsElement.kind === 'field' || n.ddsElement.kind === 'constant'));
+        if (nodes.length === 0) {
             return;
         };
-        const element = node.ddsElement;
+        const isMulti = nodes.length > 1;
 
         const options: (vscode.QuickPickItem & { command: string })[] = [
-            { label: '$(paintcan) Add Color...', command: 'dspf-edit.add-color' },
-            { label: '$(symbol-color) Add Attribute...', command: 'dspf-edit.add-attribute' }
+            { label: '$(paintcan) Add Color...', command: 'add-color' },
+            { label: '$(symbol-color) Add Attribute...', command: 'add-attribute' },
+            { label: '$(trash) Delete...', command: 'delete' }
         ];
+        if (!isMulti) {
+            options.splice(2, 0, { label: '$(copy) Copy...', command: 'copy' });
+        };
 
+        const singleElementName = (nodes[0].ddsElement as { name: string }).name;
         const selection = await vscode.window.showQuickPick(options, {
-            title: `${element.name} — Actions`,
+            title: isMulti ? `${nodes.length} elements — Actions` : `${singleElementName} — Actions`,
             placeHolder: 'Select an action',
             ignoreFocusOut: true
         });
@@ -2068,12 +2106,69 @@ export class RecordPreviewPanel {
             return;
         };
 
-        await vscode.commands.executeCommand(selection.command, node);
+        if (selection.command === 'copy') {
+            this.pendingCopySource = nodes[0];
+            this.panel.webview.postMessage({ type: 'startCopyPlacement', kind: nodes[0].ddsElement.kind });
+            return;
+        };
 
         const { editor } = checkForEditorAndDocument();
+
+        if (!isMulti) {
+            if (selection.command === 'delete') {
+                await vscode.commands.executeCommand('dspf-edit.remove-element', nodes[0]);
+            } else {
+                await vscode.commands.executeCommand(`dspf-edit.${selection.command}`, nodes[0]);
+            };
+        } else if (editor) {
+            if (selection.command === 'add-color') {
+                await addColorToMultipleElements(editor, nodes);
+            } else if (selection.command === 'add-attribute') {
+                await addAttributeToMultipleElements(editor, nodes);
+            } else {
+                await removeElements(editor, nodes);
+            };
+        };
+
         if (editor) {
             this.forceReparse(editor.document);
         };
+    };
+
+    /**
+     * Places a copy of the field/constant armed by the Actions menu's "Copy..." (`pendingCopySource`)
+     * at a screen position picked directly in the preview — the counterpart to `addConstantAt`/
+     * `addFieldAt`, but copying an existing element (with all its attributes/colors/indicators)
+     * instead of creating a blank one. Always copies within the record currently being previewed,
+     * per `resolveClickPosition`'s own validation.
+     * @param screenRow - Row clicked, in screen/canvas coordinates
+     * @param screenCol - Column clicked, in screen/canvas coordinates
+     */
+    private async copyElementAt(screenRow: number, screenCol: number): Promise<void> {
+        const sourceNode = this.pendingCopySource;
+        this.pendingCopySource = undefined;
+        if (!sourceNode) {
+            return;
+        };
+
+        const { editor } = checkForEditorAndDocument();
+        if (!editor) {
+            return;
+        };
+
+        const kind = sourceNode.ddsElement.kind === 'field' ? 'field' : 'constant';
+        const position = this.resolveClickPosition(screenRow, screenCol, kind);
+        if (!position) {
+            return;
+        };
+
+        if (kind === 'field') {
+            await copyFieldToPosition(editor, sourceNode, this.recordName, position.row, position.col);
+        } else {
+            await copyConstantToPosition(editor, sourceNode, this.recordName, position.row, position.col);
+        };
+
+        this.forceReparse(editor.document);
     };
 
     /**
@@ -2217,6 +2312,12 @@ export class RecordPreviewPanel {
         margin-bottom: 6px;
         font-size: 12px;
     }
+    /* toolbarRowDisplaced only ever holds actionBar while it's away from toolbarRow3 (see
+       updateSelectionBar) — collapse it to nothing rather than leaving an empty row/gap when it's
+       not currently hosting anything. */
+    .toolbar-row:empty {
+        display: none;
+    }
     #info {
         opacity: 0.7;
     }
@@ -2241,7 +2342,7 @@ export class RecordPreviewPanel {
         align-items: center;
         gap: 6px;
     }
-    #actionBar button, #sflpagBar button, #selectionBar button, #focusModeBtn, #configBtn {
+    #actionBar button, #sflpagBar button, #focusModeBtn, #configBtn {
         background: ${bg};
         color: ${fg};
         border: 1px solid #333333;
@@ -2260,13 +2361,14 @@ export class RecordPreviewPanel {
         border-color: #222222;
         cursor: default;
     }
-    #selectionBar {
-        display: none;
-        align-items: center;
-        gap: 6px;
-    }
     #selectionLabel {
         opacity: 0.7;
+    }
+    /* Empty (no selection) — hide it entirely rather than leaving a zero-width flex item, whose
+       column-gap before actionBar would otherwise shift the buttons right of where the row above
+       (e.g. "Format:") starts, even though nothing visible is actually there. */
+    #selectionLabel:empty {
+        display: none;
     }
     #indicatorBar {
         display: none;
@@ -2351,19 +2453,18 @@ export class RecordPreviewPanel {
         <span id="sflpagValue"></span>
         <button id="sflpagPlusBtn" title="Increase SFLPAG (SFLSIZ stays SFLPAG + 1)">+</button>
     </span>
-    <span id="selectionBar">
-        <span id="selectionLabel"></span>
-        <button id="selectionCenterBtn" title="Center horizontally">↔ Center</button>
-        <button id="selectionMenuBtn" title="More actions (color, attributes...)">⋮ Actions</button>
-    </span>
 </div>
 <div id="toolbarRow3" class="toolbar-row">
+    <span id="selectionLabel"></span>
     <span id="actionBar">
         <button id="addFieldBtn" title="Click, then click a point in the screen to place a new field there">+ Field</button>
         <button id="addConstantBtn" title="Click, then click a point in the screen to place a new constant there">+ Constant</button>
         <button id="gridDotsBtn" title="Show a dot in every empty character cell, to see spacing between fields/constants">⋅ Grid</button>
+        <button id="selectionCenterBtn" title="Center horizontally" disabled>↔ Center</button>
+        <button id="selectionMenuBtn" title="More actions (color, attributes, copy, delete...)" disabled>⋮ Actions</button>
     </span>
 </div>
+<div id="toolbarRowDisplaced" class="toolbar-row"></div>
 <div id="toolbarRow4" class="toolbar-row">
     <label id="indicatorBar"><input type="checkbox" id="indicatorsToggle"> Indicators</label>
 </div>
@@ -2392,7 +2493,9 @@ export class RecordPreviewPanel {
     const addConstantBtn = document.getElementById('addConstantBtn');
     const addFieldBtn = document.getElementById('addFieldBtn');
     const gridDotsBtn = document.getElementById('gridDotsBtn');
-    const selectionBar = document.getElementById('selectionBar');
+    const actionBar = document.getElementById('actionBar');
+    const toolbarRow3 = document.getElementById('toolbarRow3');
+    const toolbarRowDisplaced = document.getElementById('toolbarRowDisplaced');
     const selectionLabel = document.getElementById('selectionLabel');
     const selectionCenterBtn = document.getElementById('selectionCenterBtn');
     const selectionMenuBtn = document.getElementById('selectionMenuBtn');
@@ -2562,9 +2665,9 @@ export class RecordPreviewPanel {
         };
 
         // Cells where a field/constant could never actually go: the border itself (the outer frame
-        // minus the content rect it wraps), and — per the same rule already applied when placing
-        // buttons (calculateButtonLayout in dspf-edit.add-buttons.ts) — a window's own first and
-        // last content column, which DDS reserves and never lets a field/constant use.
+        // minus the content rect it wraps). windowFrame.col/.row already mark the first *writable*
+        // content cell (WINDOW_BORDER_LEFT/TOP bake in the border inset — confirmed against real
+        // STRSDA — so there's no separate column/row inside windowFrame left to exclude here.
         const isUnwritableCell = (row, col) => {
             if (!outerFrame || !isCoveredByFrame(row, col)) {
                 return false;
@@ -2574,10 +2677,7 @@ export class RecordPreviewPanel {
             }
             const insideContent = row >= windowFrame.row && row < windowFrame.row + windowFrame.rows &&
                 col >= windowFrame.col && col < windowFrame.col + windowFrame.cols;
-            if (!insideContent) {
-                return true;
-            }
-            return col === windowFrame.col || col === windowFrame.col + windowFrame.cols - 1;
+            return !insideContent;
         };
 
         const occupied = new Set();
@@ -2898,34 +2998,54 @@ export class RecordPreviewPanel {
     function updateSelectionBar() {
         const items = currentItems.filter(i => selectedLineIndices.has(i.lineIndex) && i.isInteractive);
 
-        if (items.length === 0) {
-            selectionBar.style.display = 'none';
-            return;
-        }
-
         // A CNTFLD-wrapped field renders as several items sharing one lineIndex (one per wrapped
         // line) — it's still a single field for selection purposes, so count/act on distinct
         // lineIndexes, not raw rendered items.
         const uniqueByLine = [...new Map(items.map(i => [i.lineIndex, i])).values()];
-
-        // A multi-selection only supports moving (dragging), not centering or the actions menu —
-        // those stay single-item, so the buttons are hidden rather than made to act on a group.
+        const hasSelection = uniqueByLine.length > 0;
         const multi = uniqueByLine.length > 1;
-        if (multi) {
+
+        if (!hasSelection) {
+            selectionLabel.textContent = '';
+        } else if (multi) {
             const kinds = new Set(uniqueByLine.map(i => i.kind));
             const noun = kinds.size === 1 ? uniqueByLine[0].kind + 's' : 'fields/constants';
             selectionLabel.textContent = uniqueByLine.length + ' ' + noun + ' selected';
         } else {
             const item = uniqueByLine[0];
-            let label = '1 ' + item.kind + ' selected — row ' + item.row + ', col ' + item.col;
-            if (item.kind === 'constant') {
-                label += ', width ' + item.length;
+            let label;
+            if (item.kind === 'field' && item.dataLength !== undefined) {
+                // Not shown for a referenced field (item.dataLength is unset then): its real
+                // length lives in the external database field, dspf-edit has no way to read it,
+                // so there's nothing true to display beyond the generic fallback below.
+                const size = item.decimals ? item.dataLength + ',' + item.decimals : item.dataLength;
+                label = item.name + ' (' + size + ') — Pos= ' + item.row + ', ' + item.col;
+            } else if (item.kind === 'constant') {
+                label = '1 constant selected — Pos= ' + item.row + ', ' + item.col + ', width ' + item.length;
+            } else {
+                label = '1 field selected — Pos= ' + item.row + ', ' + item.col;
             }
             selectionLabel.textContent = label;
         }
-        selectionCenterBtn.style.display = multi ? 'none' : 'inline-block';
-        selectionMenuBtn.style.display = multi ? 'none' : 'inline-block';
-        selectionBar.style.display = 'inline-flex';
+
+        // Center only makes sense for exactly one selected element; Actions applies to one or
+        // several. Both stay visible but disabled rather than hidden when they don't apply — and
+        // both live inside actionBar itself, so they always move together with the rest of the buttons.
+        selectionCenterBtn.disabled = !hasSelection || multi;
+        selectionMenuBtn.disabled = !hasSelection;
+
+        // All the buttons (+Field/+Constant/Grid/Center/Actions) share row 3 with the
+        // selection label when nothing is selected; once something is, the label needs that room,
+        // so the whole button group moves into its own dedicated row (toolbarRowDisplaced) as one
+        // unit until the selection is cleared again. That row sits between row 3 and the Indicators
+        // row, and collapses to nothing when empty (see the ".toolbar-row:empty" rule), so the
+        // Indicators row always ends up directly below wherever the buttons currently are, on its
+        // own line, rather than sharing a line with them.
+        if (hasSelection) {
+            toolbarRowDisplaced.appendChild(actionBar);
+        } else {
+            toolbarRow3.appendChild(actionBar);
+        }
     }
 
     setInterval(() => {
@@ -3036,7 +3156,9 @@ export class RecordPreviewPanel {
         addConstantBtn.classList.toggle('active', placingKind === 'constant');
         addFieldBtn.classList.toggle('active', placingKind === 'field');
         canvas.style.cursor = placingKind ? 'crosshair' : '';
-        canvas.title = placingKind ? ('Click a point in the screen to place the new ' + placingKind) : '';
+        canvas.title = placingKind === 'copy-field' ? 'Click a point in the screen to place the copy of the field'
+            : placingKind === 'copy-constant' ? 'Click a point in the screen to place the copy of the constant'
+            : placingKind ? ('Click a point in the screen to place the new ' + placingKind) : '';
     }
 
     addConstantBtn.addEventListener('click', () => {
@@ -3063,16 +3185,17 @@ export class RecordPreviewPanel {
         vscode.postMessage({ type: 'openConfiguration' });
     });
 
-    // Both buttons are only shown (see updateSelectionBar) when exactly one item is selected.
+    // Center is only shown (see updateSelectionBar) when exactly one item is selected.
     selectionCenterBtn.addEventListener('click', () => {
         if (selectedLineIndices.size === 1) {
             vscode.postMessage({ type: 'centerElement', lineIndex: [...selectedLineIndices][0] });
         }
     });
 
+    // Actions applies to the whole selection — one item or several.
     selectionMenuBtn.addEventListener('click', () => {
-        if (selectedLineIndices.size === 1) {
-            vscode.postMessage({ type: 'elementMenu', lineIndex: [...selectedLineIndices][0] });
+        if (selectedLineIndices.size > 0) {
+            vscode.postMessage({ type: 'elementMenu', lineIndices: [...selectedLineIndices] });
         }
     });
 
@@ -3093,7 +3216,10 @@ export class RecordPreviewPanel {
     canvas.addEventListener('mousedown', (ev) => {
         if (placingKind) {
             const { row, col } = cellAt(ev);
-            vscode.postMessage({ type: placingKind === 'field' ? 'addFieldAt' : 'addConstantAt', row, col });
+            const messageType = placingKind === 'field' ? 'addFieldAt'
+                : placingKind === 'constant' ? 'addConstantAt'
+                : 'copyElementAt';
+            vscode.postMessage({ type: messageType, row, col });
             setPlacingKind(null);
             return;
         }
@@ -3553,6 +3679,8 @@ export class RecordPreviewPanel {
         } else if (message.type === 'selectLine') {
             selectedLineIndices = new Set([message.lineIndex]);
             draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+        } else if (message.type === 'startCopyPlacement') {
+            setPlacingKind(message.kind === 'field' ? 'copy-field' : 'copy-constant');
         } else if (message.type === 'focusModeChanged') {
             focusModeBtn.textContent = message.active ? '🗗 Show code' : '🗖 Focus';
             focusModeBtn.classList.toggle('active', message.active);

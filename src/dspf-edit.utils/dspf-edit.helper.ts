@@ -697,7 +697,10 @@ export async function pickDisplayFormat(declaredFormats: Array<{ name: string; r
  * Stamps (or clears) a display-format condition (e.g. "*DS3") onto a DDS line, in the same 9-character
  * zone (columns 8-16, 0-based 7-15) that normally holds indicators — see `parseDisplayFormatCondition`
  * in the parser for the read side of this convention, and `setIndicatorsOnLine` in
- * dspf-edit.add-indicators.ts for the equivalent indicator-writing convention this mirrors.
+ * dspf-edit.add-indicators.ts for the equivalent indicator-writing convention this mirrors. Per the DDS
+ * reference ("Condition for display files"), the format name itself must start in column 9, not 8 —
+ * column 8 (0-based index 7) is reserved for an optional 'N' (NOT) prefix, which this writer never
+ * produces, so it's always left blank.
  * @param lineText - The line to stamp (must already have its keyword text in place)
  * @param formatName - Display format name (e.g. "*DS3") to condition the line on, or undefined to
  * leave the line unconditioned (returned unchanged)
@@ -708,7 +711,7 @@ export function writeDisplayFormatCondition(lineText: string, formatName?: strin
     };
 
     const line = lineText.padEnd(80, ' ');
-    const formatZone = formatName.padEnd(9, ' ').substring(0, 9);
+    const formatZone = ' ' + formatName.padEnd(8, ' ').substring(0, 8);
     return (line.substring(0, 7) + formatZone + line.substring(16)).trimEnd();
 };
 
@@ -728,20 +731,25 @@ export interface DisplayFormatConditionable {
  *
  * Rule: resolve which existing line is actually in effect for `activeFormat` the same way the
  * preview already resolves it for reading (`pickForActiveFormat`: a line explicitly conditioned for
- * it, else the shared unconditioned line, else the first candidate). If that line is already
- * conditioned for `activeFormat` specifically (or the file declares at most one format), just
- * rewrite it in place with the new value — already correctly scoped, no change in behavior. If it's
- * the *shared* unconditioned line and the file declares more than one format, every other declared
- * format currently falling back to that same line gets its own new line inserted right after,
- * preserving the line's OLD value and explicitly conditioned for that format; the original line is
- * then rewritten in place, now conditioned for `activeFormat`, with the NEW value — so afterward
- * every declared format has its own explicit line and none are left relying on a fallback that just
- * changed under them.
+ * it, else the shared unconditioned line, else the first candidate). If there's already more than
+ * one candidate line for this keyword (the file declares at most one format, or this keyword was
+ * already split before), just rewrite the effective one in place with the new value — already
+ * correctly scoped, no change in behavior. Otherwise (exactly one shared line, and the file declares
+ * more than one format), every other declared format currently falling back to that same line gets
+ * its own new line inserted right after, preserving the line's OLD value; the original line is then
+ * rewritten in place with the NEW value — so afterward every declared format has its own line and
+ * none are left relying on a fallback that just changed under them.
+ *
+ * Per the DDS reference (see `writeDisplayFormatCondition`), only the *non-primary* (secondary)
+ * display size may ever carry an explicit condition — conditioning a line on the primary size's own
+ * name is a compile error, so the primary format's line (`declaredFormats[0]`) is always written
+ * unconditioned instead, standing in as the default/fallback line the secondary's condition overrides.
  * @param workspaceEdit - Edit to add the replace/insert operations to
  * @param document - The document being edited (for reading each candidate line's current text/range)
  * @param candidates - This keyword's existing lines on the record, in source order
  * @param activeFormat - Display format (e.g. "*DS3") currently being previewed/edited, or undefined
- * @param declaredFormats - Every display format the file declares (from `getAvailableDisplayFormats`)
+ * @param declaredFormats - Every display format the file declares (from `getAvailableDisplayFormats`),
+ * primary first — DDS allows at most one primary and one secondary size.
  * @param generateLine - Produces the full line text to write, given the resolved line's current text
  * and the format it should end up conditioned on (undefined for the rewritten/active line only when
  * no split occurs). Called once per line written (1 rewrite, plus 1 insert per other format on split).
@@ -774,23 +782,34 @@ export function applyDisplayFormatSplitEdit<T extends DisplayFormatConditionable
         return;
     };
 
-    const needsSplit = !!activeFormat && !effective.displayFormat && declaredFormats.length > 1;
+    // Whether this keyword still has just one shared line is what decides whether a split is
+    // needed — not whether the *effective* line happens to be unconditioned, since the primary
+    // format's line is deliberately always unconditioned (see above) even once already split.
+    const needsSplit = !!activeFormat && candidates.length === 1 && declaredFormats.length > 1;
 
     if (!needsSplit) {
         workspaceEdit.replace(uri, effectiveLine.range, proposedLine);
         return;
     };
 
+    const primaryFormat = declaredFormats[0];
+
     // Preserve the OLD value for every other declared format that would otherwise keep silently
     // falling back to this same shared line once it's rewritten.
     const otherFormats = declaredFormats.filter(f => f !== activeFormat);
     for (const format of otherFormats) {
-        const oldConditionedLine = writeDisplayFormatCondition(effectiveLine.text, format);
-        workspaceEdit.insert(uri, effectiveLine.range.end, '\n' + oldConditionedLine);
+        const oldLine = format === primaryFormat
+            ? effectiveLine.text
+            : writeDisplayFormatCondition(effectiveLine.text, format);
+        workspaceEdit.insert(uri, effectiveLine.range.end, '\n' + oldLine);
     };
 
-    // Rewrite the original line in place: now conditioned for the active format, with the new value.
-    const newLine = writeDisplayFormatCondition(generateLine(effectiveLine.text, activeFormat), activeFormat);
+    // Rewrite the original line in place: now conditioned for the active format (unconditioned
+    // instead, if it's the primary), with the new value.
+    const rewrittenText = generateLine(effectiveLine.text, activeFormat);
+    const newLine = activeFormat === primaryFormat
+        ? rewrittenText
+        : writeDisplayFormatCondition(rewrittenText, activeFormat);
     workspaceEdit.replace(uri, effectiveLine.range, newLine);
 };
 
