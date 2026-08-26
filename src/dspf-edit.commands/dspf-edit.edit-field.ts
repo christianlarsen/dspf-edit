@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { fileSizeAttributes, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
+import { fileSizeAttributes, fieldsPerRecords, getRecordSize } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, parseSize } from '../dspf-edit.utils/dspf-edit.helper';
 
 /**
@@ -176,6 +176,20 @@ function getMaxCols(): number {
     const maxCol2 = fileSizeAttributes.maxCol2 || 0;
     const maxCol = Math.max(maxCol1, maxCol2);
     return maxCol > 0 ? maxCol : 132;
+}
+
+/**
+ * Bounds a new field's position can validly land in, for a given record. When the record is a
+ * window, that's its own (typically smaller) content rectangle, not the whole file's declared
+ * screen size; a non-window (base display) record uses the whole file's declared size.
+ * @param recordName - The record to resolve bounds for
+ */
+function getPositionBounds(recordName: string): { maxRows: number; maxCols: number } {
+    const size = getRecordSize(recordName);
+    if (size?.source === 'window') {
+        return { maxRows: size.rows, maxCols: size.cols };
+    };
+    return { maxRows: getMaxRows(), maxCols: getMaxCols() };
 }
 
 /**
@@ -719,7 +733,7 @@ function validateLibraryFileName(value: string, type: string, required: boolean 
         return `${type} name cannot contain spaces.`;
     };
     
-    if (!/^[A-Za-z][A-Za-z0-9@#$Ñ]*$/.test(trimmedValue)) {
+    if (!/^[A-Za-z@#$][A-Za-z0-9@#$Ñ]*$/.test(trimmedValue)) {
         return `Invalid characters in ${type.toLowerCase()} name. Use letters, numbers, @, #, $, Ñ`;
     };
     
@@ -879,7 +893,7 @@ async function collectFieldPosition(editor: vscode.TextEditor, fieldName: string
     if (positioningType.value === "relative") {
         return await getRelativeFieldPosition(editor, recordElement, fieldSize);
     } else {
-        return await getAbsoluteFieldPosition(fieldName);
+        return await getAbsoluteFieldPosition(fieldName, recordElement.name);
     };
 };
 
@@ -892,7 +906,7 @@ async function getRelativeFieldPosition(editor: vscode.TextEditor, recordElement
     
     if (existingElements.length === 0) {
         vscode.window.showInformationMessage("No existing fields or constants found in this record. Using absolute positioning.");
-        return await getAbsoluteFieldPosition("field");
+        return await getAbsoluteFieldPosition("field", recordElement.name);
     };
 
     // Show elements for selection
@@ -968,8 +982,7 @@ async function getRelativeFieldPosition(editor: vscode.TextEditor, recordElement
     };
 
     // Validate the new position
-    const maxRows = getMaxRows();
-    const maxCols = getMaxCols();
+    const { maxRows, maxCols } = getPositionBounds(recordElement.name);
 
     if (newRow < 1 || newRow > maxRows) {
         vscode.window.showErrorMessage(`Cannot position field at row ${newRow}. Row must be between 1 and ${maxRows}.`);
@@ -995,10 +1008,12 @@ async function getRelativeFieldPosition(editor: vscode.TextEditor, recordElement
 
 /**
  * Gets absolute position information for a field
+ * @param fieldName - The field's name, shown in the prompts' titles
+ * @param recordName - The record the field is being added to, used to resolve window-aware bounds
+ * (a window's own content rectangle) rather than the whole file's declared size
  */
-async function getAbsoluteFieldPosition(fieldName: string): Promise<FieldPosition | null> {
-    const maxRows = getMaxRows();
-    const maxCols = getMaxCols();
+async function getAbsoluteFieldPosition(fieldName: string, recordName: string): Promise<FieldPosition | null> {
+    const { maxRows, maxCols } = getPositionBounds(recordName);
 
     // Get row position
     const row = await vscode.window.showInputBox({
@@ -1386,8 +1401,8 @@ function validateFieldNameFormat(value: string): string | null {
         return "The name cannot start with a number.";
     };
     
-    if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(trimmedValue)) {
-        return "The name can only contain letters, numbers, underscores, and hyphens, and must start with a letter.";
+    if (!/^[A-Za-z@#$][A-Za-z0-9@#$_]*$/.test(trimmedValue)) {
+        return "The name can only contain letters, numbers, @, #, $, and underscores, and must start with a letter, @, #, or $.";
     };
 
     return null;

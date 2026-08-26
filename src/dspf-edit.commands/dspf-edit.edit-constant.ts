@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { fileSizeAttributes, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
+import { fileSizeAttributes, fieldsPerRecords, getRecordSize } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, findEndLineIndex, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 
 // TYPE DEFINITIONS
@@ -58,6 +58,20 @@ function getMaxCols(): number {
     const maxCol2 = fileSizeAttributes.maxCol2 || 0;
     const maxCol = Math.max(maxCol1, maxCol2);
     return maxCol > 0 ? maxCol : 132;
+};
+
+/**
+ * Bounds a new constant's position can validly land in, for a given record. When the record is a
+ * window, that's its own (typically smaller) content rectangle, not the whole file's declared
+ * screen size; a non-window (base display) record uses the whole file's declared size.
+ * @param recordName - The record to resolve bounds for
+ */
+function getPositionBounds(recordName: string): { maxRows: number; maxCols: number } {
+    const size = getRecordSize(recordName);
+    if (size?.source === 'window') {
+        return { maxRows: size.rows, maxCols: size.cols };
+    };
+    return { maxRows: getMaxRows(), maxCols: getMaxCols() };
 };
 
 // COMMAND REGISTRATION FUNCTIONS
@@ -314,7 +328,7 @@ async function getRelativePosition(editor: vscode.TextEditor, recordElement: any
         : referenceConstant.row + 1;
 
     // Validate the new row position
-    const maxRows = getMaxRows();
+    const { maxRows } = getPositionBounds(recordElement.name);
     if (newRow < 1 || newRow > maxRows) {
         vscode.window.showErrorMessage(`Cannot position constant at row ${newRow}. Row must be between 1 and ${maxRows}.`);
         return null;
@@ -334,15 +348,17 @@ async function getRelativePosition(editor: vscode.TextEditor, recordElement: any
  * @returns Position information or null if cancelled
  */
 async function getAbsolutePositionForRecord(recordElement: any): Promise<ConstantPosition | null> {
+    const bounds = getPositionBounds(recordElement.name);
+
     const row = await vscode.window.showInputBox({
         title: `Enter row position for constant in record ${recordElement.name}`,
-        validateInput: value => validateRowInput(value)
+        validateInput: value => validateRowInput(value, bounds.maxRows)
     });
     if (!row) return null;
 
     const column = await vscode.window.showInputBox({
         title: "Enter column position for constant",
-        validateInput: value => validateColumnInput(value)
+        validateInput: value => validateColumnInput(value, bounds.maxCols)
     });
     if (!column) return null;
 
@@ -364,15 +380,19 @@ async function getManualPosition(): Promise<ConstantPosition | null> {
     });
     if (!recordName) return null;
 
+    // Bounds depend on whether this record turns out to be a window — only knowable once its name
+    // is in hand, hence resolved here rather than up front.
+    const bounds = getPositionBounds(recordName.trim());
+
     const row = await vscode.window.showInputBox({
         title: "Enter row position for constant",
-        validateInput: value => validateRowInput(value)
+        validateInput: value => validateRowInput(value, bounds.maxRows)
     });
     if (!row) return null;
 
     const column = await vscode.window.showInputBox({
         title: "Enter column position for constant",
-        validateInput: value => validateColumnInput(value)
+        validateInput: value => validateColumnInput(value, bounds.maxCols)
     });
     if (!column) return null;
 
@@ -501,10 +521,10 @@ function validateConstantText(value: string): string | null {
 /**
  * Validates row input.
  * @param value - The row value to validate
+ * @param maxRows - Highest valid row (the record's window content, or the file's declared size)
  * @returns Error message or null if valid
  */
-function validateRowInput(value: string): string | null {
-    const maxRows = getMaxRows();
+function validateRowInput(value: string, maxRows: number): string | null {
     const num = parseInt(value, 10);
     if (isNaN(num) || num < 1 || num > maxRows) {
         return `Row must be a number between 1 and ${maxRows}.`;
@@ -515,10 +535,10 @@ function validateRowInput(value: string): string | null {
 /**
  * Validates column input.
  * @param value - The column value to validate
+ * @param maxCols - Highest valid column (the record's window content, or the file's declared size)
  * @returns Error message or null if valid
  */
-function validateColumnInput(value: string): string | null {
-    const maxCols = getMaxCols();
+function validateColumnInput(value: string, maxCols: number): string | null {
     const num = parseInt(value, 10);
     if (isNaN(num) || num < 1 || num > maxCols) {
         return `Column must be a number between 1 and ${maxCols}.`;

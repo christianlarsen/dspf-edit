@@ -135,6 +135,13 @@ async function handleEditingKeywordsCommand(node: DdsNode): Promise<void> {
             if (editWord) selectedEditing.push(editWord);
 
         } else if (editingType.startsWith('EDTMSK')) {
+            // EDTMSK protects/masks what the user types, so it's only meaningful on a field the
+            // user can actually type into (usage I or B) — an output-only field has nothing to mask.
+            if (!isInputCapableField(effectiveFieldInfo)) {
+                vscode.window.showWarningMessage(inputCapableFieldWarning(node.ddsElement));
+                return;
+            };
+
             // EDTMSK requires EDTCDE or EDTWRD to be present
             vscode.window.showInformationMessage('EDTMSK requires EDTCDE or EDTWRD. You will be asked to specify both.');
 
@@ -285,6 +292,25 @@ function numericFieldWarning(keywordLabel: string, element: any, effectiveFieldI
         return `${base} This is a referenced field with an unresolved type — run "Resolve Referenced Field" first to check whether it's numeric.`;
     };
     return base;
+};
+
+/**
+ * Checks if a field's usage allows user input — EDTMSK only makes sense there, since it protects/
+ * formats what the user types; an output-only field has nothing to mask.
+ * @param fieldInfo - Field information
+ * @returns true if usage is I (input) or B (both)
+ */
+function isInputCapableField(fieldInfo: any): boolean {
+    const usage = (fieldInfo.usage || '').trim().toUpperCase();
+    return usage === 'I' || usage === 'B';
+};
+
+/**
+ * Builds the "not input-capable" warning for EDTMSK.
+ * @param element - The DDS field element
+ */
+function inputCapableFieldWarning(element: any): string {
+    return `EDTMSK can only be applied to an input-capable field (usage I or B) — '${element.name}' isn't one.`;
 };
 
 /**

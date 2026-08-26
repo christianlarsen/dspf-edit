@@ -313,9 +313,28 @@ async function addAttributesToElement(
     element: any,
     attrToAdd: AttributeWithIndicators[]
 ): Promise<boolean> {
+    const workspaceEdit = new vscode.WorkspaceEdit();
+    buildAttributeEdits(workspaceEdit, editor, element, attrToAdd);
+    return applyWorkspaceEdit(workspaceEdit, 'add the attributes');
+};
+
+/**
+ * Appends the edits needed to add the given attributes to a single element into an existing
+ * `WorkspaceEdit`, without creating or applying its own — lets callers batch edits for several
+ * elements into one `WorkspaceEdit`/one `applyWorkspaceEdit` call (see `addAttributeToMultipleElements`).
+ * @param workspaceEdit - The shared workspace edit to append to
+ * @param editor - The active text editor
+ * @param element - The DDS element to add attributes to
+ * @param attrToAdd - Array of attributes with indicators to add
+ */
+function buildAttributeEdits(
+    workspaceEdit: vscode.WorkspaceEdit,
+    editor: vscode.TextEditor,
+    element: any,
+    attrToAdd: AttributeWithIndicators[]
+): void {
     const isConstant = element.kind === 'constant';
     const numberOfAttributes = getNumberOfAttributesForElement(element);
-    const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
 
     // Handle first-time attribute addition for fields (not constants)
@@ -417,9 +436,47 @@ async function addAttributesToElement(
             };
         };
     };
+};
 
-    // Apply all the text edits to the document
-    return applyWorkspaceEdit(workspaceEdit, 'add the attributes');
+/**
+ * Adds the given attribute(s) to every element in `nodes` at once — a single shared `WorkspaceEdit`
+ * applied in one step, so one undo restores the whole batch. Unlike the single-element flow
+ * (`handleAddAttributeCommand`), this always adds (never offers replace/remove for existing
+ * attributes) and never prompts for conditioning indicators, since indicators aren't a value that
+ * makes sense shared across a group of differently-conditioned elements.
+ * @param editor - The active text editor
+ * @param nodes - The DDS nodes (fields/constants) to add attributes to
+ */
+export async function addAttributeToMultipleElements(editor: vscode.TextEditor, nodes: DdsNode[]): Promise<void> {
+    const targets = nodes.filter(n => n.ddsElement.kind === 'field' || n.ddsElement.kind === 'constant');
+    if (targets.length === 0) return;
+
+    const selectedAttributes = await vscode.window.showQuickPick(getAvailableAttributes([]), {
+        title: `Add Attribute to ${targets.length} elements`,
+        placeHolder: 'Select one or more attributes to add',
+        canPickMany: true,
+        ignoreFocusOut: true
+    });
+
+    if (!selectedAttributes || selectedAttributes.length === 0) {
+        vscode.window.showInformationMessage('No attributes selected.');
+        return;
+    };
+
+    const attrToAdd: AttributeWithIndicators[] = selectedAttributes.map(attribute => ({ attribute, indicators: [] }));
+
+    const workspaceEdit = new vscode.WorkspaceEdit();
+    for (const node of targets) {
+        buildAttributeEdits(workspaceEdit, editor, node.ddsElement, attrToAdd);
+    };
+
+    if (!(await applyWorkspaceEdit(workspaceEdit, 'add the attributes'))) return;
+    await vscode.commands.executeCommand('cursorRight');
+    await vscode.commands.executeCommand('cursorLeft');
+
+    vscode.window.showInformationMessage(
+        `Added attributes ${selectedAttributes.join(', ')} to ${targets.length} elements.`
+    );
 };
 
 /**

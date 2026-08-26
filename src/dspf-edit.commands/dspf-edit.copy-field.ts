@@ -160,6 +160,73 @@ async function handleCopyFieldCommand(node: DdsNode): Promise<void> {
 };
 
 /**
+ * Copies a field to a new position within the same record, triggered by the preview's "Copy"
+ * placement mode (select a field → Actions → Copy → click a spot in the preview) rather than the
+ * tree's interactive command. Skips every prompt the tree version shows — target record is always
+ * the field's own record; the new name is auto-generated as FIELD/FIELD2/FIELD3...; the position
+ * is whatever was clicked — so the whole action completes in one click, while still keeping every
+ * attribute/color/indicator the source field carries (via the same `generateCopiedFieldLines` the
+ * tree command uses).
+ * @param editor - The active text editor
+ * @param sourceNode - The DDS node for the field being copied
+ * @param targetRecord - The record to copy into (always the source field's own record)
+ * @param targetRow - Row to place the copy at (already validated against the record's screen area)
+ * @param targetCol - Column to place the copy at
+ */
+export async function copyFieldToPosition(
+    editor: vscode.TextEditor,
+    sourceNode: DdsNode,
+    targetRecord: string,
+    targetRow: number,
+    targetCol: number
+): Promise<void> {
+    if (sourceNode.ddsElement.kind !== 'field') {
+        return;
+    };
+    const sourceField = toFieldInfo(sourceNode.ddsElement as DdsField);
+
+    if (!(await isPositionAvailable(editor, targetRecord, targetRow, targetCol, sourceField.length))) {
+        vscode.window.showWarningMessage('That position is already occupied in this record.');
+        return;
+    };
+
+    const newName = generateSequentialFieldName(targetRecord);
+    const copyConfig: CopyFieldConfig = {
+        sourceField,
+        sourceRecord: targetRecord,
+        targetRecord,
+        newName,
+        targetPosition: { row: targetRow, column: targetCol }
+    };
+
+    const copiedFieldLines = await generateCopiedFieldLines(editor, copyConfig, false);
+    await insertCopiedField(editor, targetRecord, copiedFieldLines);
+    await vscode.commands.executeCommand('cursorRight');
+    await vscode.commands.executeCommand('cursorLeft');
+
+    vscode.window.showInformationMessage(
+        `Field '${sourceField.name}' copied as '${newName}' at position ${targetRow}, ${targetCol}.`
+    );
+};
+
+/**
+ * Generates the next available name in the FIELD/FIELD2/FIELD3... sequence for a record — the
+ * fixed, no-prompt naming scheme used by the preview's one-click Copy (the tree's interactive
+ * copy command instead prompts, suggesting the source field's own name as a starting point).
+ * @param targetRecord - The record to check for name collisions
+ */
+function generateSequentialFieldName(targetRecord: string): string {
+    if (!fieldExistsInRecord('FIELD', targetRecord)) {
+        return 'FIELD';
+    };
+    let suffix = 2;
+    while (fieldExistsInRecord(`FIELD${suffix}`, targetRecord)) {
+        suffix++;
+    };
+    return `FIELD${suffix}`;
+};
+
+/**
  * Converts a parsed DDS field element into an internal FieldInfo structure
  * 
  * This function maps the properties from the raw `DdsField` (produced by the DDS parser)
@@ -392,8 +459,8 @@ function validateCopiedFieldName(value: string, targetRecord: string): string | 
         return "Field name cannot start with a number.";
     };
     
-    if (!/^[A-Za-z][A-Za-z0-9@#$_-]*$/.test(trimmedValue)) {
-        return "Field name can only contain letters, numbers, @, #, $, _, and -, and must start with a letter.";
+    if (!/^[A-Za-z@#$][A-Za-z0-9@#$_]*$/.test(trimmedValue)) {
+        return "Field name can only contain letters, numbers, @, #, $, and _, and must start with a letter, @, #, or $.";
     };
 
     // Check if field already exists in target record

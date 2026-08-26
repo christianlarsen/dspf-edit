@@ -139,6 +139,55 @@ async function handleCopyConstantCommand(node: DdsNode): Promise<void> {
 };
 
 /**
+ * Copies a constant to a new position within the same record, triggered by the preview's "Copy"
+ * placement mode (select a constant → Actions → Copy → click a spot in the preview) rather than
+ * the tree's interactive command. Skips every prompt the tree version shows — target record is
+ * always the constant's own record, its text is kept unchanged, and the position is whatever was
+ * clicked — so the whole action completes in one click, while still keeping every attribute/color/
+ * indicator the source constant carries (via the same `generateCopiedConstantLines` the tree
+ * command uses).
+ * @param editor - The active text editor
+ * @param sourceNode - The DDS node for the constant being copied
+ * @param targetRecord - The record to copy into (always the source constant's own record)
+ * @param targetRow - Row to place the copy at (already validated against the record's screen area)
+ * @param targetCol - Column to place the copy at
+ */
+export async function copyConstantToPosition(
+    editor: vscode.TextEditor,
+    sourceNode: DdsNode,
+    targetRecord: string,
+    targetRow: number,
+    targetCol: number
+): Promise<void> {
+    if (sourceNode.ddsElement.kind !== 'constant') {
+        return;
+    };
+    const sourceConstant = toConstantInfo(sourceNode.ddsElement as DdsConstant);
+
+    if (!(await isPositionAvailable(editor, targetRecord, targetRow, targetCol, sourceConstant.length))) {
+        vscode.window.showWarningMessage('That position is already occupied in this record.');
+        return;
+    };
+
+    const copyConfig: CopyConstantConfig = {
+        sourceConstant,
+        sourceRecord: targetRecord,
+        targetRecord,
+        newName: undefined,
+        targetPosition: { row: targetRow, column: targetCol }
+    };
+
+    const copiedConstantLines = await generateCopiedConstantLines(editor, copyConfig);
+    await insertCopiedConstant(editor, targetRecord, copiedConstantLines);
+    await vscode.commands.executeCommand('cursorRight');
+    await vscode.commands.executeCommand('cursorLeft');
+
+    vscode.window.showInformationMessage(
+        `Constant copied at position ${targetRow}, ${targetCol}.`
+    );
+};
+
+/**
  * Converts a parsed DDS constant element into an internal ConstantInfo structure.
  * 
  * This function maps the properties from the raw `DdsConstant` (produced by the DDS parser)

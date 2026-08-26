@@ -44,6 +44,8 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
   - For files with more than one DSPSIZ format (e.g. *DS3/*DS4), switch which one is previewed — window positions/sizes and conditioned elements are resolved for the selected format. Dragging/resizing/centering a window, or adjusting a subfile's SFLPAG/SFLSIZ, only affects the size currently being previewed.
   - The "Indicators" toggle and the selected display format persist when switching which record is previewed in the same panel.
   - Stays in sync with the schema tree selection in both directions.
+  - "Focus" maximizes the preview so it fills the editing area, hiding the DDS source editor beside it; "Show code" brings the source back.
+  - Select a field or constant (or several, with Ctrl/Cmd+click) to get a "⋮ Actions" menu: add color/attribute, copy, or delete — applied to every selected element at once for a multi-selection (no per-element indicator prompts in that case).
 
 ### 🧭 Schema navigation
   - Two levels are shown: **File** and **Records**.
@@ -105,8 +107,8 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
     - Resolve Referenced Field (for referenced fields only): fetches the real type/length/decimals from the connected IBM i, via the [Code for i](https://marketplace.visualstudio.com/items?itemName=HalcyonTechLtd.code-for-ibmi) extension. Also available as "Resolve All Referenced Fields" from the status bar, for every pending referenced field in the document at once.
 
 ### Attributes
-    - Add / Remove / Change indicators, with the same AND/OR support as fields and constants.
-    - Remove attribute.
+  - Add / Remove / Change indicators, with the same AND/OR support as fields and constants.
+  - Remove attribute.
 
 ---
 
@@ -143,15 +145,13 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.0.1** - 2026-08-24
-- Fixed: Preview window border/content positioning, now matching real STRSDA.
-- Fixed: A window can no longer be positioned at row 1 and column 1 at the same time, matching STRSDA.
-- Fixed: A field/constant dragged inside a window could get stuck and not move back to its original position.
-
-**1.0.0** - 2026-08-22
-- Added: Preview colors — background, the 7 DDS `COLOR()` colors (blue, red, white, green, turquoise, yellow, pink), and the referenced-field marker — are now configurable instead of fixed, via a new "⚙ Configuration" button in the preview toolbar with a native color picker, and a reset-to-default per color or for all of them at once.
-- Changed: No longer marked as a Preview extension.
-- Fixed: Add Color's pickers could close themselves immediately after opening (most noticeable on trackpads) instead of staying open.
+**1.1.0** - 2026-08-26
+- Added: Preview "⋮ Actions" menu now offers Copy and Delete, alongside Add Color/Add Attribute — applied to every selected element at once for a multi-selection.
+- Added: Preview toolbar buttons regrouped into one row that moves together when something's selected.
+- Fixed: `EDTMSK` could be applied to an output-only field.
+- Fixed: `*DS3`/`*DS4` display-format conditioning on a keyword line was written one column too early, and could condition the primary display size explicitly — both invalid DDS.
+- Fixed: Add Field/Add Constant (tree) validated position against the whole file's size instead of a window record's own content area.
+- Fixed: Field/record names starting with `@`, `#`, or `$` were rejected.
 
 ---
 

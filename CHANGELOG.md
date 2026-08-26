@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.1.0] - 2026-08-26
+### Added
+- Preview: the "⋮ Actions" menu now offers Copy (click a spot in the preview to place a copy of the selected field/constant, keeping its attributes/colors/indicators, within the same record) and Delete, alongside Add Color/Add Attribute. With more than one element selected, Add Color/Add Attribute/Delete apply to all of them at once.
+- Preview: toolbar buttons regrouped into a single row that moves together whenever something's selected, so the selection info has room; "Indicators" always stays on its own line.
+- Preview: selecting a single field now shows its length/decimals inline instead of a generic "field selected".
+### Fixed
+- Add Editing Keywords: `EDTMSK` could be applied to an output-only field; it's now restricted to input-capable fields (usage I/B), matching DDS.
+- Display-format conditioning (`*DS3`/`*DS4`) on a `WINDOW`/`WDWTITLE`/`SFLPAG`/`SFLSIZ` line was written one column too early, and could condition the primary display size explicitly — both invalid DDS (confirmed by CPD7410/CPD7606 at compile time). Fixed across window resize/move, window title, new record creation, and Add Buttons.
+- Add Field / Add Constant (tree): position was validated against the whole file's declared size instead of a window record's own (usually smaller) content area.
+- Field/record names starting with `@`, `#`, or `$` were rejected — DDS allows them as the first character.
+
 ## [1.0.1] - 2026-08-24
 ### Fixed
 - Preview: window border/content positioning corrected to match real STRSDA.

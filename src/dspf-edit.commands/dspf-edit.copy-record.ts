@@ -156,7 +156,7 @@ function validateNewRecordName(value: string, originalName: string): string | nu
         return "The record name cannot start with a number.";
     };
 
-    if (!/^[A-Za-z][A-Za-z0-9@#$]*$/.test(trimmedValue)) {
+    if (!/^[A-Za-z@#$][A-Za-z0-9@#$]*$/.test(trimmedValue)) {
         return "Invalid characters in record name. Use letters, numbers, @, #, $.";
     };
 

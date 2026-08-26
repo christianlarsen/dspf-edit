@@ -115,8 +115,14 @@ async function handleAddButtonsCommand(node: DdsNode): Promise<void> {
         // Calculate button layout
         const layout = calculateButtonLayout(buttons, recordInfo);
 
+        // `format` picked the layout's size, but DDS forbids explicitly conditioning a line on the
+        // primary display size's own name (see writeDisplayFormatCondition in dspf-edit.helper.ts) —
+        // picking the primary just means "laid out for its size", the lines still end up unconditioned
+        // (visible for every format) rather than stamped with a condition the compiler would reject.
+        const conditionFormat = format === declaredFormats[0]?.name ? undefined : format;
+
         // Generate and apply DDS lines
-        await applyButtonsToRecord(editor, buttons, recordInfo, layout, format);
+        await applyButtonsToRecord(editor, buttons, recordInfo, layout, conditionFormat);
 
     } catch (error) {
         console.error('Error adding buttons:', error);
@@ -365,16 +371,17 @@ function calculateButtonLayout(buttons: ButtonDefinition[], recordInfo: RecordIn
  * @param buttons - Array of button definitions
  * @param recordInfo - Record information
  * @param layout - Layout information
- * @param format - Display format the layout was computed for (when the file declares more than
- * one); the generated lines are conditioned on it, so they don't also show, mispositioned, on the
- * other declared format(s).
+ * @param conditionFormat - Display format to condition the generated lines on, or undefined to leave
+ * them unconditioned (visible for every declared format) — undefined both when the file declares at
+ * most one format, and when the layout was computed for the primary format specifically (which DDS
+ * forbids conditioning a line on explicitly; see the call site).
  */
 async function applyButtonsToRecord(
     editor: vscode.TextEditor,
     buttons: ButtonDefinition[],
     recordInfo: RecordInformation,
     layout: ButtonLayout,
-    format?: string
+    conditionFormat?: string
 ): Promise<void> {
     const edit = new vscode.WorkspaceEdit();
     const doc = editor.document;
@@ -394,7 +401,7 @@ async function applyButtonsToRecord(
         };
 
         // Create DDS line for this button
-        const ddsLine = writeDisplayFormatCondition(createButtonDdsLine(text, currentRow, currentCol), format);
+        const ddsLine = writeDisplayFormatCondition(createButtonDdsLine(text, currentRow, currentCol), conditionFormat);
         const insertPos = new vscode.Position(recordInfo.endLineIndex, 0);
 
         // Ensure proper line breaks

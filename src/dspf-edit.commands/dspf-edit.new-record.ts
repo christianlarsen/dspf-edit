@@ -233,7 +233,7 @@ export function validateRecordName(value: string): string | null {
         return "The record name cannot start with a number.";
     };
 
-    if (!/^[A-Za-z][A-Za-z0-9@#$]*$/.test(trimmedValue)) {
+    if (!/^[A-Za-z@#$][A-Za-z0-9@#$]*$/.test(trimmedValue)) {
         return "Invalid characters in record name. Use letters, numbers, @, #, $.";
     };
 
@@ -471,13 +471,19 @@ function calculateWindowDimensionsForAllFormats(size: WindowSize, position: Wind
         return dimensions ? [{ dimensions }] : null;
     };
 
+    // The primary display size's line must stay unconditioned — DDS forbids explicitly
+    // conditioning a line on the primary size's own name (see writeDisplayFormatCondition in
+    // dspf-edit.helper.ts); it's the default/fallback line the secondary format's condition
+    // overrides, not a line that gets its own *DSx stamp.
+    const primaryFormatName = declaredFormats[0].name;
+
     const perFormat: FormatDimensions[] = [];
     for (const format of declaredFormats) {
         const dimensions = calculateWindowDimensions(size, position, format.rows, format.cols);
         if (!dimensions) {
             return null;
         };
-        perFormat.push({ format: format.name, dimensions });
+        perFormat.push({ format: format.name === primaryFormatName ? undefined : format.name, dimensions });
     };
 
     // Collapse to a single unconditioned line when every format landed on the same geometry
