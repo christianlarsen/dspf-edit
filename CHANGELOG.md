@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.1.1] - 2026-08-28
+### Fixed
+- Preview: the `EDTCDE` thousands-separator table had commas alternating per individual code instead of per pair (1&2, A&B, J&K, N&O should show separators; 3&4, C&D, L&M, P&Q should not) — `EDTCDE(K)` (and 2/3/B/C/L/P) rendered with no thousands separator at all. (Issue #77)
+- Preview: `EDTCDE(N/O/P/Q)` weren't recognized at all, so no decimal point/comma/sign width was reserved for them. Now supported, with the minus sign correctly reserved leading (before the first digit), unlike J/K/L/M which reserve it trailing — confirmed against real STRSDA.
+- Preview and Add Editing Keywords: a numeric field with a blank Type column (position 35) — the default, most common way to define a plain zoned-numeric field, without an explicit type letter — was misdetected as alphanumeric, showing letter placeholders instead of digit ones, and could be blocked from getting an edit code/word.
+- Add Editing Keywords: the `EDTCDE` picker's descriptions mislabeled the comma/no-comma distinction between paired codes as a decimals/no-decimals distinction.
+
 ## [1.1.0] - 2026-08-26
 ### Added
 - Preview: the "⋮ Actions" menu now offers Copy (click a spot in the preview to place a copy of the selected field/constant, keeping its attributes/colors/indicators, within the same record) and Delete, alongside Add Color/Add Attribute. With more than one element selected, Add Color/Add Attribute/Delete apply to all of them at once.

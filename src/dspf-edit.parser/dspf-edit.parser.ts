@@ -468,7 +468,13 @@ function parseFieldElement(
 ) {
     const type = trimmedLine[29];
     const length = Number(trimmedLine.substring(24, 29).trim()) || FIXED_LENGTH_BY_TYPE[type] || 0;
-    const decimals = trimmedLine.substring(30, 32) !== ' ' ? Number(trimmedLine.substring(30, 32).trim()) : 0;
+    // A truly blank decimal-positions column (vs. an explicit "0") is kept as `undefined`, not
+    // coerced to 0 — with a blank Type column too, that blank/non-blank distinction is exactly
+    // what tells a plain zoned-numeric field (Type blank, decimals given, even 0) apart from a
+    // plain alphanumeric one (Type blank, decimals also blank). See isNumeric in
+    // dspf-edit.record-preview-panel.ts and isNumericField in dspf-edit.add-editing-keywords.ts.
+    const decimalsRaw = trimmedLine.substring(30, 32).trim();
+    const decimals = decimalsRaw !== '' ? Number(decimalsRaw) : undefined;
     const usage = trimmedLine[32] !== ' ' ? trimmedLine[32] : ' ';
     const isHidden = trimmedLine[32] === 'H';
     const isReferenced = trimmedLine[23] === 'R';

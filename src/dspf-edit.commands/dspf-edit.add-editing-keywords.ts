@@ -319,8 +319,16 @@ function inputCapableFieldWarning(element: any): string {
  * @returns true if field is numeric
  */
 function isNumericField(fieldInfo: any): boolean {
-    const fieldType = fieldInfo.type || '';
-    
+    const fieldType = (fieldInfo.type || '').trim();
+
+    // A blank Type column is DDS's own default and is ambiguous on its own: it's alphanumeric
+    // only when the decimal-positions column is also blank, but a blank Type with decimal
+    // positions given (even 0) is a plain zoned-numeric field — the most common way to define a
+    // numeric field in DDS, without ever writing an explicit type letter.
+    if (fieldType === '') {
+        return fieldInfo.decimals !== undefined;
+    };
+
     // All numeric types that support editing in DDS:
     // P = Packed decimal
     // S = Zoned decimal (signed)
@@ -399,26 +407,26 @@ function isNumericFieldDetailed(fieldInfo: any): boolean {
 function getAvailableEditCodes(): EditCodeOption[] {
     return [
         // Standard codes (1-4)
-        { code: '1', description: 'Commas, decimals, no sign, zero as .00/0', category: 'Standard', supportsAsterisk: true, supportsCurrency: true },
-        { code: '2', description: 'Commas, decimals, no sign, zero as blanks', category: 'Standard', supportsAsterisk: true, supportsCurrency: true },
-        { code: '3', description: 'Commas, no decimals, no sign, zero as .00/0', category: 'Standard', supportsAsterisk: true, supportsCurrency: true },
-        { code: '4', description: 'Commas, no decimals, no sign, zero as blanks', category: 'Standard', supportsAsterisk: true, supportsCurrency: true },
+        { code: '1', description: 'Commas, no sign, zero as .00/0', category: 'Standard', supportsAsterisk: true, supportsCurrency: true },
+        { code: '2', description: 'Commas, no sign, zero as blanks', category: 'Standard', supportsAsterisk: true, supportsCurrency: true },
+        { code: '3', description: 'No commas, no sign, zero as .00/0', category: 'Standard', supportsAsterisk: true, supportsCurrency: true },
+        { code: '4', description: 'No commas, no sign, zero as blanks', category: 'Standard', supportsAsterisk: true, supportsCurrency: true },
 
         // Credit codes (A-D) - show CR for negative
-        { code: 'A', description: 'Commas, decimals, CR for negative, zero as .00/0', category: 'Credit', supportsAsterisk: true, supportsCurrency: true },
-        { code: 'B', description: 'Commas, decimals, CR for negative, zero as blanks', category: 'Credit', supportsAsterisk: true, supportsCurrency: true },
-        { code: 'C', description: 'Commas, no decimals, CR for negative, zero as .00/0', category: 'Credit', supportsAsterisk: true, supportsCurrency: true },
-        { code: 'D', description: 'Commas, no decimals, CR for negative, zero as blanks', category: 'Credit', supportsAsterisk: true, supportsCurrency: true },
+        { code: 'A', description: 'Commas, CR for negative, zero as .00/0', category: 'Credit', supportsAsterisk: true, supportsCurrency: true },
+        { code: 'B', description: 'Commas, CR for negative, zero as blanks', category: 'Credit', supportsAsterisk: true, supportsCurrency: true },
+        { code: 'C', description: 'No commas, CR for negative, zero as .00/0', category: 'Credit', supportsAsterisk: true, supportsCurrency: true },
+        { code: 'D', description: 'No commas, CR for negative, zero as blanks', category: 'Credit', supportsAsterisk: true, supportsCurrency: true },
 
         // Minus codes (J-Q) - show - for negative
-        { code: 'J', description: 'Commas, decimals, minus for negative, zero as .00/0', category: 'Minus', supportsAsterisk: true, supportsCurrency: true },
-        { code: 'K', description: 'Commas, decimals, minus for negative, zero as blanks', category: 'Minus', supportsAsterisk: true, supportsCurrency: true },
-        { code: 'L', description: 'Commas, no decimals, minus for negative, zero as .00/0', category: 'Minus', supportsAsterisk: true, supportsCurrency: true },
-        { code: 'M', description: 'Commas, no decimals, minus for negative, zero as blanks', category: 'Minus', supportsAsterisk: true, supportsCurrency: true },
-        { code: 'N', description: 'Commas, decimals, leading minus, zero as .00/0', category: 'Minus', supportsAsterisk: true, supportsCurrency: true },
-        { code: 'O', description: 'Commas, decimals, leading minus, zero as blanks', category: 'Minus', supportsAsterisk: true, supportsCurrency: true },
-        { code: 'P', description: 'Commas, no decimals, leading minus, zero as .00/0', category: 'Minus', supportsAsterisk: true, supportsCurrency: true },
-        { code: 'Q', description: 'Commas, no decimals, leading minus, zero as blanks', category: 'Minus', supportsAsterisk: true, supportsCurrency: true },
+        { code: 'J', description: 'Commas, minus for negative, zero as .00/0', category: 'Minus', supportsAsterisk: true, supportsCurrency: true },
+        { code: 'K', description: 'Commas, minus for negative, zero as blanks', category: 'Minus', supportsAsterisk: true, supportsCurrency: true },
+        { code: 'L', description: 'No commas, minus for negative, zero as .00/0', category: 'Minus', supportsAsterisk: true, supportsCurrency: true },
+        { code: 'M', description: 'No commas, minus for negative, zero as blanks', category: 'Minus', supportsAsterisk: true, supportsCurrency: true },
+        { code: 'N', description: 'Commas, leading minus for negative, zero as .00/0', category: 'Minus', supportsAsterisk: true, supportsCurrency: true },
+        { code: 'O', description: 'Commas, leading minus for negative, zero as blanks', category: 'Minus', supportsAsterisk: true, supportsCurrency: true },
+        { code: 'P', description: 'No commas, leading minus for negative, zero as .00/0', category: 'Minus', supportsAsterisk: true, supportsCurrency: true },
+        { code: 'Q', description: 'No commas, leading minus for negative, zero as blanks', category: 'Minus', supportsAsterisk: true, supportsCurrency: true },
 
         // Special codes
         { code: 'W', description: 'Date format with slashes, suppresses leftmost zeros', category: 'Special', supportsAsterisk: false, supportsCurrency: false },
