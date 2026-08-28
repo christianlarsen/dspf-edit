@@ -109,22 +109,26 @@ const FIELD_USAGE_PLACEHOLDER: Record<'alpha' | 'numeric', Record<string, string
  * (O=output, B=both, I=input), matching the classic screen-design-aid convention.
  * Falls back to the field name if the usage code isn't one of O/B/I.
  * @param name - Field name (used as a fallback label, and to detect a system keyword field)
- * @param type - DDS data type code; blank (DDS's own default when no decimals are given) or 'A'
- * is alphanumeric, anything else (Y, S, L, T, Z, ...) is treated as numeric
+ * @param type - DDS data type code; 'A' is always alphanumeric, anything else non-blank (Y, S, L,
+ * T, Z, ...) is always numeric. A blank Type is DDS's own default and is ambiguous on its own —
+ * it's alphanumeric only when the decimal-positions column is also blank; a blank Type with
+ * decimal positions given (even 0) is a plain zoned-numeric field, so `decimals` disambiguates it.
  * @param usage - DDS usage code (O, B, I, H, ...)
  * @param length - Field length, i.e. how many placeholder characters to repeat
  * @param editWordMask - The field's EDTWRD() mask text, if any (e.g. '   .  ') — when present, its
  * blanks are filled with the placeholder character instead of just repeating it for `length`, so
  * an edited numeric field previews with its decimal point (or other insert characters) in place.
+ * @param decimals - The field's decimal positions as parsed from the source, `undefined` when that
+ * column was left blank — only consulted when `type` is blank (see above)
  */
-function getFieldPlaceholderText(name: string, type: string | undefined, usage: string | undefined, length: number, editWordMask?: string | null): string {
+function getFieldPlaceholderText(name: string, type: string | undefined, usage: string | undefined, length: number, editWordMask?: string | null, decimals?: number): string {
     const systemPlaceholder = SYSTEM_FIELD_PLACEHOLDER[name.trim().toUpperCase()];
     if (systemPlaceholder) {
         return systemPlaceholder;
     };
 
     const trimmedType = (type || '').trim();
-    const isNumeric = trimmedType !== '' && trimmedType !== 'A';
+    const isNumeric = trimmedType !== '' ? trimmedType !== 'A' : decimals !== undefined;
     // A blank usage column means Output — DDS's own default (see generateNewFieldLine, which
     // leaves it blank for that same reason) — not "no usage code".
     const usageCode = (usage || '').trim().toUpperCase() || 'O';
@@ -156,23 +160,32 @@ function getEditWordMask(attributes: AttributeWithIndicators[] | undefined): str
 
 /**
  * The standard DDS numeric edit codes: whether each inserts thousands commas, and what (if any)
- * sign indicator it reserves trailing room for. Every edit code always inserts a decimal point
- * when the field has decimals and suppresses leading zeros — irrelevant to a generic placeholder
- * preview (there's no real value to format), which only needs the extra display width/characters.
+ * sign indicator it reserves room for. Every edit code always inserts a decimal point when the
+ * field has decimals and suppresses leading zeros — irrelevant to a generic placeholder preview
+ * (there's no real value to format), which only needs the extra display width/characters.
+ * The DDS reference's own edit-code summary table (Table 6) shows N/O/P/Q as identical to
+ * J/K/L/M in every column, including sign — but that table doesn't capture sign *position*, and
+ * real STRSDA shows they differ there: J/K/L/M reserve the minus sign trailing (after the last
+ * digit), N/O/P/Q reserve it leading (before the first digit) — confirmed against a real STRSDA
+ * screenshot, not just the manual (see the mirror-STRSDA project guidance).
  */
-const EDIT_CODE_INFO: Record<string, { comma: boolean; sign: '' | '-' | 'CR' }> = {
+const EDIT_CODE_INFO: Record<string, { comma: boolean; sign: '' | '-' | 'CR'; signLeading?: boolean }> = {
     '1': { comma: true, sign: '' },
-    '2': { comma: false, sign: '' },
-    '3': { comma: true, sign: '' },
+    '2': { comma: true, sign: '' },
+    '3': { comma: false, sign: '' },
     '4': { comma: false, sign: '' },
     A: { comma: true, sign: 'CR' },
-    B: { comma: false, sign: 'CR' },
-    C: { comma: true, sign: 'CR' },
+    B: { comma: true, sign: 'CR' },
+    C: { comma: false, sign: 'CR' },
     D: { comma: false, sign: 'CR' },
     J: { comma: true, sign: '-' },
-    K: { comma: false, sign: '-' },
-    L: { comma: true, sign: '-' },
-    M: { comma: false, sign: '-' }
+    K: { comma: true, sign: '-' },
+    L: { comma: false, sign: '-' },
+    M: { comma: false, sign: '-' },
+    N: { comma: true, sign: '-', signLeading: true },
+    O: { comma: true, sign: '-', signLeading: true },
+    P: { comma: false, sign: '-', signLeading: true },
+    Q: { comma: false, sign: '-', signLeading: true }
 };
 
 /**
@@ -186,7 +199,7 @@ function getEditCode(attributes: AttributeWithIndicators[] | undefined): string 
         return null;
     };
 
-    return attr.value.match(/^EDTCDE\(\s*([1-4A-DJ-M])/i)?.[1]?.toUpperCase() ?? null;
+    return attr.value.match(/^EDTCDE\(\s*([1-4A-DJ-Q])/i)?.[1]?.toUpperCase() ?? null;
 };
 
 /**
@@ -195,7 +208,7 @@ function getEditCode(attributes: AttributeWithIndicators[] | undefined): string 
  * width (commas, decimal point, sign) SDA/RDi reserve when previewing an edited numeric field.
  * @param length - The field's digit length
  * @param decimals - The field's decimal positions
- * @param code - The EDTCDE code (1-4, A-D, J-M)
+ * @param code - The EDTCDE code (1-4, A-D, J-Q)
  */
 function getEditCodeMask(length: number, decimals: number, code: string): string | null {
     const info = EDIT_CODE_INFO[code];
@@ -215,7 +228,7 @@ function getEditCodeMask(length: number, decimals: number, code: string): string
     if (decimals > 0) {
         mask += '.' + ' '.repeat(decimals);
     };
-    mask += info.sign;
+    mask = info.signLeading ? info.sign + mask : mask + info.sign;
 
     return mask;
 };
@@ -1177,11 +1190,12 @@ export class RecordPreviewPanel {
                 // per insert character (its decimal point, thousands commas, sign...), which
                 // text.length already reflects.
                 const effectiveLength = resolvedRef?.length ?? field.length;
-                const effectiveDecimals = resolvedRef?.decimals ?? field.decimals ?? 0;
+                const rawDecimals = resolvedRef?.decimals ?? field.decimals;
+                const effectiveDecimals = rawDecimals ?? 0;
                 const editingMask = getEditingMask(activeAttrs, effectiveLength, effectiveDecimals);
                 const text = isReferenced
                     ? getFieldPlaceholderText(field.name, field.type, field.usage, 1)
-                    : getFieldPlaceholderText(field.name, resolvedRef?.type ?? field.type, field.usage, effectiveLength, editingMask);
+                    : getFieldPlaceholderText(field.name, resolvedRef?.type ?? field.type, field.usage, effectiveLength, editingMask, rawDecimals);
                 const color = isReferenced || (field.referenced && activeAttrs.length === 0)
                     ? getReferencedFieldColor()
                     : getDisplayColor(activeAttrs, hasDisplayAttribute(activeAttrs, 'HI'));

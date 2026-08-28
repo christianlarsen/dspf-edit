@@ -145,13 +145,11 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.1.0** - 2026-08-26
-- Added: Preview "⋮ Actions" menu now offers Copy and Delete, alongside Add Color/Add Attribute — applied to every selected element at once for a multi-selection.
-- Added: Preview toolbar buttons regrouped into one row that moves together when something's selected.
-- Fixed: `EDTMSK` could be applied to an output-only field.
-- Fixed: `*DS3`/`*DS4` display-format conditioning on a keyword line was written one column too early, and could condition the primary display size explicitly — both invalid DDS.
-- Fixed: Add Field/Add Constant (tree) validated position against the whole file's size instead of a window record's own content area.
-- Fixed: Field/record names starting with `@`, `#`, or `$` were rejected.
+**1.1.1** - 2026-08-28
+- Fixed: Preview `EDTCDE` thousands-separator table had commas alternating per individual code instead of per pair — `EDTCDE(K)` (and 2/3/B/C/L/P) rendered with no thousands separator at all.
+- Fixed: Preview `EDTCDE(N/O/P/Q)` weren't recognized at all; now supported, with the minus sign correctly reserved leading rather than trailing like J/K/L/M.
+- Fixed: a numeric field with a blank Type column (the default way to define a plain zoned-numeric field) was misdetected as alphanumeric in the preview and in Add Editing Keywords.
+- Fixed: the `EDTCDE` picker's descriptions mislabeled the comma/no-comma distinction as decimals/no-decimals.
 
 ---
 
