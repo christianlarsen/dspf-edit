@@ -46,6 +46,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
   - Stays in sync with the schema tree selection in both directions.
   - "Focus" maximizes the preview so it fills the editing area, hiding the DDS source editor beside it; "Show code" brings the source back.
   - Select a field or constant (or several, with Ctrl/Cmd+click) to get a "⋮ Actions" menu: add color/attribute, copy, or delete — applied to every selected element at once for a multi-selection (no per-element indicator prompts in that case).
+  - The decimal point and thousands-separator convention used to preview `EDTCDE()`-edited numeric fields — US or European — is configurable from the "⚙ Configuration" panel, either picked manually or fetched with one click from the connected IBM i's `QDECFMT` system value.
 
 ### 🧭 Schema navigation
   - Two levels are shown: **File** and **Records**.
@@ -145,11 +146,9 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.1.1** - 2026-08-28
-- Fixed: Preview `EDTCDE` thousands-separator table had commas alternating per individual code instead of per pair — `EDTCDE(K)` (and 2/3/B/C/L/P) rendered with no thousands separator at all.
-- Fixed: Preview `EDTCDE(N/O/P/Q)` weren't recognized at all; now supported, with the minus sign correctly reserved leading rather than trailing like J/K/L/M.
-- Fixed: a numeric field with a blank Type column (the default way to define a plain zoned-numeric field) was misdetected as alphanumeric in the preview and in Add Editing Keywords.
-- Fixed: the `EDTCDE` picker's descriptions mislabeled the comma/no-comma distinction as decimals/no-decimals.
+**1.2.0** - 2026-08-31
+- Added: Preview's decimal point/thousands-separator convention for `EDTCDE()`-edited numeric fields (US/European) is now configurable from the "⚙ Configuration" panel, with a one-click "Fetch from IBM i" (reads the connected system's `QDECFMT` value) and a "Reset to Default" button.
+- Fixed: an unedited numeric field (no `EDTCDE`/`EDTWRD`) didn't reserve the extra trailing position IBM i adds for the sign on an input-capable signed-numeric field — e.g. a 1,0 field showed as a single digit instead of digit + `-`, confirmed against real STRSDA.
 
 ---
 

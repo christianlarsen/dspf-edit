@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import { FieldsPerRecord, DdsSize, DdsAttribute, AttributeWithIndicators, DdsIndicator, fieldsPerRecords, attributesFileLevel, records, getDefaultSize, getAvailableDisplayFormats, getSizeForFormat, SYSTEM_FIELD_PLACEHOLDER, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, updateTreeProvider, applyWorkspaceEdit, applyDisplayFormatSplitEdit } from '../dspf-edit.utils/dspf-edit.helper';
 import { getBackgroundColor, getDdsColorMap, getReferencedFieldColor } from '../dspf-edit.utils/dspf-edit.preview-colors';
+import { getDecimalSeparators } from '../dspf-edit.utils/dspf-edit.decimal-format';
 import { DdsTreeProvider, DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { ExtensionState } from '../dspf-edit.states/state';
 import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
@@ -105,6 +106,19 @@ const FIELD_USAGE_PLACEHOLDER: Record<'alpha' | 'numeric', Record<string, string
 };
 
 /**
+ * Whether a field is numeric, per DDS's own Type/decimal-positions default rules: 'A' is always
+ * alphanumeric, anything else non-blank (Y, S, L, T, Z, ...) is always numeric. A blank Type is
+ * ambiguous on its own — it's alphanumeric only when the decimal-positions column is also blank; a
+ * blank Type with decimal positions given (even 0) is a plain zoned-numeric field.
+ * @param type - DDS data type code (position 35), possibly blank
+ * @param rawDecimals - The field's decimal positions as parsed, `undefined` when left blank
+ */
+function isNumericFieldType(type: string | undefined, rawDecimals: number | undefined): boolean {
+    const trimmedType = (type || '').trim();
+    return trimmedType !== '' ? trimmedType !== 'A' : rawDecimals !== undefined;
+};
+
+/**
  * Builds the placeholder text shown across a field's width, based on its data type and usage
  * (O=output, B=both, I=input), matching the classic screen-design-aid convention.
  * Falls back to the field name if the usage code isn't one of O/B/I.
@@ -127,8 +141,7 @@ function getFieldPlaceholderText(name: string, type: string | undefined, usage: 
         return systemPlaceholder;
     };
 
-    const trimmedType = (type || '').trim();
-    const isNumeric = trimmedType !== '' ? trimmedType !== 'A' : decimals !== undefined;
+    const isNumeric = isNumericFieldType(type, decimals);
     // A blank usage column means Output — DDS's own default (see generateNewFieldLine, which
     // leaves it blank for that same reason) — not "no usage code".
     const usageCode = (usage || '').trim().toUpperCase() || 'O';
@@ -159,10 +172,13 @@ function getEditWordMask(attributes: AttributeWithIndicators[] | undefined): str
 };
 
 /**
- * The standard DDS numeric edit codes: whether each inserts thousands commas, and what (if any)
- * sign indicator it reserves room for. Every edit code always inserts a decimal point when the
- * field has decimals and suppresses leading zeros — irrelevant to a generic placeholder preview
- * (there's no real value to format), which only needs the extra display width/characters.
+ * The standard DDS numeric edit codes: whether each inserts a thousands separator, and what (if
+ * any) sign indicator it reserves room for. The separator/decimal-point characters themselves come
+ * from the user's configured decimal format (see dspf-edit.utils/dspf-edit.decimal-format.ts,
+ * driven by the IBM i's QDECFMT system value), not hardcoded here. Every edit code always inserts a
+ * decimal point when the field has decimals and suppresses leading zeros — irrelevant to a generic
+ * placeholder preview (there's no real value to format), which only needs the extra display
+ * width/characters.
  * The DDS reference's own edit-code summary table (Table 6) shows N/O/P/Q as identical to
  * J/K/L/M in every column, including sign — but that table doesn't capture sign *position*, and
  * real STRSDA shows they differ there: J/K/L/M reserve the minus sign trailing (after the last
@@ -216,17 +232,18 @@ function getEditCodeMask(length: number, decimals: number, code: string): string
         return null;
     };
 
+    const { thousands, decimal } = getDecimalSeparators();
     const intDigits = Math.max(length - decimals, 1);
     let mask = '';
     for (let i = 0; i < intDigits; i++) {
         const remaining = intDigits - i;
         if (info.comma && i > 0 && remaining % 3 === 0) {
-            mask += ',';
+            mask += thousands;
         };
         mask += ' ';
     };
     if (decimals > 0) {
-        mask += '.' + ' '.repeat(decimals);
+        mask += decimal + ' '.repeat(decimals);
     };
     mask = info.signLeading ? info.sign + mask : mask + info.sign;
 
@@ -234,21 +251,71 @@ function getEditCodeMask(length: number, decimals: number, code: string): string
 };
 
 /**
- * Resolves the EDTWRD/EDTCDE mask that determines an edited numeric field's placeholder text and
- * extra display width — EDTWRD (an explicit mask) takes precedence since DDS doesn't allow both on
- * the same field.
+ * Determines the extra width IBM i itself reserves for an *unedited* numeric field (no EDTCDE/
+ * EDTWRD) — confirmed against real STRSDA and the DDS reference's own "Default (blank)" and
+ * per-keyboard-shift display-length rules:
+ * - Blank Type with decimal positions given (even 0) defaults to signed numeric (S) when no editing
+ *   keyword is present (an editing keyword would instead default it to numeric-only (Y), but then
+ *   `editingMask` wouldn't be null and this function wouldn't run).
+ * - An input-capable (I/B) signed numeric (S) field always reserves one extra trailing position for
+ *   a minus sign, regardless of decimal positions — and never shows a decimal point on screen (the
+ *   manual is explicit that IBM i performs no decimal alignment for S fields).
+ * - An input-capable numeric-only (Y) or numeric-shift (N) field instead reserves one extra position
+ *   for the decimal point, but only when it actually has decimal positions — no sign position at all.
+ * - An output-only field never gets an extra position, whatever its shift.
+ * @param type - DDS data type code (position 35), possibly blank
+ * @param usage - DDS usage code (O, B, I, H, ...)
+ * @param length - The field's digit length
+ * @param rawDecimals - The field's decimal positions as parsed, `undefined` when left blank
+ */
+function getUneditedNumericMask(type: string | undefined, usage: string | undefined, length: number, rawDecimals: number | undefined): string | null {
+    if (!isNumericFieldType(type, rawDecimals)) {
+        return null;
+    };
+
+    const usageCode = (usage || '').trim().toUpperCase() || 'O';
+    if (usageCode !== 'I' && usageCode !== 'B') {
+        return null;
+    };
+
+    const shift = (type || '').trim().toUpperCase() || 'S';
+    if (shift === 'S') {
+        return ' '.repeat(Math.max(length, 1)) + '-';
+    };
+
+    const decimals = rawDecimals ?? 0;
+    if ((shift === 'Y' || shift === 'N') && decimals > 0) {
+        const intDigits = Math.max(length - decimals, 1);
+        return ' '.repeat(intDigits) + getDecimalSeparators().decimal + ' '.repeat(decimals);
+    };
+
+    return null;
+};
+
+/**
+ * Resolves the mask that determines a numeric field's placeholder text and extra display width
+ * beyond its raw DDS length — an explicit EDTWRD (takes precedence, since DDS doesn't allow both on
+ * the same field), a standard EDTCDE code, or — when neither is present — the extra sign/decimal-
+ * point position IBM i itself reserves for an unedited numeric field (see getUneditedNumericMask).
  * @param attributes - The element's DDS attributes
+ * @param type - DDS data type code (position 35), possibly blank
+ * @param usage - DDS usage code (O, B, I, H, ...)
  * @param length - The field's digit length (post REFFLD resolution, if applicable)
  * @param decimals - The field's decimal positions (post REFFLD resolution, if applicable)
+ * @param rawDecimals - The field's decimal positions as parsed, `undefined` when left blank
  */
-function getEditingMask(attributes: AttributeWithIndicators[] | undefined, length: number, decimals: number): string | null {
+function getEditingMask(attributes: AttributeWithIndicators[] | undefined, type: string | undefined, usage: string | undefined, length: number, decimals: number, rawDecimals: number | undefined): string | null {
     const wordMask = getEditWordMask(attributes);
     if (wordMask) {
         return wordMask;
     };
 
     const code = getEditCode(attributes);
-    return code ? getEditCodeMask(length, decimals, code) : null;
+    if (code) {
+        return getEditCodeMask(length, decimals, code);
+    };
+
+    return getUneditedNumericMask(type, usage, length, rawDecimals);
 };
 
 /**
@@ -1192,10 +1259,11 @@ export class RecordPreviewPanel {
                 const effectiveLength = resolvedRef?.length ?? field.length;
                 const rawDecimals = resolvedRef?.decimals ?? field.decimals;
                 const effectiveDecimals = rawDecimals ?? 0;
-                const editingMask = getEditingMask(activeAttrs, effectiveLength, effectiveDecimals);
+                const effectiveType = resolvedRef?.type ?? field.type;
+                const editingMask = getEditingMask(activeAttrs, effectiveType, field.usage, effectiveLength, effectiveDecimals, rawDecimals);
                 const text = isReferenced
                     ? getFieldPlaceholderText(field.name, field.type, field.usage, 1)
-                    : getFieldPlaceholderText(field.name, resolvedRef?.type ?? field.type, field.usage, effectiveLength, editingMask, rawDecimals);
+                    : getFieldPlaceholderText(field.name, effectiveType, field.usage, effectiveLength, editingMask, rawDecimals);
                 const color = isReferenced || (field.referenced && activeAttrs.length === 0)
                     ? getReferencedFieldColor()
                     : getDisplayColor(activeAttrs, hasDisplayAttribute(activeAttrs, 'HI'));
@@ -1203,8 +1271,10 @@ export class RecordPreviewPanel {
                 // 1:1 back to its raw DDS length: not a referenced field (its length lives in the
                 // external database field, not this source), not a system keyword like DATE/USER
                 // (fixed width, no real length column), not carrying an editing mask (EDTCDE/EDTWRD
-                // widen the display for the decimal point/commas/sign beyond the raw length), and
-                // not PSHBTNFLD (DDS requires it to be exactly length 2 — resizing it would produce
+                // widen the display for the decimal point/commas/sign beyond the raw length, and an
+                // unedited signed-numeric/decimal-point-bearing field reserves its own extra
+                // sign/decimal position the same way — see getUneditedNumericMask), and not
+                // PSHBTNFLD (DDS requires it to be exactly length 2 — resizing it would produce
                 // uncompilable DDS).
                 const isSystemField = Boolean(SYSTEM_FIELD_PLACEHOLDER[field.name.trim().toUpperCase()]);
                 const isPushButtonField = activeAttrs.some(attr => /^PSHBTNFLD\b/i.test(attr.value));

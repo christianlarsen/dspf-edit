@@ -6,13 +6,18 @@
 
 import * as vscode from 'vscode';
 import { PREVIEW_COLOR_SETTINGS, readColorSetting, resetPreviewColors, setPreviewColor } from '../dspf-edit.utils/dspf-edit.preview-colors';
+import { DECIMAL_FORMAT_OPTIONS, DecimalFormat, getDecimalFormat, resetDecimalFormat, setDecimalFormat } from '../dspf-edit.utils/dspf-edit.decimal-format';
+import { resolveDecimalFormatFromSystem } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 import { RecordPreviewPanel } from './dspf-edit.record-preview-panel';
 
 /**
- * Small webview panel to pick the record preview's colors visually — a native OS/browser color
- * picker per swatch (`<input type="color">`) instead of typing hex codes by hand. Reads and
- * writes straight to the extension's own stored preview colors (see
- * dspf-edit.utils/dspf-edit.preview-colors.ts), so there's no separate state of its own: closing
+ * The extension's "⚙ Configuration" webview panel. Lets the user pick the record preview's colors
+ * visually — a native OS/browser color picker per swatch (`<input type="color">`) instead of
+ * typing hex codes by hand — and choose the decimal/thousands-separator convention (US/European)
+ * used when previewing EDTCDE()-edited numeric fields, either manually or fetched from the
+ * connected IBM i's QDECFMT system value. Reads and writes straight to the extension's own
+ * stored settings (see dspf-edit.utils/dspf-edit.preview-colors.ts and
+ * dspf-edit.utils/dspf-edit.decimal-format.ts), so there's no separate state of its own: closing
  * this panel loses nothing, since every change was already saved the moment it was made — and it
  * pushes each change straight to an open record preview panel, if any.
  */
@@ -55,6 +60,19 @@ export class PreviewColorsPanel {
         this.panel.webview.html = this.getHtml();
     };
 
+    /**
+     * Tells the already-open panel's own script which decimal format radio should be checked.
+     * Deliberately not done via `refresh()` (reassigning `webview.html`): VS Code skips the reload
+     * when the new html string is byte-identical to what's already loaded — which happens here
+     * whenever the resulting format matches whatever was baked into the panel's last real reload
+     * (e.g. picking a format by hand, with no intervening reload, then resetting back to the
+     * default already shown at panel-open time) — leaving the manually-picked radio visibly
+     * checked despite the setting having actually changed underneath it.
+     */
+    private updateDecimalFormatRadio(): void {
+        this.panel.webview.postMessage({ type: 'updateDecimalFormat', value: getDecimalFormat() });
+    };
+
     private async onDidReceiveMessage(message: any): Promise<void> {
         switch (message?.type) {
             case 'setColor':
@@ -71,6 +89,32 @@ export class PreviewColorsPanel {
                 this.refresh();
                 RecordPreviewPanel.refreshTheme();
                 break;
+            case 'setDecimalFormat':
+                await setDecimalFormat(message.value as DecimalFormat);
+                RecordPreviewPanel.refreshTheme();
+                break;
+            case 'resetDecimalFormat': {
+                const changed = await resetDecimalFormat();
+                this.updateDecimalFormatRadio();
+                RecordPreviewPanel.refreshTheme();
+                vscode.window.showInformationMessage(
+                    changed
+                        ? 'DSPF Edit: decimal format reset to default (US).'
+                        : 'DSPF Edit: decimal format was already at its default (US).'
+                );
+                break;
+            };
+            case 'fetchDecimalFormatFromIBMi':
+                try {
+                    const format = await resolveDecimalFormatFromSystem();
+                    await setDecimalFormat(format);
+                    this.updateDecimalFormatRadio();
+                    RecordPreviewPanel.refreshTheme();
+                    vscode.window.showInformationMessage(`DSPF Edit: decimal format set to '${format}' from the connected IBM i (QDECFMT).`);
+                } catch (error) {
+                    vscode.window.showErrorMessage(error instanceof Error ? error.message : 'Could not read QDECFMT from the connected IBM i.');
+                };
+                break;
         };
     };
 
@@ -85,6 +129,15 @@ export class PreviewColorsPanel {
         <button class="reset" data-key="${setting.key}" title="Reset to default">↺</button>
     </div>`;
         }).join('');
+
+        const currentDecimalFormat = getDecimalFormat();
+        const decimalFormatRows = DECIMAL_FORMAT_OPTIONS.map(opt => `
+    <div class="row">
+        <label class="radio-label">
+            <input type="radio" name="decimalFormat" value="${opt.value}" ${opt.value === currentDecimalFormat ? 'checked' : ''}>
+            ${opt.label} — <span class="hex">${opt.example}</span>
+        </label>
+    </div>`).join('');
 
         return `<!DOCTYPE html>
 <html lang="en">
@@ -143,7 +196,7 @@ export class PreviewColorsPanel {
     button.reset:hover {
         background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
     }
-    #resetAll {
+    .btn-secondary {
         margin-top: 16px;
         background: var(--vscode-button-secondaryBackground, transparent);
         color: var(--vscode-button-secondaryForeground, inherit);
@@ -153,8 +206,21 @@ export class PreviewColorsPanel {
         cursor: pointer;
         font-size: 12px;
     }
-    #resetAll:hover {
+    .btn-secondary:hover {
         background: var(--vscode-button-secondaryHoverBackground, rgba(128, 128, 128, 0.2));
+    }
+    .radio-label {
+        flex: 1;
+        font-size: 13px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    hr.section {
+        border: none;
+        border-top: 1px solid var(--vscode-input-border, #555555);
+        margin: 20px 0;
     }
 </style>
 </head>
@@ -162,7 +228,17 @@ export class PreviewColorsPanel {
 <h2>Preview Colors</h2>
 <p class="hint">Changes save immediately and apply to any open preview panel.</p>
 ${rows}
-<button id="resetAll">Reset All to Default</button>
+<button id="resetAll" class="btn-secondary">Reset All to Default</button>
+
+<hr class="section">
+
+<h2>Decimal Format</h2>
+<p class="hint">Decimal point and thousands separator used when previewing EDTCDE()-edited numeric fields.</p>
+${decimalFormatRows}
+<div class="row" style="gap: 8px; margin-top: 8px;">
+    <button id="fetchDecimalFormat" class="btn-secondary" style="margin-top: 0;">Fetch from IBM i</button>
+    <button id="resetDecimalFormat" class="btn-secondary" style="margin-top: 0;">Reset to Default</button>
+</div>
 <script>
     const vscode = acquireVsCodeApi();
 
@@ -187,6 +263,31 @@ ${rows}
 
     document.getElementById('resetAll').addEventListener('click', () => {
         vscode.postMessage({ type: 'resetAll' });
+    });
+
+    document.querySelectorAll('input[name="decimalFormat"]').forEach(input => {
+        input.addEventListener('change', () => {
+            vscode.postMessage({ type: 'setDecimalFormat', value: input.value });
+        });
+    });
+
+    document.getElementById('fetchDecimalFormat').addEventListener('click', () => {
+        vscode.postMessage({ type: 'fetchDecimalFormatFromIBMi' });
+    });
+
+    document.getElementById('resetDecimalFormat').addEventListener('click', () => {
+        vscode.postMessage({ type: 'resetDecimalFormat' });
+    });
+
+    // Reset/Fetch don't reload the panel's html (see updateDecimalFormatRadio's comment on the
+    // extension side for why) — they instead send this message so the already-live radios get
+    // updated directly, without depending on a reload happening at all.
+    window.addEventListener('message', event => {
+        if (event.data?.type === 'updateDecimalFormat') {
+            document.querySelectorAll('input[name="decimalFormat"]').forEach(input => {
+                input.checked = input.value === event.data.value;
+            });
+        };
     });
 </script>
 </body>

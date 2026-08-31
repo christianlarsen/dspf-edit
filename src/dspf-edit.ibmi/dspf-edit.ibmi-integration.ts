@@ -6,6 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsAttribute, DdsElement, DdsField, attributesFileLevel } from '../dspf-edit.model/dspf-edit.model';
+import { DecimalFormat } from '../dspf-edit.utils/dspf-edit.decimal-format';
 
 /**
  * Isolated from the rest of the extension on purpose: this is the only file that knows about the
@@ -195,4 +196,39 @@ export async function resolveReferencedField(documentUri: string, field: DdsFiel
     const resolved = mapSqlTypeToDds(String(row.DATA_TYPE), Number(row.LENGTH), Number(row.NUMERIC_SCALE ?? 0));
     setResolvedRef(documentUri, field.recordname, field.name, resolved);
     return resolved;
+};
+
+/**
+ * Maps the IBM i QDECFMT system value's raw character to the extension's DecimalFormat: '0' (the
+ * default) uses a period decimal point and comma thousands separator; '1' and 'J' both use a comma
+ * decimal point and period thousands separator — per the DDS reference's own Table 6 (footnote 1),
+ * 'J' only differs from '1' in its zero-suppression style for a zero-balance value, which this
+ * placeholder-based preview doesn't simulate, so both map to 'European' here.
+ */
+const QDECFMT_TO_DECIMAL_FORMAT: Record<string, DecimalFormat> = {
+    '0': 'US',
+    '1': 'European',
+    J: 'European'
+};
+
+/**
+ * Reads the connected IBM i's QDECFMT system value and maps it to the extension's decimal format.
+ * Throws (no connection, unrecognized value) rather than returning a sentinel — callers show it to
+ * the user.
+ */
+export async function resolveDecimalFormatFromSystem(): Promise<DecimalFormat> {
+    const connection = getIBMiConnection();
+    if (!connection) {
+        throw new Error('No active IBM i connection. Connect via the Code for i extension first.');
+    };
+
+    const rows = await connection.runSQL(
+        `SELECT CURRENT_CHARACTER_VALUE FROM QSYS2.SYSTEM_VALUE_INFO WHERE SYSTEM_VALUE_NAME = 'QDECFMT'`
+    );
+    const raw = String(rows[0]?.CURRENT_CHARACTER_VALUE ?? '').trim().toUpperCase();
+    const mapped = QDECFMT_TO_DECIMAL_FORMAT[raw];
+    if (!mapped) {
+        throw new Error(`Unrecognized QDECFMT value '${raw}' on the connected IBM i.`);
+    };
+    return mapped;
 };
