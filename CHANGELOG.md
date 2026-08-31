@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.2.0] - 2026-08-31
+### Added
+- Preview: the decimal point and thousands-separator convention used for `EDTCDE()`-edited numeric fields is now configurable — US (`1,000.00`, the previous fixed behavior) or European (`1.000,00`) — from a new "Decimal Format" section in the "⚙ Configuration" panel. A "Fetch from IBM i" button reads it straight from the connected IBM i's `QDECFMT` system value (both `1` and `J` map to European); a "Reset to Default" button restores US. Saved in the extension's own storage, applying immediately to any open preview panel.
+### Fixed
+- Preview: a numeric field with no `EDTCDE`/`EDTWRD` (blank Type with decimal positions given, or explicit type `S`) didn't reserve the extra trailing position IBM i itself adds for the sign on an input-capable signed-numeric field — e.g. a 1,0 field showed as a single digit instead of digit + `-`, confirmed against real STRSDA. Input-capable `Y`/`N` fields with decimal positions now correctly get an extra position for the decimal point instead (never a sign); output-only fields are unaffected, matching the DDS reference.
+
 ## [1.1.1] - 2026-08-28
 ### Fixed
 - Preview: the `EDTCDE` thousands-separator table had commas alternating per individual code instead of per pair (1&2, A&B, J&K, N&O should show separators; 3&4, C&D, L&M, P&Q should not) — `EDTCDE(K)` (and 2/3/B/C/L/P) rendered with no thousands separator at all. (Issue #77)
