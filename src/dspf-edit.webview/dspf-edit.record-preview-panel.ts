@@ -2160,6 +2160,14 @@ export class RecordPreviewPanel {
      * arms `pendingCopySource` and puts the webview into its click-to-place mode (see
      * `copyElementAt`) — the same "click a spot in the preview" gesture the "+ Field"/"+ Constant"
      * buttons already use, just for a copy of an existing element instead of a brand-new one.
+     * Rename (fields)/Edit Text (constants), Indicators, and the field-only Validity Checks/
+     * Editing Keywords/Error Messages are also single-selection only — like Copy, they just
+     * delegate straight to the tree's own `dspf-edit.rename-field`/`dspf-edit.edit-constant`/
+     * `dspf-edit.add-indicators`/`dspf-edit.add-validity-check`/`dspf-edit.add-editing-keywords`/
+     * `dspf-edit.add-error-message` commands (same prompt/validation/confirmation as right-clicking
+     * the element in the tree), and indicators specifically aren't a value that makes sense shared
+     * across a group of differently-conditioned elements (same reason the multi-element branch
+     * below has no indicator prompting either).
      * @param lineIndices - Zero-based source line indices of the selected fields/constants
      */
     private async showElementMenu(lineIndices: number[]): Promise<void> {
@@ -2173,12 +2181,27 @@ export class RecordPreviewPanel {
 
         const options: (vscode.QuickPickItem & { command: string })[] = [
             { label: '$(paintcan) Add Color...', command: 'add-color' },
-            { label: '$(symbol-color) Add Attribute...', command: 'add-attribute' },
-            { label: '$(trash) Delete...', command: 'delete' }
+            { label: '$(symbol-color) Add Attribute...', command: 'add-attribute' }
         ];
         if (!isMulti) {
-            options.splice(2, 0, { label: '$(copy) Copy...', command: 'copy' });
+            const kind = nodes[0].ddsElement.kind;
+            if (kind === 'field') {
+                options.push(
+                    { label: '$(check) Validity Checks...', command: 'add-validity-check' },
+                    { label: '$(symbol-numeric) Editing Keywords...', command: 'add-editing-keywords' },
+                    { label: '$(warning) Error Messages...', command: 'add-error-message' }
+                );
+            };
+            const editOption = kind === 'field'
+                ? { label: '$(edit) Rename...', command: 'rename-field' }
+                : { label: '$(edit) Edit Text...', command: 'edit-constant' };
+            options.push(
+                editOption,
+                { label: '$(symbol-boolean) Indicators...', command: 'add-indicators' },
+                { label: '$(copy) Copy...', command: 'copy' }
+            );
         };
+        options.push({ label: '$(trash) Delete...', command: 'delete' });
 
         const singleElementName = (nodes[0].ddsElement as { name: string }).name;
         const selection = await vscode.window.showQuickPick(options, {
