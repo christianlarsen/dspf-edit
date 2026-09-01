@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.3.0] - 2026-09-01
+### Added
+- Preview: the "⋮ Actions" menu (single selection) now also offers Rename... (fields) / Edit Text... (constants), Indicators..., and — for fields — Validity Checks..., Editing Keywords..., and Error Messages..., delegating to the exact same tree commands (same prompts, validation, and confirmations as right-clicking the element in the tree). The preview now covers practically everything the tree's context menu offers for a single field or constant.
+- Preview: a resizable constant now also gets a second drag handle on its *left* edge, growing/shrinking its leading blank padding (moving its start column back to keep the visible text in place) instead of only the trailing padding on the right — down to column 1, or a window's own left content edge. Not offered for a constant inside a subfile record.
+
 ## [1.2.0] - 2026-08-31
 ### Added
 - Preview: the decimal point and thousands-separator convention used for `EDTCDE()`-edited numeric fields is now configurable — US (`1,000.00`, the previous fixed behavior) or European (`1.000,00`) — from a new "Decimal Format" section in the "⚙ Configuration" panel. A "Fetch from IBM i" button reads it straight from the connected IBM i's `QDECFMT` system value (both `1` and `J` map to European); a "Reset to Default" button restores US. Saved in the extension's own storage, applying immediately to any open preview panel.

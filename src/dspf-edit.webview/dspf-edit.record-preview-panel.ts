@@ -74,6 +74,18 @@ interface PreviewItem {
     /** For a resizable field: the shortest length its own type allows (decimals + 1 for a numeric field with decimals, else 1). */
     minLength?: number;
     /**
+     * True for a genuine constant literal (same gating as `isResizable` — not a system keyword)
+     * that isn't part of a subfile record. Drives whether the preview offers a *second* drag handle,
+     * on the constant's left edge, to grow/shrink its *leading* blank padding instead of its
+     * trailing one. Excluded for a subfile record: the parser stores its row/column swapped, and
+     * unlike the right handle (which never touches position), this one has to rewrite the constant's
+     * column — not worth risking writing it to the wrong raw source column without a way to verify
+     * against real STRSDA for a subfile.
+     */
+    isResizableLeft?: boolean;
+    /** For a left-resizable constant: the shortest length that doesn't eat into its own non-leading-blank text (mirrors `minLength`, from the other end). */
+    minLengthLeft?: number;
+    /**
      * A field's real DDS length/decimals, for display in the preview's selection bar — omitted
      * for constants and for a referenced field whose real length dspf-edit has no way to read
      * (see `isReferenced`), since there's nothing true to show there.
@@ -1411,7 +1423,14 @@ export class RecordPreviewPanel {
                     // stored name at all). Shrinking below its own trimmed (non-blank) text is never
                     // offered — only trailing blank padding can be added/removed.
                     isResizable: !isSystemConstant,
-                    minLength: Math.max(constant.name.replace(/\s+$/, '').length, 1)
+                    minLength: Math.max(constant.name.replace(/\s+$/, '').length, 1),
+                    // Left-edge handle: excluded for a subfile record — the parser stores its
+                    // row/column swapped (see `isSfl` above), and unlike the right handle (which
+                    // never touches position), a left-resize has to rewrite the constant's column —
+                    // not worth risking writing it to the wrong raw source column without a way to
+                    // verify against real STRSDA for a subfile. See PreviewItem.isResizableLeft.
+                    isResizableLeft: !isSystemConstant && !isSfl,
+                    minLengthLeft: Math.max(constant.name.replace(/^\s+/, '').length, 1)
                 });
             };
         };
@@ -1650,6 +1669,11 @@ export class RecordPreviewPanel {
             return;
         };
 
+        if (message?.type === 'resizeConstantLeft' && typeof message.lineIndex === 'number' && typeof message.newLength === 'number') {
+            await this.resizeConstantLeft(message.lineIndex, message.newLength);
+            return;
+        };
+
         if (message?.type === 'resize' && typeof message.newRows === 'number' && typeof message.newCols === 'number') {
             await this.resizeWindow(message.newRows, message.newCols);
             return;
@@ -1885,6 +1909,54 @@ export class RecordPreviewPanel {
         const newText = newLength >= constant.name.length
             ? constant.name + ' '.repeat(newLength - constant.name.length)
             : constant.name.slice(0, newLength);
+
+        if (!(await updateExistingConstant(editor, { lineIndex }, newText))) {
+            return;
+        };
+        this.forceReparse(editor.document);
+    };
+
+    /**
+     * Applies a drag-to-resize from the preview (dragging a constant's own LEFT-edge handle): the
+     * mirror image of `resizeConstant` — grows/shrinks the constant's *leading* blank padding
+     * instead of its trailing one. Unlike the right handle, this also has to move the constant's own
+     * start column (position spec, source columns 41-44) by the same amount its text gains/loses at
+     * the front, so its visible (non-blank) characters land on the exact same screen position as
+     * before — only the box's left edge actually moves. Applied as two separate edits — the column
+     * first, then `updateExistingConstant` for the text (same call `resizeConstant` makes, already
+     * correctly handling the constant growing past the single-line threshold into multiple lines or
+     * collapsing back) — rather than one combined atomic edit, so the (tricky, easy to get subtly
+     * wrong) multi-line continuation rewrite stays fully delegated to that already-tested logic
+     * instead of being duplicated here. Costs an extra undo step compared to the right handle; worth
+     * it for correctness on the rarer multi-line case.
+     * @param lineIndex - The constant's own source line
+     * @param newLength - The new total character count to write (already clamped in the webview)
+     */
+    private async resizeConstantLeft(lineIndex: number, newLength: number): Promise<void> {
+        const { editor } = checkForEditorAndDocument();
+        if (!editor || lineIndex >= editor.document.lineCount) {
+            return;
+        };
+
+        const constant = fieldsPerRecords.flatMap(r => r.constants).find(c => c.lineIndex === lineIndex);
+        if (!constant) {
+            return;
+        };
+
+        const delta = newLength - constant.name.length;
+        const newText = delta >= 0
+            ? ' '.repeat(delta) + constant.name
+            : constant.name.slice(-newLength);
+        const newColumn = constant.col - delta;
+        if (newColumn < 1) {
+            return;
+        };
+
+        const columnEdit = new vscode.WorkspaceEdit();
+        columnEdit.replace(editor.document.uri, new vscode.Range(lineIndex, 41, lineIndex, 44), String(newColumn).padStart(3, ' '));
+        if (!(await applyWorkspaceEdit(columnEdit, 'resize the constant'))) {
+            return;
+        };
 
         if (!(await updateExistingConstant(editor, { lineIndex }, newText))) {
             return;
@@ -2626,6 +2698,18 @@ export class RecordPreviewPanel {
         ctx.fill();
     }
 
+    // Mirror image of drawResizeHandleTriangle, for a constant's left-edge handle — fills the
+    // lower-left half of its box instead, so its outer corner sits at the box's bottom-left.
+    function drawResizeHandleTriangleLeft(boxX, boxY) {
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.moveTo(boxX, boxY);
+        ctx.lineTo(boxX + HANDLE_SIZE, boxY + HANDLE_SIZE);
+        ctx.lineTo(boxX, boxY + HANDLE_SIZE);
+        ctx.closePath();
+        ctx.fill();
+    }
+
     // Mirrors WINDOW_BORDER_* on the host: content sits 1 row inside the border top/bottom, and
     // 2 columns inside the border left/right (verified against real STRSDA output).
     const WINDOW_BORDER_TOP = 1;
@@ -2654,6 +2738,7 @@ export class RecordPreviewPanel {
     let moveWindowState = null;
     let elementResizeState = null;
     let currentElementHandleRect = null;
+    let currentElementHandleRectLeft = null;
     let selectedLineIndices = new Set();
     let currentRecordName = null;
     let placingKind = null; // null | 'constant' | 'field'
@@ -2945,14 +3030,26 @@ export class RecordPreviewPanel {
             // Field/constant resize preview: while dragging its handle, the element's own text
             // stretches/shrinks live to the currently-dragged length — nothing is actually written
             // back until the drag ends (mouseup). A field repeats its own placeholder character; a
-            // constant has no such placeholder, so it grows/shrinks its own trailing blank padding
-            // instead, same as the actual edit applied on mouseup (see resizeConstant on the host).
+            // constant has no such placeholder, so it grows/shrinks its own trailing (right handle)
+            // or leading (left handle) blank padding instead, same as the actual edit applied on
+            // mouseup (see resizeConstant/resizeConstantLeft on the host). The left handle also
+            // moves the item's own start column live, since its right edge is the one staying fixed.
             if (elementResizeState && item === elementResizeState.item) {
                 const newLength = elementResizeState.newLength;
-                const ghostText = item.kind === 'constant'
-                    ? (newLength >= item.name.length ? item.name + ' '.repeat(newLength - item.name.length) : item.name.slice(0, newLength))
-                    : (item.text.charAt(0) || ' ').repeat(newLength);
-                drawItem(Object.assign({}, item, { text: ghostText, length: newLength, isBeingResized: true }), fontFamily, moveDelta);
+                const isLeftDrag = elementResizeState.side === 'left';
+                let ghostText, ghostCol;
+                if (isLeftDrag) {
+                    ghostText = newLength >= item.name.length
+                        ? ' '.repeat(newLength - item.name.length) + item.name
+                        : item.name.slice(item.name.length - newLength);
+                    ghostCol = item.col + item.length - newLength;
+                } else {
+                    ghostText = item.kind === 'constant'
+                        ? (newLength >= item.name.length ? item.name + ' '.repeat(newLength - item.name.length) : item.name.slice(0, newLength))
+                        : (item.text.charAt(0) || ' ').repeat(newLength);
+                    ghostCol = item.col;
+                }
+                drawItem(Object.assign({}, item, { text: ghostText, length: newLength, col: ghostCol, isBeingResized: true }), fontFamily, moveDelta);
             } else {
                 drawItem(item, fontFamily, moveDelta);
             }
@@ -2960,16 +3057,24 @@ export class RecordPreviewPanel {
 
         drawGridDots(size, items, currentBackgroundItems, moveDelta, currentOuterFrame, currentWindowFrame);
 
-        // Element resize handle: shown only while exactly one resizable field/constant is selected —
+        // Element resize handles: shown only while exactly one resizable field/constant is selected —
         // a small grip just past its right edge (outside its own text, so it never overlaps it even
-        // at width 1, addressing how cramped a narrow one would otherwise feel) that drags its length.
+        // at width 1, addressing how cramped a narrow one would otherwise feel) that drags its length;
+        // a constant can also get a second, mirrored grip just before its left edge, to grow/shrink
+        // its leading padding instead (see PreviewItem.isResizableLeft). Only the handle matching the
+        // side actually being dragged is shown while a drag is in progress — the other one's position
+        // would otherwise go stale (it's computed from the item's un-dragged base length/column).
         currentElementHandleRect = null;
+        currentElementHandleRectLeft = null;
         if (selectedLineIndices.size === 1) {
             const selectedLineIndex = [...selectedLineIndices][0];
+            const isDraggingLeft = elementResizeState && elementResizeState.side === 'left';
+            const isDraggingRight = elementResizeState && elementResizeState.side !== 'left';
+
             const handleItem = items.find(i => i.lineIndex === selectedLineIndex && (i.kind === 'field' || i.kind === 'constant') && i.isResizable);
-            if (handleItem) {
+            if (handleItem && !isDraggingLeft) {
                 const { row, col } = resolveItemRowCol(handleItem, moveDelta);
-                const width = elementResizeState ? elementResizeState.newLength : Math.max(handleItem.length, handleItem.text.length, 1);
+                const width = isDraggingRight ? elementResizeState.newLength : Math.max(handleItem.length, handleItem.text.length, 1);
                 // Bottom-anchored within the row, same corner convention as the window's own handle
                 // (its outer tip sits exactly at the element's own bottom-right corner) — reads more
                 // like a familiar resize grip than one centered on the row.
@@ -2978,6 +3083,20 @@ export class RecordPreviewPanel {
                 currentElementHandleRect = { x: hx, y: hy, width: HANDLE_SIZE, height: HANDLE_SIZE, item: handleItem };
 
                 drawResizeHandleTriangle(hx, hy);
+            }
+
+            const handleItemLeft = items.find(i => i.lineIndex === selectedLineIndex && i.kind === 'constant' && i.isResizableLeft);
+            if (handleItemLeft && !isDraggingRight) {
+                const { row, col } = resolveItemRowCol(handleItemLeft, moveDelta);
+                const baseWidth = Math.max(handleItemLeft.length, handleItemLeft.text.length, 1);
+                const width = isDraggingLeft ? elementResizeState.newLength : baseWidth;
+                const rightEdgeCol = col + baseWidth - 1; // fixed anchor: unaffected by the live drag width
+                const liveStartCol = rightEdgeCol - width + 1;
+                const hx = (liveStartCol - 1) * CHAR_W;
+                const hy = row * CHAR_H - HANDLE_SIZE;
+                currentElementHandleRectLeft = { x: hx - HANDLE_SIZE, y: hy, width: HANDLE_SIZE, height: HANDLE_SIZE, item: handleItemLeft };
+
+                drawResizeHandleTriangleLeft(hx - HANDLE_SIZE, hy);
             }
         }
 
@@ -3206,6 +3325,17 @@ export class RecordPreviewPanel {
                py >= currentElementHandleRect.y && py <= currentElementHandleRect.y + currentElementHandleRect.height;
     }
 
+    function isOverElementResizeHandleLeft(ev) {
+        if (!currentElementHandleRectLeft) {
+            return false;
+        }
+        const rect = canvas.getBoundingClientRect();
+        const px = ev.clientX - rect.left;
+        const py = ev.clientY - rect.top;
+        return px >= currentElementHandleRectLeft.x && px <= currentElementHandleRectLeft.x + currentElementHandleRectLeft.width &&
+               py >= currentElementHandleRectLeft.y && py <= currentElementHandleRectLeft.y + currentElementHandleRectLeft.height;
+    }
+
     function isOverWindowFrame(ev) {
         if (!currentOuterFrame) {
             return false;
@@ -3347,7 +3477,31 @@ export class RecordPreviewPanel {
                 startLength: item.length,
                 newLength: item.length,
                 minLength: item.minLength || 1,
-                maxLength
+                maxLength,
+                side: 'right'
+            };
+            return;
+        }
+
+        if (isOverElementResizeHandleLeft(ev)) {
+            const item = currentElementHandleRectLeft.item;
+            // The element's right edge (its last character) stays fixed — only its left edge can
+            // move — so the longest it can grow to is however many columns remain to the
+            // record/window's own left edge from there (mirrors the right handle's own boundary).
+            let minLeftCol = 1;
+            if (currentWindowFrame && !item.isBackground) {
+                minLeftCol = currentWindowFrame.col;
+            }
+            const rightEdgeCol = item.col + item.length - 1;
+            const maxLength = Math.max(rightEdgeCol - minLeftCol + 1, item.minLengthLeft || 1);
+
+            elementResizeState = {
+                item,
+                startLength: item.length,
+                newLength: item.length,
+                minLength: item.minLengthLeft || 1,
+                maxLength,
+                side: 'left'
             };
             return;
         }
@@ -3468,7 +3622,11 @@ export class RecordPreviewPanel {
         if (elementResizeState) {
             const { col } = cellAt(ev);
             const item = elementResizeState.item;
-            const desiredLength = col - item.col + 1;
+            // Right handle: distance from the fixed left edge (item.col) out to the cursor. Left
+            // handle: distance from the cursor back to the fixed right edge instead.
+            const desiredLength = elementResizeState.side === 'left'
+                ? (item.col + item.length - 1) - col + 1
+                : col - item.col + 1;
             const newLength = clamp(desiredLength, elementResizeState.minLength, elementResizeState.maxLength);
 
             if (newLength !== elementResizeState.newLength) {
@@ -3505,7 +3663,7 @@ export class RecordPreviewPanel {
         if (!dragState) {
             updateWindowHoverState(ev);
 
-            if (isOverElementResizeHandle(ev)) {
+            if (isOverElementResizeHandle(ev) || isOverElementResizeHandleLeft(ev)) {
                 canvas.style.cursor = 'ew-resize';
                 canvas.title = '';
                 return;
@@ -3583,10 +3741,11 @@ export class RecordPreviewPanel {
 
     window.addEventListener('mouseup', () => {
         if (elementResizeState) {
-            const { item, newLength, startLength } = elementResizeState;
+            const { item, newLength, startLength, side } = elementResizeState;
             elementResizeState = null;
             if (newLength !== startLength) {
-                vscode.postMessage({ type: item.kind === 'constant' ? 'resizeConstant' : 'resizeField', lineIndex: item.lineIndex, newLength });
+                const messageType = side === 'left' ? 'resizeConstantLeft' : (item.kind === 'constant' ? 'resizeConstant' : 'resizeField');
+                vscode.postMessage({ type: messageType, lineIndex: item.lineIndex, newLength });
             } else {
                 draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
             }
