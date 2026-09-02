@@ -45,7 +45,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
   - The "Indicators" toggle and the selected display format persist when switching which record is previewed in the same panel.
   - Stays in sync with the schema tree selection in both directions.
   - "Focus" maximizes the preview so it fills the editing area, hiding the DDS source editor beside it; "Show code" brings the source back.
-  - Select a field or constant (or several, with Ctrl/Cmd+click) to get a "⋮ Actions" menu: add color/attribute, copy, or delete — applied to every selected element at once for a multi-selection (no per-element indicator prompts in that case).
+  - Select a field or constant (or several, with Ctrl/Cmd+click) to get a "⋮ Actions" menu: add color/attribute, copy, or delete — applied to every selected element at once for a multi-selection. A single selected field or constant also gets Rename.../Edit Text..., Indicators..., and — for fields — Validity Checks..., Editing Keywords..., and Error Messages..., the same commands the tree's context menu offers, so most of what you'd do from the tree is also reachable straight from the preview.
   - The decimal point and thousands-separator convention used to preview `EDTCDE()`-edited numeric fields — US or European — is configurable from the "⚙ Configuration" panel, either picked manually or fetched with one click from the connected IBM i's `QDECFMT` system value.
 
 ### 🧭 Schema navigation
@@ -146,9 +146,10 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.2.0** - 2026-08-31
-- Added: Preview's decimal point/thousands-separator convention for `EDTCDE()`-edited numeric fields (US/European) is now configurable from the "⚙ Configuration" panel, with a one-click "Fetch from IBM i" (reads the connected system's `QDECFMT` value) and a "Reset to Default" button.
-- Fixed: an unedited numeric field (no `EDTCDE`/`EDTWRD`) didn't reserve the extra trailing position IBM i adds for the sign on an input-capable signed-numeric field — e.g. a 1,0 field showed as a single digit instead of digit + `-`, confirmed against real STRSDA.
+**1.3.0** - 2026-09-02
+- Added: Preview's "⋮ Actions" menu (single selection) now also offers Rename.../Edit Text..., Indicators..., and — for fields — Validity Checks..., Editing Keywords..., and Error Messages..., the same commands the tree's context menu offers.
+- Added: a resizable constant now also gets a left-edge drag handle, growing/shrinking its leading blank padding instead of only the trailing one on the right, down to column 1 (or a window's own left edge).
+- Added: Add Editing Keywords now shows a single summary menu with EDTCDE/EDTWRD/EDTMSK and their current values, each with its own set/change and remove buttons, instead of a multi-step "Replace/Remove, then pick a type" wizard.
 
 ---
 
