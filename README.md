@@ -146,9 +146,10 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.3.0** - 2026-09-01
+**1.3.0** - 2026-09-02
 - Added: Preview's "⋮ Actions" menu (single selection) now also offers Rename.../Edit Text..., Indicators..., and — for fields — Validity Checks..., Editing Keywords..., and Error Messages..., the same commands the tree's context menu offers.
 - Added: a resizable constant now also gets a left-edge drag handle, growing/shrinking its leading blank padding instead of only the trailing one on the right, down to column 1 (or a window's own left edge).
+- Added: Add Editing Keywords now shows a single summary menu with EDTCDE/EDTWRD/EDTMSK and their current values, each with its own set/change and remove buttons, instead of a multi-step "Replace/Remove, then pick a type" wizard.
 
 ---
 

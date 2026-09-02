@@ -8,10 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
-## [1.3.0] - 2026-09-01
+## [1.3.0] - 2026-09-02
 ### Added
 - Preview: the "⋮ Actions" menu (single selection) now also offers Rename... (fields) / Edit Text... (constants), Indicators..., and — for fields — Validity Checks..., Editing Keywords..., and Error Messages..., delegating to the exact same tree commands (same prompts, validation, and confirmations as right-clicking the element in the tree). The preview now covers practically everything the tree's context menu offers for a single field or constant.
 - Preview: a resizable constant now also gets a second drag handle on its *left* edge, growing/shrinking its leading blank padding (moving its start column back to keep the visible text in place) instead of only the trailing padding on the right — down to column 1, or a window's own left content edge. Not offered for a constant inside a subfile record.
+- Add Editing Keywords: replaced with a single summary menu showing all three slots (EDTCDE/EDTWRD/EDTMSK) and their current value at a glance, each with its own set/change (✏️) and remove (🗑️) buttons — instead of the old "Replace/Remove, then pick a type" two-step flow. Picking EDTCDE/EDTWRD is now a flat, type-to-filter list (no more category separators). Changing an existing EDTWRD/EDTMSK pre-fills the input with its current value; starting a new EDTWRD pre-fills a blank template already sized to the field, satisfying the "N digit positions" rule from the start. Setting EDTCDE/EDTWRD automatically drops the other (they're mutually exclusive in DDS) while keeping any existing EDTMSK; removing the base takes its EDTMSK with it.
 
 ## [1.2.0] - 2026-08-31
 ### Added

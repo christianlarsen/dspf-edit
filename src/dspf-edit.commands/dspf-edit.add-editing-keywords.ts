@@ -26,6 +26,11 @@ interface EditCodeOption {
     supportsCurrency: boolean;
 };
 
+/** One row of the editing-keywords summary menu — one of the 3 keyword slots for a field. */
+interface EditingMenuItem extends vscode.QuickPickItem {
+    editType: 'EDTCDE' | 'EDTWRD' | 'EDTMSK';
+};
+
 // COMMAND REGISTRATION
 
 /**
@@ -44,8 +49,10 @@ export function editingKeywords(context: vscode.ExtensionContext): void {
 // COMMAND HANDLER
 
 /**
- * Handles the edit field command for a DDS field.
- * Manages field editing options: EDTCDE, EDTWRD, and EDTMSK.
+ * Handles the edit field command for a DDS field: shows a summary menu with all 3 keyword slots
+ * (EDTCDE/EDTWRD/EDTMSK) and their current value, letting the user jump straight to setting/
+ * changing whichever one they want, or remove one directly via its own trash button — instead of
+ * the old "Replace/Remove, then pick a type" two-step flow.
  * @param node - The DDS node containing the field
  */
 async function handleEditingKeywordsCommand(node: DdsNode): Promise<void> {
@@ -71,130 +78,100 @@ async function handleEditingKeywordsCommand(node: DdsNode): Promise<void> {
             return;
         };
         const effectiveFieldInfo = getEffectiveFieldInfo(fieldInfo, node.ddsElement, document.uri.toString());
-
-        // Get current editing configuration
         const currentEditing = getCurrentEditingForField(node.ddsElement);
+        const inputCapable = isInputCapableField(effectiveFieldInfo);
 
-        // Show current editing if exists
-        if (currentEditing.length > 0) {
-            const currentEditDisplay = currentEditing.map(edit => 
-                `${edit.type}(${edit.value}${edit.modifier ? ' ' + edit.modifier : ''})`
-            ).join(', ');
+        const choice = await showEditingMenu(buildEditingMenuItems(currentEditing, inputCapable), effectiveFieldInfo.name);
+        if (!choice) return;
 
-            const action = await vscode.window.showQuickPick(
-                ['Replace field editing', 'Remove field editing'],
-                {
-                    title: `Current editing: ${currentEditDisplay}`,
-                    placeHolder: 'Choose how to manage field editing'
-                }
-            );
-
-            if (!action) return;
-
-            if (action === 'Remove field editing') {
-                await removeEditingFromField(editor, node.ddsElement);
-                return;
-            };
-
-            if (action === 'Replace field editing') {
-                await removeEditingFromField(editor, node.ddsElement);
-                // Continue to add new editing
-            };
+        if (choice.action === 'remove') {
+            await removeOneEditingType(editor, node.ddsElement, choice.editType);
+            return;
         };
 
-        // Ask user what type of editing they want
-        const editingType = await vscode.window.showQuickPick([
-            'EDTCDE - Edit Code (predefined formatting)',
-            'EDTWRD - Edit Word (custom formatting patterns)',
-            'EDTMSK - Edit Mask (field protection with EDTCDE/EDTWRD)'
-        ], {
-            title: `Select editing type for ${effectiveFieldInfo.name} (Type: ${effectiveFieldInfo.type || 'unresolved'})`,
-            placeHolder: 'Choose editing method'
-        });
+        let newEdits: EditConfiguration[] | null = null;
 
-        if (!editingType) return;
-
-        let selectedEditing: EditConfiguration[] = [];
-
-        if (editingType.startsWith('EDTCDE')) {
+        if (choice.editType === 'EDTCDE') {
             // Validate field is numeric for EDTCDE
             if (!isNumericField(effectiveFieldInfo)) {
                 vscode.window.showWarningMessage(numericFieldWarning('Edit codes (EDTCDE)', node.ddsElement, effectiveFieldInfo));
                 return;
             };
             const editCode = await collectEditCode(effectiveFieldInfo);
-            if (editCode) selectedEditing.push(editCode);
+            if (editCode) newEdits = [editCode];
 
-        } else if (editingType.startsWith('EDTWRD')) {
+        } else if (choice.editType === 'EDTWRD') {
             // Validate field is numeric for EDTWRD
             if (!isNumericField(effectiveFieldInfo)) {
                 vscode.window.showWarningMessage(numericFieldWarning('Edit words (EDTWRD)', node.ddsElement, effectiveFieldInfo));
                 return;
             };
-            const editWord = await collectEditWord(effectiveFieldInfo);
-            if (editWord) selectedEditing.push(editWord);
+            const currentEdtwrd = currentEditing.find(edit => edit.type === 'EDTWRD');
+            const editWord = await collectEditWord(effectiveFieldInfo, currentEdtwrd);
+            if (editWord) newEdits = [editWord];
 
-        } else if (editingType.startsWith('EDTMSK')) {
+        } else {
             // EDTMSK protects/masks what the user types, so it's only meaningful on a field the
-            // user can actually type into (usage I or B) — an output-only field has nothing to mask.
-            if (!isInputCapableField(effectiveFieldInfo)) {
+            // user can actually type into (usage I or B) — an output-only field has nothing to mask
+            // (already excluded from the menu, but the command can still be reinvoked directly).
+            if (!inputCapable) {
                 vscode.window.showWarningMessage(inputCapableFieldWarning(node.ddsElement));
                 return;
             };
 
-            // EDTMSK requires EDTCDE or EDTWRD to be present
-            vscode.window.showInformationMessage('EDTMSK requires EDTCDE or EDTWRD. You will be asked to specify both.');
+            const existingBase = currentEditing.find(edit => edit.type === 'EDTCDE' || edit.type === 'EDTWRD');
+            let base: EditConfiguration | null = existingBase ?? null;
 
-            let baseEdit: EditConfiguration | null = null;
+            if (!base) {
+                // EDTMSK requires EDTCDE or EDTWRD to be present
+                vscode.window.showInformationMessage('EDTMSK requires EDTCDE or EDTWRD. Choose the base editing first.');
 
-            const baseEditType = await vscode.window.showQuickPick([
-                'EDTCDE - Edit Code',
-                'EDTWRD - Edit Word'
-            ], {
-                title: 'EDTMSK requires a base editing keyword. Choose base editing:',
-                placeHolder: 'Select EDTCDE or EDTWRD first'
-            });
+                const baseEditType = await vscode.window.showQuickPick([
+                    'EDTCDE - Edit Code',
+                    'EDTWRD - Edit Word'
+                ], {
+                    title: 'EDTMSK requires a base editing keyword. Choose base editing:',
+                    placeHolder: 'Select EDTCDE or EDTWRD first'
+                });
 
-            if (!baseEditType) return;
+                if (!baseEditType) return;
 
-            // Validate field is numeric for base editing
-            if (!isNumericField(effectiveFieldInfo)) {
-                vscode.window.showWarningMessage(numericFieldWarning('EDTMSK base editing', node.ddsElement, effectiveFieldInfo));
-                return;
+                // Validate field is numeric for base editing
+                if (!isNumericField(effectiveFieldInfo)) {
+                    vscode.window.showWarningMessage(numericFieldWarning('EDTMSK base editing', node.ddsElement, effectiveFieldInfo));
+                    return;
+                };
+
+                base = baseEditType.startsWith('EDTCDE')
+                    ? await collectEditCode(effectiveFieldInfo)
+                    : await collectEditWord(effectiveFieldInfo);
+
+                if (!base) return;
             };
 
-            if (baseEditType.startsWith('EDTCDE')) {
-                baseEdit = await collectEditCode(effectiveFieldInfo);
-            } else {
-                baseEdit = await collectEditWord(effectiveFieldInfo);
-            };
-
-            if (!baseEdit) return;
-
-            const editMask = await collectEditMask(baseEdit);
+            const currentEdtmsk = currentEditing.find(edit => edit.type === 'EDTMSK');
+            const editMask = await collectEditMask(base, currentEdtmsk);
             if (editMask) {
-                selectedEditing.push(baseEdit);
-                selectedEditing.push(editMask);
+                // A base that already existed is left untouched by applyOneEditingKeyword (it
+                // only replaces what's actually being changed) — only pass it along when it was
+                // just freshly collected here, so it actually gets written.
+                newEdits = existingBase ? [editMask] : [base, editMask];
             };
         };
 
-        if (selectedEditing.length === 0) {
+        if (!newEdits) {
             vscode.window.showInformationMessage('No field editing selected.');
             return;
         };
 
         // Apply the selected editing to the field
-        if (!(await addEditingToField(editor, node.ddsElement, selectedEditing))) {
+        if (!(await applyOneEditingKeyword(editor, node.ddsElement, currentEditing, newEdits))) {
             return;
         };
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
-        
 
-        const editingSummary = selectedEditing.map(edit =>
-            `${edit.type}(${edit.value}${edit.modifier ? ' ' + edit.modifier : ''})`
-        ).join(' + ');
-
+        const editingSummary = newEdits.map(formatEditConfig).join(' + ');
         vscode.window.showInformationMessage(
             `Applied field editing ${editingSummary} to ${node.ddsElement.name}.`
         );
@@ -203,6 +180,87 @@ async function handleEditingKeywordsCommand(node: DdsNode): Promise<void> {
         console.error('Error managing field editing:', error);
         vscode.window.showErrorMessage('An error occurred while managing field editing.');
     };
+};
+
+// EDITING SUMMARY MENU
+
+/** Formats an editing configuration exactly as it reads in DDS source, e.g. "EDTCDE(Z)" or "EDTWRD('   0.  ')". */
+function formatEditConfig(edit: EditConfiguration): string {
+    return `${edit.type}(${edit.value}${edit.modifier ? ' ' + edit.modifier : ''})`;
+};
+
+const EDIT_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('edit'), tooltip: 'Set/change' };
+const REMOVE_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('trash'), tooltip: 'Remove' };
+
+/**
+ * Builds the "editing keywords" summary menu's 3 rows (2 for an output-only field, since EDTMSK
+ * only ever applies to input-capable ones) — each showing its currently assigned value (formatted
+ * exactly as it'd read in the DDS source, e.g. "EDTCDE(Z)") or "(not set)", with an edit button
+ * (always) and a trash button (only when something's actually assigned) so both actions are
+ * explicit instead of relying on "click the row" meaning "edit".
+ * @param currentEditing - The field's current editing configuration(s)
+ * @param inputCapable - Whether the field's usage allows EDTMSK
+ */
+function buildEditingMenuItems(currentEditing: EditConfiguration[], inputCapable: boolean): EditingMenuItem[] {
+    const row = (editType: 'EDTCDE' | 'EDTWRD' | 'EDTMSK', label: string): EditingMenuItem => {
+        const current = currentEditing.find(edit => edit.type === editType);
+        return {
+            editType,
+            label,
+            description: current ? formatEditConfig(current) : '(not set)',
+            buttons: current ? [EDIT_BUTTON, REMOVE_BUTTON] : [EDIT_BUTTON]
+        };
+    };
+
+    const items: EditingMenuItem[] = [
+        row('EDTCDE', 'EDTCDE — Edit Code'),
+        row('EDTWRD', 'EDTWRD — Edit Word')
+    ];
+    if (inputCapable) {
+        items.push(row('EDTMSK', 'EDTMSK — Edit Mask'));
+    };
+    return items;
+};
+
+/**
+ * Shows the editing-keywords summary menu and resolves to what the user did: picked a row (or its
+ * edit button) to set/change (`action: 'select'`), or clicked a row's trash button to remove it
+ * (`action: 'remove'`) — undefined if dismissed. Needs the raw `createQuickPick` API rather than
+ * the simpler `showQuickPick` helper, since only it exposes per-item buttons
+ * (`onDidTriggerItemButton`).
+ * @param items - The menu's rows, from `buildEditingMenuItems`
+ * @param fieldName - The field's name, for the menu's title
+ */
+function showEditingMenu(items: EditingMenuItem[], fieldName: string): Promise<{ action: 'select' | 'remove'; editType: 'EDTCDE' | 'EDTWRD' | 'EDTMSK' } | undefined> {
+    return new Promise(resolve => {
+        const quickPick = vscode.window.createQuickPick<EditingMenuItem>();
+        quickPick.items = items;
+        quickPick.title = `Editing keywords for ${fieldName}`;
+        quickPick.placeholder = 'Select a keyword to set/change, or use its buttons';
+        quickPick.ignoreFocusOut = true;
+
+        let settled = false;
+        const finish = (result: { action: 'select' | 'remove'; editType: 'EDTCDE' | 'EDTWRD' | 'EDTMSK' } | undefined) => {
+            if (settled) return;
+            settled = true;
+            resolve(result);
+            quickPick.hide();
+        };
+
+        quickPick.onDidTriggerItemButton(event => {
+            finish({ action: event.button === REMOVE_BUTTON ? 'remove' : 'select', editType: event.item.editType });
+        });
+        quickPick.onDidAccept(() => {
+            const picked = quickPick.selectedItems[0];
+            finish(picked ? { action: 'select', editType: picked.editType } : undefined);
+        });
+        quickPick.onDidHide(() => {
+            finish(undefined);
+            quickPick.dispose();
+        });
+
+        quickPick.show();
+    });
 };
 
 // EDITING EXTRACTION FUNCTIONS
@@ -232,16 +290,18 @@ function getCurrentEditingForField(element: any): EditConfiguration[] {
             editing.push({ type: 'EDTCDE', value: code, modifier });
         };
 
-        // Check for EDTWRD
+        // Check for EDTWRD — value keeps its surrounding quotes (matching collectEditWord's own
+        // convention below), since createEditingKeywordText interpolates it as-is; without them, a
+        // "survivor" reused as-is by applyOneEditingKeyword would get written back unquoted.
         const edtwrdMatch = attr.match(/^EDTWRD\('([^']+)'\)$/);
         if (edtwrdMatch) {
-            editing.push({ type: 'EDTWRD', value: edtwrdMatch[1] });
+            editing.push({ type: 'EDTWRD', value: `'${edtwrdMatch[1]}'` });
         };
 
-        // Check for EDTMSK
+        // Check for EDTMSK — same quoting reasoning as EDTWRD above.
         const edtmskMatch = attr.match(/^EDTMSK\('([^']+)'\)$/);
         if (edtmskMatch) {
-            editing.push({ type: 'EDTMSK', value: edtmskMatch[1] });
+            editing.push({ type: 'EDTMSK', value: `'${edtmskMatch[1]}'` });
         };
     });
 
@@ -445,40 +505,35 @@ function getAvailableEditCodes(): EditCodeOption[] {
 // USER INTERACTION FUNCTIONS
 
 /**
- * Collects edit code configuration from user.
+ * Collects edit code configuration from user — a single flat list (no category grouping/separator
+ * rows, which only added scrolling noise) so typing the code letter/number and pressing Enter picks
+ * it in one shot, the same speed as typing it directly in STRSDA.
  * @param fieldInfo - Field information
  * @returns Selected edit code configuration
  */
 async function collectEditCode(fieldInfo: any): Promise<EditConfiguration | null> {
     const availableEditCodes = getAvailableEditCodes();
-    
-    // Group edit codes by category for better organization
-    const categories = ['Standard', 'Credit', 'Minus', 'Special', 'User-Defined'];
-    const editCodeItems: string[] = [];
 
-    categories.forEach(category => {
-        editCodeItems.push(`--- ${category} Edit Codes ---`);
-        const codesInCategory = availableEditCodes.filter(ec => ec.category === category);
-        codesInCategory.forEach(ec => {
-            editCodeItems.push(`${ec.code} - ${ec.description}`);
-        });
-    });
+    const items = availableEditCodes.map(ec => ({
+        label: ec.code,
+        description: ec.description,
+        code: ec.code
+    }));
 
-    const selectedItem = await vscode.window.showQuickPick(editCodeItems, {
+    const selectedItem = await vscode.window.showQuickPick(items, {
         title: `Select Edit Code for ${fieldInfo.name} (Type: ${fieldInfo.type})`,
-        placeHolder: 'Choose an edit code'
+        placeHolder: 'Type a code (e.g. J) or pick from the list'
     });
 
-    if (!selectedItem || selectedItem.startsWith('---')) return null;
+    if (!selectedItem) return null;
 
-    const selectedCode = selectedItem.split(' - ')[0];
-    const editCodeOption = availableEditCodes.find(ec => ec.code === selectedCode);
-    
+    const editCodeOption = availableEditCodes.find(ec => ec.code === selectedItem.code);
+
     if (!editCodeOption) return null;
 
     const editConfig: EditConfiguration = {
         type: 'EDTCDE',
-        value: selectedCode
+        value: editCodeOption.code
     };
 
     // Ask for modifiers if supported
@@ -495,7 +550,7 @@ async function collectEditCode(fieldInfo: any): Promise<EditConfiguration | null
         };
 
         const selectedModifier = await vscode.window.showQuickPick(modifierOptions, {
-            title: `Select modifier for EDTCDE(${selectedCode})`,
+            title: `Select modifier for EDTCDE(${editCodeOption.code})`,
             placeHolder: 'Choose a modifier (optional)'
         });
 
@@ -528,12 +583,21 @@ async function collectEditCode(fieldInfo: any): Promise<EditConfiguration | null
 /**
  * Collects edit word configuration from user.
  * @param fieldInfo - Field information
+ * @param current - The field's current EDTWRD (already quoted, e.g. "'   0.  '"), if changing one
  * @returns Selected edit word configuration
  */
-async function collectEditWord(fieldInfo: any): Promise<EditConfiguration | null> {
+async function collectEditWord(fieldInfo: any, current?: EditConfiguration): Promise<EditConfiguration | null> {
+    const fieldLength = parseInt(fieldInfo.length) || 0;
+    // Prefilled with the current word when changing one, or with a blank template already sized to
+    // the field's own digit count when starting fresh — already satisfies the "N digit positions"
+    // rule below, so the user only has to insert literal characters instead of counting blanks.
+    const defaultValue = current ? current.value : `'${' '.repeat(fieldLength)}'`;
+
     const editWordPattern = await vscode.window.showInputBox({
         title: `Edit Word for ${fieldInfo.name}`,
         prompt: `Enter edit word pattern (Field: ${fieldInfo.length} digits, ${fieldInfo.decimals || 0} decimals)`,
+        value: defaultValue,
+        valueSelection: [1, 1 + fieldLength],
         placeHolder: `Examples: '   0.  ' (decimal), '   $0.  ' (currency), '( ) -    ' (phone)`,
         validateInput: (value: string) => {
             if (!value.trim()) return 'Edit word pattern is required';
@@ -566,12 +630,14 @@ async function collectEditWord(fieldInfo: any): Promise<EditConfiguration | null
 /**
  * Collects edit mask configuration from user.
  * @param baseEdit - The base editing configuration (EDTCDE or EDTWRD)
+ * @param current - The field's current EDTMSK (already quoted), if changing one
  * @returns Selected edit mask configuration
  */
-async function collectEditMask(baseEdit: EditConfiguration): Promise<EditConfiguration | null> {
+async function collectEditMask(baseEdit: EditConfiguration, current?: EditConfiguration): Promise<EditConfiguration | null> {
     const editMaskPattern = await vscode.window.showInputBox({
         title: `Edit Mask for ${baseEdit.type}(${baseEdit.value})`,
         prompt: `Define protection: & for protected areas, blank for user input areas`,
+        value: current?.value,
         placeHolder: `Examples: '& &  & ' (phone), '  &  & ' (date), '&   .  ' (currency)`,
         validateInput: (value: string) => {
             if (!value.trim()) return 'Edit mask pattern is required';
@@ -599,6 +665,73 @@ async function collectEditMask(baseEdit: EditConfiguration): Promise<EditConfigu
 };
 
 // DDS MODIFICATION FUNCTIONS
+
+/**
+ * Applies one or two freshly-collected editing keywords to the field (EDTCDE or EDTWRD alone;
+ * EDTMSK alone if a base already exists; or both together when neither existed yet), replacing
+ * whichever existing keyword(s) they're incompatible with — EDTCDE and EDTWRD are mutually
+ * exclusive in DDS, so setting one always drops the other, but an existing EDTMSK survives (it
+ * doesn't care which of the two is its base) unless it's being explicitly replaced too. Removes
+ * everything first, then reapplies survivors + the new edit(s) together — simplest way to reuse the
+ * already-working remove/add logic for every combination (field-line vs separate attribute lines,
+ * single- vs multi-line EDTWRD...) rather than patching the existing source in place.
+ * @param editor - The active text editor
+ * @param element - The DDS field to update
+ * @param currentEditing - The field's editing configuration before this change
+ * @param newEdits - The freshly-collected edit(s) to apply
+ */
+async function applyOneEditingKeyword(
+    editor: vscode.TextEditor,
+    element: any,
+    currentEditing: EditConfiguration[],
+    newEdits: EditConfiguration[]
+): Promise<boolean> {
+    if (currentEditing.length > 0) {
+        if (!(await removeEditingFromField(editor, element))) return false;
+    };
+
+    const addingBase = newEdits.some(edit => edit.type === 'EDTCDE' || edit.type === 'EDTWRD');
+    const addingMask = newEdits.some(edit => edit.type === 'EDTMSK');
+    const toApply = [...newEdits];
+
+    if (addingMask && !addingBase) {
+        const survivingBase = currentEditing.find(edit => edit.type === 'EDTCDE' || edit.type === 'EDTWRD');
+        if (survivingBase) toApply.unshift(survivingBase);
+    };
+    if (addingBase && !addingMask) {
+        const survivingMask = currentEditing.find(edit => edit.type === 'EDTMSK');
+        if (survivingMask) toApply.push(survivingMask);
+    };
+
+    return addEditingToField(editor, element, toApply);
+};
+
+/**
+ * Removes just one editing keyword type from the field (the summary menu's trash-button action) —
+ * DDS requires EDTMSK to accompany an EDTCDE/EDTWRD, so removing the *base* takes any mask with it;
+ * removing just the mask leaves the base untouched. Same remove-everything-then-reapply-survivors
+ * approach as `applyOneEditingKeyword`.
+ * @param editor - The active text editor
+ * @param element - The DDS field to remove editing from
+ * @param editType - Which of EDTCDE/EDTWRD/EDTMSK to remove
+ */
+async function removeOneEditingType(
+    editor: vscode.TextEditor,
+    element: any,
+    editType: 'EDTCDE' | 'EDTWRD' | 'EDTMSK'
+): Promise<void> {
+    const currentEditing = getCurrentEditingForField(element);
+    const survivors = currentEditing.filter(edit => {
+        if (edit.type === editType) return false;
+        if ((editType === 'EDTCDE' || editType === 'EDTWRD') && edit.type === 'EDTMSK') return false;
+        return true;
+    });
+
+    if (!(await removeEditingFromField(editor, element))) return;
+    if (survivors.length > 0) {
+        await addEditingToField(editor, element, survivors);
+    };
+};
 
 /**
  * Adds editing configuration to a DDS field.
