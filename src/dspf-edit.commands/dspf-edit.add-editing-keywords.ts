@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
-import { isAttributeLine, findElementInsertionPoint, checkForEditorAndDocument, groupConsecutiveLines, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { isAttributeLine, findElementInsertionPoint, checkForEditorAndDocument, applyWorkspaceEdit, removeKeywordPatternsFromLines, findKeywordContinuationEndLine } from '../dspf-edit.utils/dspf-edit.helper';
 import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 
 // INTERFACES AND TYPES
@@ -502,6 +502,17 @@ function getAvailableEditCodes(): EditCodeOption[] {
     ];
 };
 
+/**
+ * Valid field lengths for EDTCDE(W) and EDTCDE(Y) — unlike the comma/sign codes, these two only
+ * work for the specific digit lengths documented in the DDS reference's Table 6/7 footnotes
+ * (confirmed against real STRSDA, which rejects any other length). Keep in sync with
+ * DATE_EDIT_CODE_DIGIT_GROUPS in dspf-edit.record-preview-panel.ts.
+ */
+const DATE_EDIT_CODE_VALID_LENGTHS: Record<'W' | 'Y', number[]> = {
+    W: [5, 6, 7, 8],
+    Y: [3, 4, 5, 6, 7, 8]
+};
+
 // USER INTERACTION FUNCTIONS
 
 /**
@@ -530,6 +541,17 @@ async function collectEditCode(fieldInfo: any): Promise<EditConfiguration | null
     const editCodeOption = availableEditCodes.find(ec => ec.code === selectedItem.code);
 
     if (!editCodeOption) return null;
+
+    if (editCodeOption.code === 'W' || editCodeOption.code === 'Y') {
+        const fieldLength = Number(fieldInfo.length) || 0;
+        const validLengths = DATE_EDIT_CODE_VALID_LENGTHS[editCodeOption.code];
+        if (!validLengths.includes(fieldLength)) {
+            vscode.window.showWarningMessage(
+                `EDTCDE(${editCodeOption.code}) is only valid for a field length of ${validLengths.join(', ')} — ${fieldInfo.name} is length ${fieldLength}.`
+            );
+            return null;
+        };
+    };
 
     const editConfig: EditConfiguration = {
         type: 'EDTCDE',
@@ -983,94 +1005,42 @@ async function removeEditingFromField(editor: vscode.TextEditor, element: any): 
     if (editingLines.length === 0) return true;
 
     const document = editor.document;
-    const workspaceEdit = new vscode.WorkspaceEdit();
-    const uri = document.uri;
 
     // Group lines by type: field line vs standalone editing lines
     const fieldLineIndex = element.lineIndex;
     const standaloneEditingLines = editingLines.filter(lineIndex => lineIndex !== fieldLineIndex);
     const hasFieldLineEditing = editingLines.includes(fieldLineIndex);
 
-    // Handle standalone editing lines
-    if (standaloneEditingLines.length > 0) {
-        const deletionRanges = calculateEditingDeletionRanges(document, standaloneEditingLines);
-        
-        // Apply deletions in reverse order to maintain offsets
-        for (let i = deletionRanges.length - 1; i >= 0; i--) {
-            const { startOffset, endOffset } = deletionRanges[i];
-            const startPos = document.positionAt(startOffset);
-            const endPos = document.positionAt(endOffset);
-            workspaceEdit.delete(uri, new vscode.Range(startPos, endPos));
+    const editingPatterns = [/EDTCDE\([^)]*\)/g, /EDTWRD\([^)]*\)/g, /EDTMSK\([^)]*\)/g];
+
+    // Handle standalone editing lines. DDS allows other keywords to share this same line (e.g.
+    // "EDTCDE(3) DSPATR(HI) COLOR(RED)"), and that shared keyword area can itself continue onto
+    // further lines via a trailing hyphen — removeKeywordPatternsFromLines strips just the
+    // EDTCDE/EDTWRD/EDTMSK text and re-flows whatever remains back onto as few lines as it now fits
+    // in. Processed from the last line to the first: each removal can itself delete or merge lines,
+    // which would shift the line numbers of everything below it (but never above), so handling later
+    // lines first keeps every remaining entry's own line index valid when its turn comes.
+    for (const lineIndex of [...standaloneEditingLines].sort((a, b) => b - a)) {
+        const endLine = findKeywordContinuationEndLine(document, lineIndex);
+        if (!(await removeKeywordPatternsFromLines(editor, lineIndex, endLine, editingPatterns, false))) {
+            return false;
         };
     };
 
-    // Handle editing on field line (just remove the editing parts)
+    // Handle editing on field line, same reasoning as above (and always last, since it's the
+    // topmost line here and unaffected by any of the standalone removals above it).
     if (hasFieldLineEditing) {
-        const line = document.lineAt(fieldLineIndex);
-        const lineText = line.text;
-        const cleanedText = lineText
-            .replace(/EDTCDE\([^)]*\)/g, '')
-            .replace(/EDTWRD\([^)]*\)/g, '')
-            .replace(/EDTMSK\([^)]*\)/g, '')
-            .trimEnd();
-        workspaceEdit.replace(uri, line.range, cleanedText);
+        const endLine = findKeywordContinuationEndLine(document, fieldLineIndex);
+        if (!(await removeKeywordPatternsFromLines(editor, fieldLineIndex, endLine, editingPatterns, true))) {
+            return false;
+        };
     };
 
-    if (!(await applyWorkspaceEdit(workspaceEdit, 'remove the field editing'))) {
-        return false;
-    };
     await vscode.commands.executeCommand('cursorRight');
     await vscode.commands.executeCommand('cursorLeft');
 
     vscode.window.showInformationMessage(`Removed field editing from ${element.name}.`);
     return true;
-};
-
-/**
- * Calculates precise deletion ranges for standalone editing lines.
- * @param document - The text document
- * @param editingLines - Array of line indices containing editing
- * @returns Array of deletion ranges with start and end offsets
- */
-function calculateEditingDeletionRanges(
-    document: vscode.TextDocument, 
-    editingLines: number[]
-): { startOffset: number; endOffset: number }[] {
-    const docText = document.getText();
-    const docLength = docText.length;
-    const ranges: { startOffset: number; endOffset: number }[] = [];
-    
-    // Group consecutive lines for more efficient deletion
-    const lineGroups = groupConsecutiveLines(editingLines);
-    
-    for (const group of lineGroups) {
-        const firstLine = group[0];
-        const lastLine = group[group.length - 1];
-        
-        let startOffset: number;
-        let endOffset: number;
-        
-        if (lastLine === document.lineCount - 1) {
-            if (firstLine === 0) {
-                startOffset = 0;
-                endOffset = docLength;
-            } else {
-                const prevLineEndPos = document.lineAt(firstLine - 1).range.end;
-                startOffset = document.offsetAt(prevLineEndPos);
-                endOffset = docLength;
-            };
-        } else {
-            startOffset = document.offsetAt(new vscode.Position(firstLine, 0));
-            const afterGroupPos = document.lineAt(lastLine).rangeIncludingLineBreak.end;
-            endOffset = document.offsetAt(afterGroupPos);
-        };
-        
-        if (startOffset < endOffset && startOffset >= 0 && endOffset <= docLength) {
-            ranges.push({ startOffset, endOffset });
-        };
-    };
-    
-    return ranges;
 };
 
 // LINE DETECTION FUNCTIONS

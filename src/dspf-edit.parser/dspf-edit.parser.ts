@@ -548,8 +548,22 @@ function parseConstantElement(
     lastRecord: string
 ) {
     // Handle multi-line constants
-    const { fullValue, lastLineIndex } = extractMultiLineConstant(lines, lineIndex, trimmedLine);
-    const { attributes, nextIndex } = extractAttributes('C', lines, lastLineIndex, true, components.indicators, components.displayFormat);
+    const { fullValue: rawValue, lastLineIndex } = extractMultiLineConstant(lines, lineIndex, trimmedLine);
+    const { value: fullValue, keywordText } = splitConstantValueAndKeywords(rawValue);
+    const { attributes: continuationAttributes, nextIndex } = extractAttributes('C', lines, lastLineIndex, true, components.indicators, components.displayFormat);
+
+    // Keywords sharing the constant's own line (see splitConstantValueAndKeywords) become real
+    // attributes here directly; keywords on a separate continuation line below are instead picked
+    // up later via linkAttributesToParents, same as before this line/keyword split existed.
+    const inlineAttributes: DdsAttribute[] = tokenizeKeywordText(keywordText).map(value => ({
+        kind: 'attribute' as const,
+        lineIndex,
+        lastLineIndex,
+        value,
+        indicators: components.indicators || [],
+        displayFormat: components.displayFormat
+    }));
+    const attributes = [...inlineAttributes, ...(continuationAttributes || [])];
 
     // Check if the current record (lastRecord) is a subfile by looking at its attributes
     const currentRecordEntry = fieldsPerRecords.find(r => r.record === lastRecord);
@@ -633,6 +647,45 @@ function extractMultiLineConstant(
     };
 
     return { fullValue: fullValue.trim(), lastLineIndex: continuationIndex };
+};
+
+/**
+ * Splits a constant line's already-continuation-joined raw text into its own value (a quoted
+ * literal, or a bare system keyword/keyword-call like DATE(*Y), TIME, USER) and any further DDS
+ * keyword text sharing the same physical line. DDS allows any number of keywords to follow a
+ * constant's value on one line, same as an ordinary field definition line (e.g. "'Text' COLOR(BLU)"
+ * or "DATE(*Y) EDTCDE(Y)") — without this split, that trailing keyword text would be swallowed into
+ * the constant's own value instead of becoming a real, recognized attribute (confirmed against real
+ * STRSDA, which renders such a line exactly as if the keyword were on its own line below).
+ * @param raw - The constant's raw value text (post multi-line-continuation joining), already trimmed
+ */
+function splitConstantValueAndKeywords(raw: string): { value: string; keywordText: string } {
+    if (raw.startsWith("'")) {
+        // Find the closing quote, treating '' as an escaped quote inside the literal.
+        let i = 1;
+        while (i < raw.length) {
+            if (raw[i] === "'") {
+                if (raw[i + 1] === "'") { i += 2; continue; };
+                break;
+            };
+            i++;
+        };
+        return { value: raw.slice(0, i + 1), keywordText: raw.slice(i + 1).trim() };
+    };
+
+    // Bare word or keyword-call form (DATE(*Y), TIME, USER, SYSNAME, ...): the first token is the value.
+    const match = raw.match(/^([A-Za-z][A-Za-z0-9]*(?:\([^()]*\))?)\s*(.*)$/);
+    return match ? { value: match[1], keywordText: match[2].trim() } : { value: raw, keywordText: '' };
+};
+
+/**
+ * Splits a run of inline DDS keyword text (e.g. "EDTCDE(Y) DSPATR(HI)") into its individual keyword
+ * tokens, matching the one-keyword-per-DdsAttribute convention the rest of the parser and preview
+ * rely on (e.g. hasDisplayAttribute's exact-match check).
+ * @param text - Keyword text: zero or more keywords separated by spaces
+ */
+function tokenizeKeywordText(text: string): string[] {
+    return text.match(/[A-Za-z][A-Za-z0-9]*(?:\([^()]*\))?/g) ?? [];
 };
 
 /**
@@ -786,17 +839,31 @@ function extractAttributes(
         return { attributes: [], nextIndex: currentIndex };
     };
 
-    // Create attribute object
-    const attribute: DdsAttribute = {
-        kind: 'attribute',
+    const baseAttribute = {
+        kind: 'attribute' as const,
         lineIndex: startIndex,
         lastLineIndex: currentIndex,
-        value: lineType === 'C' ? '' : rawAttributeText,
         indicators: includeIndicators && indicators ? indicators : [],
         displayFormat: includeIndicators ? displayFormat : undefined
     };
 
-    return { attributes: [attribute], nextIndex: currentIndex };
+    if (lineType === 'C') {
+        // A constant's own further hyphen-continued keyword text (rare — reaching here means this
+        // constant's value already spanned to `currentIndex` without ending, per its own
+        // extractMultiLineConstant call) isn't split into per-keyword attributes.
+        return { attributes: [{ ...baseAttribute, value: '' }], nextIndex: currentIndex };
+    };
+
+    // DDS allows any number of keywords on one physical line (e.g. "EDTCDE(3) DSPATR(HI)
+    // COLOR(RED)") — split them into one DdsAttribute per keyword, matching the one-keyword-per-
+    // DdsAttribute convention the preview relies on (e.g. hasDisplayAttribute's exact-match check).
+    // Falls back to the whole raw text as a single attribute if it doesn't tokenize as expected,
+    // rather than silently dropping it.
+    const tokens = tokenizeKeywordText(rawAttributeText);
+    const values = tokens.length > 0 ? tokens : [rawAttributeText];
+    const attributes: DdsAttribute[] = values.map(value => ({ ...baseAttribute, value }));
+
+    return { attributes, nextIndex: currentIndex };
 };
 
 /**
