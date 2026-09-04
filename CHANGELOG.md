@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.4.0] - 2026-09-04
+### Added
+- Preview: `EDTCDE(W)`/`EDTCDE(Y)` (date-slash editing) and `EDTCDE(X)`/`EDTCDE(Z)` are now recognized and rendered correctly, confirmed against real STRSDA — previously fell back to a generic, often wrong, numeric mask.
+- Preview: the `DATE()` keyword (`*JOB`/`*SYS`, `*Y`/`*YY`) is now recognized as a system field, with or without `EDTCDE(Y)`/`EDTCDE(W)`.
+- Preview: a floating currency symbol on `EDTCDE()` (e.g. `EDTCDE(J $)`) now adds its extra display position; asterisk fill now shows as `*` in place of the leading digit instead of a plain digit.
+- Configuration: new "Date Separator" section (US `/` / European `-`) alongside Decimal Format, with "Fetch from IBM i" (reads `QDATSEP`) and reset.
+### Fixed
+- Preview: an `EDTCDE()`'s comma/sign/date/currency decoration only ever shows on an output field, confirmed against real STRSDA — an input-capable field now previews as if unedited instead of always applying the code's formatting.
+- Parser: several keywords on one physical source line (e.g. `EDTCDE(3) DSPATR(HI) COLOR(RED)`) were read as a single combined value instead of separate keywords, breaking both the preview and Remove Color/Attribute/Editing Keywords for a field or constant written that way.
+- Remove Colors / Remove Attributes / Remove Editing Keywords: removing one keyword sharing a line with others — or continued onto the next line via a trailing hyphen — could delete the sibling keywords too, or leave survivors stranded on a continuation line they no longer needed.
+
 ## [1.3.0] - 2026-09-02
 ### Added
 - Preview: the "⋮ Actions" menu (single selection) now also offers Rename... (fields) / Edit Text... (constants), Indicators..., and — for fields — Validity Checks..., Editing Keywords..., and Error Messages..., delegating to the exact same tree commands (same prompts, validation, and confirmations as right-clicking the element in the tree). The preview now covers practically everything the tree's context menu offers for a single field or constant.

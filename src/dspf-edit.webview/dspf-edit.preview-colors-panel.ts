@@ -7,17 +7,19 @@
 import * as vscode from 'vscode';
 import { PREVIEW_COLOR_SETTINGS, readColorSetting, resetPreviewColors, setPreviewColor } from '../dspf-edit.utils/dspf-edit.preview-colors';
 import { DECIMAL_FORMAT_OPTIONS, DecimalFormat, getDecimalFormat, resetDecimalFormat, setDecimalFormat } from '../dspf-edit.utils/dspf-edit.decimal-format';
-import { resolveDecimalFormatFromSystem } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
+import { DATE_SEPARATOR_OPTIONS, DateSeparatorFormat, getDateSeparatorFormat, resetDateSeparatorFormat, setDateSeparatorFormat } from '../dspf-edit.utils/dspf-edit.date-format';
+import { resolveDecimalFormatFromSystem, resolveDateSeparatorFormatFromSystem } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 import { RecordPreviewPanel } from './dspf-edit.record-preview-panel';
 
 /**
  * The extension's "⚙ Configuration" webview panel. Lets the user pick the record preview's colors
  * visually — a native OS/browser color picker per swatch (`<input type="color">`) instead of
  * typing hex codes by hand — and choose the decimal/thousands-separator convention (US/European)
- * used when previewing EDTCDE()-edited numeric fields, either manually or fetched from the
- * connected IBM i's QDECFMT system value. Reads and writes straight to the extension's own
- * stored settings (see dspf-edit.utils/dspf-edit.preview-colors.ts and
- * dspf-edit.utils/dspf-edit.decimal-format.ts), so there's no separate state of its own: closing
+ * and the date-separator convention (US '/' / European '-') used when previewing EDTCDE()-edited
+ * numeric fields, either manually or fetched from the connected IBM i's QDECFMT/QDATSEP system
+ * values. Reads and writes straight to the extension's own stored settings (see
+ * dspf-edit.utils/dspf-edit.preview-colors.ts, dspf-edit.utils/dspf-edit.decimal-format.ts and
+ * dspf-edit.utils/dspf-edit.date-format.ts), so there's no separate state of its own: closing
  * this panel loses nothing, since every change was already saved the moment it was made — and it
  * pushes each change straight to an open record preview panel, if any.
  */
@@ -73,6 +75,11 @@ export class PreviewColorsPanel {
         this.panel.webview.postMessage({ type: 'updateDecimalFormat', value: getDecimalFormat() });
     };
 
+    /** Same as updateDecimalFormatRadio, for the date separator's radios. */
+    private updateDateSeparatorRadio(): void {
+        this.panel.webview.postMessage({ type: 'updateDateSeparator', value: getDateSeparatorFormat() });
+    };
+
     private async onDidReceiveMessage(message: any): Promise<void> {
         switch (message?.type) {
             case 'setColor':
@@ -115,6 +122,32 @@ export class PreviewColorsPanel {
                     vscode.window.showErrorMessage(error instanceof Error ? error.message : 'Could not read QDECFMT from the connected IBM i.');
                 };
                 break;
+            case 'setDateSeparator':
+                await setDateSeparatorFormat(message.value as DateSeparatorFormat);
+                RecordPreviewPanel.refreshTheme();
+                break;
+            case 'resetDateSeparator': {
+                const changed = await resetDateSeparatorFormat();
+                this.updateDateSeparatorRadio();
+                RecordPreviewPanel.refreshTheme();
+                vscode.window.showInformationMessage(
+                    changed
+                        ? 'DSPF Edit: date separator reset to default (US).'
+                        : 'DSPF Edit: date separator was already at its default (US).'
+                );
+                break;
+            };
+            case 'fetchDateSeparatorFromIBMi':
+                try {
+                    const format = await resolveDateSeparatorFormatFromSystem();
+                    await setDateSeparatorFormat(format);
+                    this.updateDateSeparatorRadio();
+                    RecordPreviewPanel.refreshTheme();
+                    vscode.window.showInformationMessage(`DSPF Edit: date separator set to '${format}' from the connected IBM i (QDATSEP).`);
+                } catch (error) {
+                    vscode.window.showErrorMessage(error instanceof Error ? error.message : 'Could not read QDATSEP from the connected IBM i.');
+                };
+                break;
         };
     };
 
@@ -135,6 +168,15 @@ export class PreviewColorsPanel {
     <div class="row">
         <label class="radio-label">
             <input type="radio" name="decimalFormat" value="${opt.value}" ${opt.value === currentDecimalFormat ? 'checked' : ''}>
+            ${opt.label} — <span class="hex">${opt.example}</span>
+        </label>
+    </div>`).join('');
+
+        const currentDateSeparator = getDateSeparatorFormat();
+        const dateSeparatorRows = DATE_SEPARATOR_OPTIONS.map(opt => `
+    <div class="row">
+        <label class="radio-label">
+            <input type="radio" name="dateSeparator" value="${opt.value}" ${opt.value === currentDateSeparator ? 'checked' : ''}>
             ${opt.label} — <span class="hex">${opt.example}</span>
         </label>
     </div>`).join('');
@@ -239,6 +281,16 @@ ${decimalFormatRows}
     <button id="fetchDecimalFormat" class="btn-secondary" style="margin-top: 0;">Fetch from IBM i</button>
     <button id="resetDecimalFormat" class="btn-secondary" style="margin-top: 0;">Reset to Default</button>
 </div>
+
+<hr class="section">
+
+<h2>Date Separator</h2>
+<p class="hint">Separator used when previewing EDTCDE(W)/EDTCDE(Y)-edited numeric fields.</p>
+${dateSeparatorRows}
+<div class="row" style="gap: 8px; margin-top: 8px;">
+    <button id="fetchDateSeparator" class="btn-secondary" style="margin-top: 0;">Fetch from IBM i</button>
+    <button id="resetDateSeparator" class="btn-secondary" style="margin-top: 0;">Reset to Default</button>
+</div>
 <script>
     const vscode = acquireVsCodeApi();
 
@@ -279,12 +331,31 @@ ${decimalFormatRows}
         vscode.postMessage({ type: 'resetDecimalFormat' });
     });
 
+    document.querySelectorAll('input[name="dateSeparator"]').forEach(input => {
+        input.addEventListener('change', () => {
+            vscode.postMessage({ type: 'setDateSeparator', value: input.value });
+        });
+    });
+
+    document.getElementById('fetchDateSeparator').addEventListener('click', () => {
+        vscode.postMessage({ type: 'fetchDateSeparatorFromIBMi' });
+    });
+
+    document.getElementById('resetDateSeparator').addEventListener('click', () => {
+        vscode.postMessage({ type: 'resetDateSeparator' });
+    });
+
     // Reset/Fetch don't reload the panel's html (see updateDecimalFormatRadio's comment on the
     // extension side for why) — they instead send this message so the already-live radios get
     // updated directly, without depending on a reload happening at all.
     window.addEventListener('message', event => {
         if (event.data?.type === 'updateDecimalFormat') {
             document.querySelectorAll('input[name="decimalFormat"]').forEach(input => {
+                input.checked = input.value === event.data.value;
+            });
+        };
+        if (event.data?.type === 'updateDateSeparator') {
+            document.querySelectorAll('input[name="dateSeparator"]').forEach(input => {
                 input.checked = input.value === event.data.value;
             });
         };

@@ -976,6 +976,192 @@ export async function applyWorkspaceEdit(workspaceEdit: vscode.WorkspaceEdit, co
 };
 
 /**
+ * Finds the last physical line a keyword area starting at `startLine` continues onto, by following
+ * its trailing continuation hyphen(s) — the same rule the parser itself uses (see extractAttributes
+ * in dspf-edit.parser.ts). Pass the result as removeKeywordTextFromLines's `lastLineIndex` so it can
+ * see (and, once a keyword is removed, re-flow) the whole keyword area rather than just its own
+ * first line.
+ * @param document - The text document
+ * @param startLine - The keyword area's first line
+ */
+export function findKeywordContinuationEndLine(document: vscode.TextDocument, startLine: number): number {
+    let endLine = startLine;
+    while (endLine < document.lineCount - 1) {
+        const part = document.lineAt(endLine).text.substring(44, 80);
+        if (!part.trim().endsWith('-')) {
+            break;
+        };
+        endLine++;
+    };
+    return endLine;
+};
+
+/**
+ * Removes one keyword's own text (e.g. "COLOR(RED)") from the DDS keyword area (columns 45-80) of
+ * the line(s) it occupies. Handles two things a naive "delete the whole line range" approach gets
+ * wrong: the range may span more than one physical line via a trailing continuation hyphen (e.g.
+ * "EDTCDE(3) DSPATR(HI) COLOR(RED) DSP-" continuing onto "ATR(RI)" below), and those line(s) may be
+ * shared with sibling keywords that must survive. Reconstructs the joined logical keyword text
+ * across the range, removes `value` from it, and re-paginates whatever remains back across the same
+ * starting line(s) — re-inserting a continuation hyphen only where content still doesn't fit on one
+ * line, and deleting any line(s) left over once the remainder needs fewer lines than before.
+ * @param editor - The active text editor
+ * @param lineIndex - The keyword's own first line
+ * @param lastLineIndex - The keyword's own last line (equal to lineIndex when it doesn't continue)
+ * @param value - The keyword's own text, exactly as parsed (e.g. "COLOR(RED)")
+ * @param preserveFirstLine - True when `lineIndex` is a field/constant's own definition line (whose
+ * columns 1-44 must survive even when nothing else is left in its keyword area) rather than a
+ * standalone attribute line (which can be deleted outright in that case)
+ */
+export async function removeKeywordTextFromLines(
+    editor: vscode.TextEditor,
+    lineIndex: number,
+    lastLineIndex: number,
+    value: string,
+    preserveFirstLine: boolean = false
+): Promise<boolean> {
+    return rewriteKeywordArea(editor, lineIndex, lastLineIndex, preserveFirstLine, joined => {
+        let start = joined.indexOf(value);
+        if (start === -1) {
+            vscode.window.showErrorMessage(`Could not locate the attribute's text on its source line(s).`);
+            return null;
+        };
+        let end = start + value.length;
+        if (joined[start - 1] === ' ') {
+            start -= 1;
+        } else if (joined[end] === ' ') {
+            end += 1;
+        };
+        return (joined.slice(0, start) + joined.slice(end)).replace(/\s+$/, '');
+    });
+};
+
+/**
+ * Removes every match of any of `patterns` (e.g. EDTCDE()/EDTWRD()/EDTMSK() at once) from the DDS
+ * keyword area of the line(s) it occupies, with the same continuation-aware, sibling-preserving
+ * re-pagination as removeKeywordTextFromLines — used where several *kinds* of keyword need removing
+ * together rather than one specific keyword's exact text.
+ * @param editor - The active text editor
+ * @param lineIndex - The keyword area's first line
+ * @param lastLineIndex - The keyword area's last line (equal to lineIndex when it doesn't continue)
+ * @param patterns - Regexes to remove (each applied with a global flag's worth of repeats via `replace`)
+ * @param preserveFirstLine - See removeKeywordTextFromLines
+ */
+export async function removeKeywordPatternsFromLines(
+    editor: vscode.TextEditor,
+    lineIndex: number,
+    lastLineIndex: number,
+    patterns: RegExp[],
+    preserveFirstLine: boolean = false
+): Promise<boolean> {
+    return rewriteKeywordArea(editor, lineIndex, lastLineIndex, preserveFirstLine, joined => {
+        let result = joined;
+        for (const pattern of patterns) {
+            result = result.replace(pattern, '');
+        };
+        return result.replace(/\s{2,}/g, ' ').trim();
+    });
+};
+
+/**
+ * Shared plumbing for removeKeywordTextFromLines/removeKeywordPatternsFromLines: reconstructs the
+ * joined logical keyword text across `[lineIndex, lastLineIndex]` (stripping each non-final line's
+ * continuation hyphen, matching how the parser itself reconstructs a continued value), hands it to
+ * `computeRemaining`, and re-paginates whatever comes back across the same starting line(s) —
+ * re-inserting a continuation hyphen only where content still doesn't fit on one line, and deleting
+ * any line(s) left over once the remainder needs fewer lines than before.
+ * @param computeRemaining - Returns the new joined keyword text, or null to abort (already reported
+ * to the user) when it couldn't find what it was looking for
+ */
+async function rewriteKeywordArea(
+    editor: vscode.TextEditor,
+    lineIndex: number,
+    lastLineIndex: number,
+    preserveFirstLine: boolean,
+    computeRemaining: (joined: string) => string | null
+): Promise<boolean> {
+    const document = editor.document;
+    const uri = document.uri;
+
+    const lineCount = lastLineIndex - lineIndex + 1;
+    const rawParts: string[] = [];
+    for (let i = lineIndex; i <= lastLineIndex; i++) {
+        rawParts.push(document.lineAt(i).text.substring(44, 80));
+    };
+
+    const joined = rawParts.map((part, i) => i === rawParts.length - 1 ? part : part.replace(/-$/, '')).join('');
+    const remaining = computeRemaining(joined);
+    if (remaining === null) {
+        return false;
+    };
+
+    const workspaceEdit = new vscode.WorkspaceEdit();
+
+    if (remaining.trim().length === 0) {
+        if (preserveFirstLine) {
+            const line = document.lineAt(lineIndex);
+            workspaceEdit.replace(uri, line.range, line.text.substring(0, 44).replace(/\s+$/, ''));
+            if (lastLineIndex > lineIndex) {
+                deleteLineRange(workspaceEdit, document, uri, lineIndex + 1, lastLineIndex);
+            };
+        } else {
+            deleteLineRange(workspaceEdit, document, uri, lineIndex, lastLineIndex);
+        };
+        return applyWorkspaceEdit(workspaceEdit, 'delete the attribute');
+    };
+
+    // Re-paginate the remaining text: up to 35 characters per continued line (leaving room for a
+    // trailing '-'), and up to 36 on the final line (no continuation needed).
+    const chunks: string[] = [];
+    let rest = remaining;
+    while (rest.length > 36) {
+        chunks.push(rest.substring(0, 35) + '-');
+        rest = rest.substring(35);
+    };
+    chunks.push(rest);
+
+    const prefix = document.lineAt(lineIndex).text.substring(0, 44);
+    for (let i = 0; i < chunks.length; i++) {
+        const newText = (prefix + chunks[i]).replace(/\s+$/, '');
+        workspaceEdit.replace(uri, document.lineAt(lineIndex + i).range, newText);
+    };
+
+    if (chunks.length < lineCount) {
+        deleteLineRange(workspaceEdit, document, uri, lineIndex + chunks.length, lastLineIndex);
+    };
+
+    return applyWorkspaceEdit(workspaceEdit, 'delete the attribute');
+};
+
+/** Deletes a contiguous range of whole lines (inclusive), handling end-of-document edge cases. */
+function deleteLineRange(
+    workspaceEdit: vscode.WorkspaceEdit,
+    document: vscode.TextDocument,
+    uri: vscode.Uri,
+    startLine: number,
+    endLine: number
+): void {
+    const docLength = document.getText().length;
+    let startOffset: number;
+    let endOffset: number;
+
+    if (endLine === document.lineCount - 1) {
+        if (startLine === 0) {
+            startOffset = 0;
+            endOffset = docLength;
+        } else {
+            startOffset = document.offsetAt(document.lineAt(startLine - 1).range.end);
+            endOffset = docLength;
+        };
+    } else {
+        startOffset = document.offsetAt(new vscode.Position(startLine, 0));
+        endOffset = document.offsetAt(document.lineAt(endLine).rangeIncludingLineBreak.end);
+    };
+
+    workspaceEdit.delete(uri, new vscode.Range(document.positionAt(startOffset), document.positionAt(endOffset)));
+};
+
+/**
  * Parses indicators from a DDS line at positions 8-10, 11-13, 14-16.
  * @param lineText - The DDS line text
  * @returns Array of indicator codes found

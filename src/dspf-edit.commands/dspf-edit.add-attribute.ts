@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from './../dspf-edit.providers/dspf-edit.providers';
-import { isAttributeLine, findElementInsertionPoint, checkForEditorAndDocument, parseIndicatorsFromLine, groupConsecutiveLines, applyWorkspaceEdit } from './../dspf-edit.utils/dspf-edit.helper';
+import { isAttributeLine, findElementInsertionPoint, checkForEditorAndDocument, parseIndicatorsFromLine, applyWorkspaceEdit, removeKeywordTextFromLines, findKeywordContinuationEndLine } from './../dspf-edit.utils/dspf-edit.helper';
 import { fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
  
 // INTERFACES AND TYPES
@@ -525,92 +525,44 @@ async function removeAttributesFromElement(editor: vscode.TextEditor, element: a
     if (currentAttributes.length === 0) return true;
 
     const document = editor.document;
-    const workspaceEdit = new vscode.WorkspaceEdit();
-    const uri = document.uri;
     const isConstant = element.kind === 'constant';
 
     // Separate inline attributes from line attributes
     const inlineAttributes = currentAttributes.filter(attr => attr.isInlineAttribute);
     const lineAttributes = currentAttributes.filter(attr => !attr.isInlineAttribute);
 
-    // Handle inline attribute removal (for fields)
+    // Handle separate attribute lines removal first, from the last line to the first: DDS allows
+    // other keywords to share these lines (and their keyword area can itself continue onto further
+    // lines via a trailing hyphen), so removeKeywordTextFromLines strips just this DSPATR's own text
+    // and re-flows whatever remains back onto as few lines as it now fits in — which can itself
+    // delete or merge lines, shifting the line numbers of everything below it (but never above).
+    // Since the field's own line always comes before any of these, handling these first (latest to
+    // earliest) and the inline case last keeps every remaining entry's own line index valid.
+    for (const attr of [...lineAttributes].sort((a, b) => b.lineIndex! - a.lineIndex!)) {
+        const lineIndex = attr.lineIndex!;
+        const lineText = document.lineAt(lineIndex).text;
+        const attributeMatch = lineText.match(/DSPATR\([A-Z]{2}\)/);
+        if (!attributeMatch) {
+            continue;
+        };
+
+        const endLine = findKeywordContinuationEndLine(document, lineIndex);
+        if (!(await removeKeywordTextFromLines(editor, lineIndex, endLine, attributeMatch[0], false))) {
+            return false;
+        };
+    };
+
+    // Handle inline attribute removal (for fields) last — same reasoning as above.
     if (!isConstant && inlineAttributes.length > 0) {
-        const fieldLine = document.lineAt(element.lineIndex);
-        const fieldLineText = fieldLine.text;
-        
-        // Remove everything from position 44 onwards
-        const truncatedLine = fieldLineText.substring(0, 44).trimRight();
-        workspaceEdit.replace(uri, fieldLine.range, truncatedLine);
-    };
-
-    // Handle separate attribute lines removal
-    if (lineAttributes.length > 0) {
-        const attributeLineIndices = lineAttributes.map(attr => attr.lineIndex!);
-        const deletionRanges = calculateAttributeDeletionRanges(document, attributeLineIndices);
-        
-        // Apply deletions in reverse order to maintain offsets
-        for (let i = deletionRanges.length - 1; i >= 0; i--) {
-            const { startOffset, endOffset } = deletionRanges[i];
-            const startPos = document.positionAt(startOffset);
-            const endPos = document.positionAt(endOffset);
-            workspaceEdit.delete(uri, new vscode.Range(startPos, endPos));
-        };
-    };
-
-    return applyWorkspaceEdit(workspaceEdit, 'remove the attributes');
-};
-
-/**
- * Calculates precise deletion ranges for standalone attribute lines.
- * Handles edge cases to prevent blank lines at the end of the file.
- * @param document - The text document
- * @param attributeLines - Array of line indices containing standalone attributes
- * @returns Array of deletion ranges with start and end offsets
- */
-function calculateAttributeDeletionRanges(
-    document: vscode.TextDocument, 
-    attributeLines: number[]
-): { startOffset: number; endOffset: number }[] {
-    const docText = document.getText();
-    const docLength = docText.length;
-    const ranges: { startOffset: number; endOffset: number }[] = [];
-    
-    // Group consecutive lines for more efficient deletion
-    const lineGroups = groupConsecutiveLines(attributeLines);
-    
-    for (const group of lineGroups) {
-        const firstLine = group[0];
-        const lastLine = group[group.length - 1];
-        
-        let startOffset: number;
-        let endOffset: number;
-        
-        if (lastLine === document.lineCount - 1) {
-            // Group includes the last line of the document
-            if (firstLine === 0) {
-                // Entire document is attribute lines - delete everything
-                startOffset = 0;
-                endOffset = docLength;
-            } else {
-                // Delete from end of previous line to end of file
-                const prevLineEndPos = document.lineAt(firstLine - 1).range.end;
-                startOffset = document.offsetAt(prevLineEndPos);
-                endOffset = docLength;
+        const fieldLineText = document.lineAt(element.lineIndex).text;
+        const attributeMatch = fieldLineText.substring(44).match(/DSPATR\([A-Z]{2}\)/);
+        if (attributeMatch) {
+            const endLine = findKeywordContinuationEndLine(document, element.lineIndex);
+            if (!(await removeKeywordTextFromLines(editor, element.lineIndex, endLine, attributeMatch[0], true))) {
+                return false;
             };
-        } else {
-            // Group is in the middle or at the beginning
-            startOffset = document.offsetAt(new vscode.Position(firstLine, 0));
-            
-            // Include the line break after the last line of the group
-            const afterGroupPos = document.lineAt(lastLine).rangeIncludingLineBreak.end;
-            endOffset = document.offsetAt(afterGroupPos);
-        };
-        
-        // Validate the range
-        if (startOffset < endOffset && startOffset >= 0 && endOffset <= docLength) {
-            ranges.push({ startOffset, endOffset });
         };
     };
-    
-    return ranges;
+
+    return true;
 };

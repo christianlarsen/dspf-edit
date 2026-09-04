@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { isAttributeLine, findElementInsertionPoint, checkForEditorAndDocument, parseIndicatorsFromLine, groupConsecutiveLines, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { isAttributeLine, findElementInsertionPoint, checkForEditorAndDocument, parseIndicatorsFromLine, applyWorkspaceEdit, removeKeywordTextFromLines, findKeywordContinuationEndLine } from '../dspf-edit.utils/dspf-edit.helper';
 import { fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
 
 // INTERFACES AND TYPES
@@ -492,92 +492,44 @@ async function removeColorsFromElement(editor: vscode.TextEditor, element: any):
     if (currentColors.length === 0) return true;
 
     const document = editor.document;
-    const workspaceEdit = new vscode.WorkspaceEdit();
-    const uri = document.uri;
     const isConstant = element.kind === 'constant';
 
     // Separate inline colors from line colors
     const inlineColors = currentColors.filter(color => color.isInlineColor);
     const lineColors = currentColors.filter(color => !color.isInlineColor);
 
-    // Handle inline color removal (for fields)
+    // Handle separate color lines removal first, from the last line to the first: DDS allows other
+    // keywords to share these lines (and their keyword area can itself continue onto further lines
+    // via a trailing hyphen), so removeKeywordTextFromLines strips just the color's own text and
+    // re-flows whatever remains back onto as few lines as it now fits in — which can itself delete
+    // or merge lines, shifting the line numbers of everything below it (but never above). Since the
+    // field's own line always comes before any of these, handling these first (latest to earliest)
+    // and the inline case last keeps every remaining entry's own line index valid when its turn comes.
+    for (const color of [...lineColors].sort((a, b) => b.lineIndex! - a.lineIndex!)) {
+        const lineIndex = color.lineIndex!;
+        const lineText = document.lineAt(lineIndex).text;
+        const colorMatch = lineText.match(/COLOR\([A-Z]{3}\)/);
+        if (!colorMatch) {
+            continue;
+        };
+
+        const endLine = findKeywordContinuationEndLine(document, lineIndex);
+        if (!(await removeKeywordTextFromLines(editor, lineIndex, endLine, colorMatch[0], false))) {
+            return false;
+        };
+    };
+
+    // Handle inline color removal (for fields) last — same reasoning as above.
     if (!isConstant && inlineColors.length > 0) {
-        const fieldLine = document.lineAt(element.lineIndex);
-        const fieldLineText = fieldLine.text;
-        
-        // Remove everything from position 44 onwards
-        const truncatedLine = fieldLineText.substring(0, 44).trimRight();
-        workspaceEdit.replace(uri, fieldLine.range, truncatedLine);
-    };
-
-    // Handle separate color lines removal
-    if (lineColors.length > 0) {
-        const colorLineIndices = lineColors.map(color => color.lineIndex!);
-        const deletionRanges = calculateColorDeletionRanges(document, colorLineIndices);
-        
-        // Apply deletions in reverse order to maintain offsets
-        for (let i = deletionRanges.length - 1; i >= 0; i--) {
-            const { startOffset, endOffset } = deletionRanges[i];
-            const startPos = document.positionAt(startOffset);
-            const endPos = document.positionAt(endOffset);
-            workspaceEdit.delete(uri, new vscode.Range(startPos, endPos));
-        };
-    };
-
-    return applyWorkspaceEdit(workspaceEdit, 'remove the colors');
-};
-
-/**
- * Calculates precise deletion ranges for standalone color lines.
- * Handles edge cases to prevent blank lines at the end of the file.
- * @param document - The text document
- * @param colorLines - Array of line indices containing standalone colors
- * @returns Array of deletion ranges with start and end offsets
- */
-function calculateColorDeletionRanges(
-    document: vscode.TextDocument, 
-    colorLines: number[]
-): { startOffset: number; endOffset: number }[] {
-    const docText = document.getText();
-    const docLength = docText.length;
-    const ranges: { startOffset: number; endOffset: number }[] = [];
-    
-    // Group consecutive lines for more efficient deletion
-    const lineGroups = groupConsecutiveLines(colorLines);
-    
-    for (const group of lineGroups) {
-        const firstLine = group[0];
-        const lastLine = group[group.length - 1];
-        
-        let startOffset: number;
-        let endOffset: number;
-        
-        if (lastLine === document.lineCount - 1) {
-            // Group includes the last line of the document
-            if (firstLine === 0) {
-                // Entire document is color lines - delete everything
-                startOffset = 0;
-                endOffset = docLength;
-            } else {
-                // Delete from end of previous line to end of file
-                const prevLineEndPos = document.lineAt(firstLine - 1).range.end;
-                startOffset = document.offsetAt(prevLineEndPos);
-                endOffset = docLength;
+        const fieldLineText = document.lineAt(element.lineIndex).text;
+        const colorMatch = fieldLineText.substring(44).match(/COLOR\([A-Z]{3}\)/);
+        if (colorMatch) {
+            const endLine = findKeywordContinuationEndLine(document, element.lineIndex);
+            if (!(await removeKeywordTextFromLines(editor, element.lineIndex, endLine, colorMatch[0], true))) {
+                return false;
             };
-        } else {
-            // Group is in the middle or at the beginning
-            startOffset = document.offsetAt(new vscode.Position(firstLine, 0));
-            
-            // Include the line break after the last line of the group
-            const afterGroupPos = document.lineAt(lastLine).rangeIncludingLineBreak.end;
-            endOffset = document.offsetAt(afterGroupPos);
-        };
-        
-        // Validate the range
-        if (startOffset < endOffset && startOffset >= 0 && endOffset <= docLength) {
-            ranges.push({ startOffset, endOffset });
         };
     };
-    
-    return ranges;
+
+    return true;
 };

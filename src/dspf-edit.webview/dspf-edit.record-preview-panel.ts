@@ -9,6 +9,7 @@ import { FieldsPerRecord, DdsSize, DdsAttribute, AttributeWithIndicators, DdsInd
 import { checkForEditorAndDocument, updateTreeProvider, applyWorkspaceEdit, applyDisplayFormatSplitEdit } from '../dspf-edit.utils/dspf-edit.helper';
 import { getBackgroundColor, getDdsColorMap, getReferencedFieldColor } from '../dspf-edit.utils/dspf-edit.preview-colors';
 import { getDecimalSeparators } from '../dspf-edit.utils/dspf-edit.decimal-format';
+import { getDateSeparator } from '../dspf-edit.utils/dspf-edit.date-format';
 import { DdsTreeProvider, DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { ExtensionState } from '../dspf-edit.states/state';
 import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
@@ -217,8 +218,9 @@ const EDIT_CODE_INFO: Record<string, { comma: boolean; sign: '' | '-' | 'CR'; si
 };
 
 /**
- * Extracts a field's EDTCDE() code, if it carries one (its optional modifier — asterisk fill or a
- * currency symbol — doesn't affect the preview mask, so it's not extracted here).
+ * Extracts a field's EDTCDE() code, if it carries one. Recognizes every IBM i edit code: 1-4, A-D,
+ * J-Q (the comma/decimal/sign codes), W and Y (the date-slash codes), and X and Z (see
+ * getEditingMask for their masks, confirmed against real STRSDA).
  * @param attributes - The element's DDS attributes
  */
 function getEditCode(attributes: AttributeWithIndicators[] | undefined): string | null {
@@ -227,7 +229,88 @@ function getEditCode(attributes: AttributeWithIndicators[] | undefined): string 
         return null;
     };
 
-    return attr.value.match(/^EDTCDE\(\s*([1-4A-DJ-Q])/i)?.[1]?.toUpperCase() ?? null;
+    return attr.value.match(/^EDTCDE\(\s*([1-4A-DJ-QWXYZ])/i)?.[1]?.toUpperCase() ?? null;
+};
+
+/**
+ * Extracts a field's EDTCDE() floating currency symbol modifier, if it carries one — confirmed
+ * against real STRSDA to add one extra display position (prefixed, to the left of the first digit),
+ * unlike the asterisk-fill modifier which only substitutes a leading suppressed-zero digit without
+ * changing the field's width at all. Only 1-4, A-D and J-Q support either modifier (see
+ * getAvailableEditCodes in dspf-edit.add-editing-keywords.ts).
+ * @param attributes - The element's DDS attributes
+ */
+function getEditCodeCurrencySymbol(attributes: AttributeWithIndicators[] | undefined): string | null {
+    const attr = attributes?.find(a => /^EDTCDE\(/i.test(a.value));
+    if (!attr) {
+        return null;
+    };
+
+    const modifier = attr.value.match(/^EDTCDE\(\s*[1-4A-DJ-Q]\s+(\S)\s*\)/i)?.[1];
+    return modifier && modifier !== '*' ? modifier : null;
+};
+
+/** True when a field's EDTCDE() carries the asterisk-fill modifier (see getEditCodeCurrencySymbol). */
+function hasEditCodeAsteriskFill(attributes: AttributeWithIndicators[] | undefined): boolean {
+    const attr = attributes?.find(a => /^EDTCDE\(/i.test(a.value));
+    return Boolean(attr && /^EDTCDE\(\s*[1-4A-DJ-Q]\s+\*\s*\)/i.test(attr.value));
+};
+
+/**
+ * Digit-group sizes for EDTCDE(W) and EDTCDE(Y), keyed by the field's total digit length — per the
+ * DDS reference's Table 6/7 footnotes, confirmed against real STRSDA. Unlike the comma/decimal codes
+ * above, W/Y ignore decimal positions entirely: the grouping is based purely on total length, and a
+ * '/' (or the configured date separator) is inserted between groups instead of a decimal point.
+ * Lengths outside this table have no documented pattern and aren't previewed with a mask.
+ */
+const DATE_EDIT_CODE_DIGIT_GROUPS: Record<'W' | 'Y', Record<number, number[]>> = {
+    W: { 5: [2, 3], 6: [4, 2], 7: [4, 3], 8: [4, 2, 2] },
+    Y: { 3: [2, 1], 4: [2, 2], 5: [2, 2, 1], 6: [2, 2, 2], 7: [3, 2, 2], 8: [2, 2, 4] }
+};
+
+/**
+ * Builds the slash-grouped mask for a field carrying EDTCDE(W) or EDTCDE(Y) — e.g. "  -  -  " for a
+ * 6-digit field, matching STRSDA's "66-66-66" for EDTCDE(Y) and "6666-66" for EDTCDE(W).
+ * @param length - The field's total digit length (decimals aren't used — see DATE_EDIT_CODE_DIGIT_GROUPS)
+ * @param code - 'W' or 'Y'
+ */
+function getDateEditCodeMask(length: number, code: 'W' | 'Y'): string | null {
+    const groups = DATE_EDIT_CODE_DIGIT_GROUPS[code][length];
+    if (!groups) {
+        return null;
+    };
+
+    return groups.map(size => ' '.repeat(size)).join(getDateSeparator());
+};
+
+/**
+ * Resolves what a constant should render as, for the two forms of a DDS system keyword coded bare,
+ * unquoted, in a constant's position: the plain word (DATE, TIME, USER, SYSNAME — via
+ * SYSTEM_FIELD_PLACEHOLDER) and DATE's own parenthesized keyword-call form
+ * (DATE([*JOB|*SYS] [*Y|*YY])). Confirmed against real STRSDA: unlike the plain word, DATE(...)
+ * shows no separators by itself — "DDDDDD" for the default 2-digit year (*Y), "DDDDDDDD" for
+ * *YY — only gaining them when the constant also carries EDTCDE(Y) or EDTCDE(W) on its own
+ * attribute line, exactly like a numeric field's edit code (see getEditCodeMask). Returns
+ * undefined when `name` is neither form, so the caller falls back to the literal constant text.
+ * @param name - The constant's stored name/text (already quote-stripped)
+ * @param attributes - The constant's own DDS attributes (for a possible EDTCDE)
+ */
+function getSystemConstantText(name: string, attributes: AttributeWithIndicators[] | undefined): string | undefined {
+    const upper = name.trim().toUpperCase();
+    const bare = SYSTEM_FIELD_PLACEHOLDER[upper];
+    if (bare) {
+        return bare;
+    };
+
+    const dateMatch = upper.match(/^DATE\(([^)]*)\)$/);
+    if (!dateMatch) {
+        return undefined;
+    };
+
+    const length = /\*YY\b/.test(dateMatch[1]) ? 8 : 6;
+    const code = getEditCode(attributes);
+    const mask = code ? getEditCodeMask(length, 0, code) : null;
+    return (mask ?? ' '.repeat(length)).split('').map(ch => ch === ' ' ? 'D' : ch).join('');
 };
 
 /**
@@ -236,9 +319,13 @@ function getEditCode(attributes: AttributeWithIndicators[] | undefined): string 
  * width (commas, decimal point, sign) SDA/RDi reserve when previewing an edited numeric field.
  * @param length - The field's digit length
  * @param decimals - The field's decimal positions
- * @param code - The EDTCDE code (1-4, A-D, J-Q)
+ * @param code - The EDTCDE code (1-4, A-D, J-Q, W, Y)
  */
 function getEditCodeMask(length: number, decimals: number, code: string): string | null {
+    if (code === 'W' || code === 'Y') {
+        return getDateEditCodeMask(length, code);
+    };
+
     const info = EDIT_CODE_INFO[code];
     if (!info) {
         return null;
@@ -324,7 +411,35 @@ function getEditingMask(attributes: AttributeWithIndicators[] | undefined, type:
 
     const code = getEditCode(attributes);
     if (code) {
-        return getEditCodeMask(length, decimals, code);
+        // Confirmed against real STRSDA: an EDTCDE's comma/sign/date-slash/currency decoration only
+        // ever shows on an output field — an input-capable (I/B) field always previews exactly as if
+        // it carried no EDTCDE at all, under the Y (numeric-only) shift EDTCDE forces on a blank
+        // Type (a decimal point reserved only when it actually has decimals; see
+        // getUneditedNumericMask). This holds for every code, including W/Y/X/Z.
+        const usageCode = (usage || '').trim().toUpperCase() || 'O';
+        if (usageCode === 'I' || usageCode === 'B') {
+            return getUneditedNumericMask('Y', usage, length, rawDecimals);
+        };
+
+        if (code === 'W' || code === 'Y') {
+            return getDateEditCodeMask(length, code);
+        };
+        // X's own output display is identical to an unedited field (no comma/sign, ever) — it only
+        // ever mattered for forcing the Y shift above. Z's own output display, confirmed against
+        // real STRSDA, has no comma or decimal point regardless of decimals (unlike every other
+        // code) and reserves no extra position either — it only changes the field's stored sign
+        // representation (hex F), never its display.
+        if (code === 'X' || code === 'Z') {
+            return null;
+        };
+
+        const baseMask = getEditCodeMask(length, decimals, code);
+        // Asterisk fill (confirmed against real STRSDA) substitutes the leading suppressed-zero
+        // digit with a literal '*' rather than adding width — replacing the mask's first blank
+        // (its first digit position, skipping past any fixed leading sign character) does that.
+        const withAsterisk = baseMask && hasEditCodeAsteriskFill(attributes) ? baseMask.replace(' ', '*') : baseMask;
+        const currency = getEditCodeCurrencySymbol(attributes);
+        return currency && withAsterisk ? currency + withAsterisk : withAsterisk;
     };
 
     return getUneditedNumericMask(type, usage, length, rawDecimals);
@@ -1395,8 +1510,9 @@ export class RecordPreviewPanel {
                 const activeAttrs = this.getActiveAttributes(constant.attributes, useLiveIndicators);
                 // Same reasoning as the field loop above: a bare system keyword (DATE, USER...)
                 // renders at its own fixed width, not the raw constant text's length.
-                const isSystemConstant = Boolean(SYSTEM_FIELD_PLACEHOLDER[constant.name.trim().toUpperCase()]);
-                const text = isSystemConstant ? SYSTEM_FIELD_PLACEHOLDER[constant.name.trim().toUpperCase()] : constant.name;
+                const systemConstantText = getSystemConstantText(constant.name, activeAttrs);
+                const isSystemConstant = systemConstantText !== undefined;
+                const text = systemConstantText ?? constant.name;
                 items.push({
                     kind: 'constant',
                     name: constant.name,

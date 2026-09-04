@@ -7,6 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsAttribute, DdsElement, DdsField, attributesFileLevel } from '../dspf-edit.model/dspf-edit.model';
 import { DecimalFormat } from '../dspf-edit.utils/dspf-edit.decimal-format';
+import { DateSeparatorFormat } from '../dspf-edit.utils/dspf-edit.date-format';
 
 /**
  * Isolated from the rest of the extension on purpose: this is the only file that knows about the
@@ -229,6 +230,38 @@ export async function resolveDecimalFormatFromSystem(): Promise<DecimalFormat> {
     const mapped = QDECFMT_TO_DECIMAL_FORMAT[raw];
     if (!mapped) {
         throw new Error(`Unrecognized QDECFMT value '${raw}' on the connected IBM i.`);
+    };
+    return mapped;
+};
+
+/**
+ * Maps the IBM i QDATSEP system value's raw character to the extension's DateSeparatorFormat: '/'
+ * (the default) and '-' (common in European locales, confirmed against real STRSDA). QDATSEP also
+ * allows '.' and ',', which aren't mapped since neither format is exposed in the configuration panel.
+ */
+const QDATSEP_TO_DATE_SEPARATOR_FORMAT: Record<string, DateSeparatorFormat> = {
+    '/': 'US',
+    '-': 'European'
+};
+
+/**
+ * Reads the connected IBM i's QDATSEP system value and maps it to the extension's date separator
+ * format. Throws (no connection, unrecognized value) rather than returning a sentinel — callers show
+ * it to the user.
+ */
+export async function resolveDateSeparatorFormatFromSystem(): Promise<DateSeparatorFormat> {
+    const connection = getIBMiConnection();
+    if (!connection) {
+        throw new Error('No active IBM i connection. Connect via the Code for i extension first.');
+    };
+
+    const rows = await connection.runSQL(
+        `SELECT CURRENT_CHARACTER_VALUE FROM QSYS2.SYSTEM_VALUE_INFO WHERE SYSTEM_VALUE_NAME = 'QDATSEP'`
+    );
+    const raw = String(rows[0]?.CURRENT_CHARACTER_VALUE ?? '').trim();
+    const mapped = QDATSEP_TO_DATE_SEPARATOR_FORMAT[raw];
+    if (!mapped) {
+        throw new Error(`Unrecognized QDATSEP value '${raw}' on the connected IBM i.`);
     };
     return mapped;
 };
