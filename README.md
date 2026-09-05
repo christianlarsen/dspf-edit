@@ -146,11 +146,8 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.4.0** - 2026-09-04
-- Added: Preview now correctly renders `EDTCDE(W)`, `(X)`, `(Y)` and `(Z)`, the `DATE()` keyword, floating currency symbols, and asterisk fill — all confirmed against real STRSDA.
-- Added: new "Date Separator" configuration (US `/` / European `-`), with fetch from the connected IBM i.
-- Fixed: `EDTCDE()` decoration now only applies to output fields in the preview, matching STRSDA — an input-capable field previews as if unedited.
-- Fixed: several DDS keywords sharing one source line (e.g. `EDTCDE(3) DSPATR(HI) COLOR(RED)`) are now parsed and edited correctly — removing one no longer risks deleting or corrupting the others.
+**1.4.1** - 2026-09-05
+- Fixed: window title (`WDWTITLE`) and border (`WDWBORDER`) had stopped rendering in the preview — a regression from 1.4.0, whose keyword parser didn't handle keywords with nested parentheses.
 
 ---
 

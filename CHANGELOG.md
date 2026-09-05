@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.4.1] - 2026-09-05
+### Fixed
+- Preview: window title (`WDWTITLE`) and border (`WDWBORDER`) stopped rendering — a regression from 1.4.0's multi-keyword-per-line parsing fix. Its keyword tokenizer didn't handle keywords with nested parentheses, e.g. `WDWTITLE((*TEXT '...') *TOP)` or `WDWBORDER((*COLOR BLU) (*DSPATR RI))`, shredding them into fragments instead of keeping each as one attribute.
+
 ## [1.4.0] - 2026-09-04
 ### Added
 - Preview: `EDTCDE(W)`/`EDTCDE(Y)` (date-slash editing) and `EDTCDE(X)`/`EDTCDE(Z)` are now recognized and rendered correctly, confirmed against real STRSDA — previously fell back to a generic, often wrong, numeric mask.
