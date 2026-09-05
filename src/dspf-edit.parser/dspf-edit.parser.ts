@@ -681,11 +681,49 @@ function splitConstantValueAndKeywords(raw: string): { value: string; keywordTex
 /**
  * Splits a run of inline DDS keyword text (e.g. "EDTCDE(Y) DSPATR(HI)") into its individual keyword
  * tokens, matching the one-keyword-per-DdsAttribute convention the rest of the parser and preview
- * rely on (e.g. hasDisplayAttribute's exact-match check).
+ * rely on (e.g. hasDisplayAttribute's exact-match check). Tracks paren nesting depth (and ignores
+ * parens inside a quoted literal) rather than stopping at the first ')', so a keyword whose own
+ * parameters are themselves parenthesized — WDWTITLE((*TEXT 'title') *TOP), WDWBORDER((*COLOR BLU)
+ * (*DSPATR RI)) — comes back as one token instead of being shredded into fragments.
  * @param text - Keyword text: zero or more keywords separated by spaces
  */
 function tokenizeKeywordText(text: string): string[] {
-    return text.match(/[A-Za-z][A-Za-z0-9]*(?:\([^()]*\))?/g) ?? [];
+    const tokens: string[] = [];
+    let i = 0;
+
+    while (i < text.length) {
+        if (!/[A-Za-z]/.test(text[i])) {
+            i++;
+            continue;
+        };
+
+        const start = i;
+        while (i < text.length && /[A-Za-z0-9]/.test(text[i])) {
+            i++;
+        };
+
+        if (text[i] === '(') {
+            let depth = 0;
+            let inQuote = false;
+            for (; i < text.length; i++) {
+                const ch = text[i];
+                if (inQuote) {
+                    if (ch === "'") inQuote = false;
+                    continue;
+                };
+                if (ch === "'") { inQuote = true; continue; };
+                if (ch === '(') depth++;
+                else if (ch === ')') {
+                    depth--;
+                    if (depth === 0) { i++; break; };
+                };
+            };
+        };
+
+        tokens.push(text.slice(start, i));
+    };
+
+    return tokens;
 };
 
 /**
