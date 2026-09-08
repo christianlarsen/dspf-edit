@@ -19,8 +19,8 @@ A condition can be made of several OR'd groups, each itself an AND of up to 9 in
 
 ## Reading conditions in the tree
 
-In the [Schema Tree](/guides/schema-tree/), an OR'd condition is grouped into its ANDed sub-conditions ("Group 1 (AND)" / "OR" / "Group 2 (AND)" / ...) instead of shown as one flat list. Hovering a conditioned field, constant, or attribute shows the full condition as a tooltip.
+In the [Schema Tree](/dspf-edit/guides/schema-tree/), an OR'd condition is grouped into its ANDed sub-conditions ("Group 1 (AND)" / "OR" / "Group 2 (AND)" / ...) instead of shown as one flat list. Hovering a conditioned field, constant, or attribute shows the full condition as a tooltip.
 
 ## Simulating indicators in the preview
 
-The [Screen Preview](/guides/screen-preview/)'s **Indicators** toggle lets you turn indicators on/off and see which fields, constants, and attributes become visible or hidden — without compiling or connecting to a 5250 session. This setting persists when switching which record is being previewed in the same panel.
+The [Screen Preview](/dspf-edit/guides/screen-preview/)'s **Indicators** toggle lets you turn indicators on/off and see which fields, constants, and attributes become visible or hidden — without compiling or connecting to a 5250 session. This setting persists when switching which record is being previewed in the same panel.

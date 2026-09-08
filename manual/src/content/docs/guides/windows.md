@@ -3,14 +3,14 @@ title: Windows
 description: WINDOW records with real positioning, resizing, titles, and shared windows.
 ---
 
-`WINDOW` records are fully supported in the [Screen Preview](/guides/screen-preview/): drawn at their real screen position, resizable and movable with the mouse, and aware of `WDWTITLE`/`WDWBORDER`.
+`WINDOW` records are fully supported in the [Screen Preview](/dspf-edit/guides/screen-preview/): drawn at their real screen position, resizable and movable with the mouse, and aware of `WDWTITLE`/`WDWBORDER`.
 
 ![A WINDOW record in the preview](/dspf-edit/screenshots/captura7.png)
 
 ## Resizing and moving
 
 - In the preview, drag a window's border to resize it, or drag its body to move it.
-- From the [Schema Tree](/guides/schema-tree/), right-click the window record and choose **Change Window Size**. This is aware of every display size the file declares (`*DS3`/`*DS4`, ...) and resizes all of them together. See [Multiple Display Sizes](/guides/display-sizes/).
+- From the [Schema Tree](/dspf-edit/guides/schema-tree/), right-click the window record and choose **Change Window Size**. This is aware of every display size the file declares (`*DS3`/`*DS4`, ...) and resizes all of them together. See [Multiple Display Sizes](/dspf-edit/guides/display-sizes/).
 
 ## Title
 
@@ -31,4 +31,4 @@ An active `ERRMSG()` on a window shows on the window's own reserved message line
 
 ## Windows and subfiles
 
-A subfile control (`SFLCTL`) record commonly shares a window with a separate "commands" record holding its function-key legend. See [Add Commands Record](/guides/records/#add-commands-record) and [Subfiles](/guides/subfiles/).
+A subfile control (`SFLCTL`) record commonly shares a window with a separate "commands" record holding its function-key legend. See [Add Commands Record](/dspf-edit/guides/records/#add-commands-record) and [Subfiles](/dspf-edit/guides/subfiles/).

@@ -15,8 +15,8 @@ A key number already assigned at the *other* level is excluded from the picker �
 
 ## Seeing key assignments in the preview
 
-The [Screen Preview](/guides/screen-preview/)'s function-key legend shows every command key available to the record being previewed — file-level and record-level together — switching to solid/inverted styling when the key's indicator condition is currently met.
+The [Screen Preview](/dspf-edit/guides/screen-preview/)'s function-key legend shows every command key available to the record being previewed — file-level and record-level together — switching to solid/inverted styling when the key's indicator condition is currently met.
 
 ## Related: buttons
 
-[Add Buttons](/guides/records/#add-buttons) on a record adds constants showing a key's label (e.g. `F3=Exit`) next to its assignment.
+[Add Buttons](/dspf-edit/guides/records/#add-buttons) on a record adds constants showing a key's label (e.g. `F3=Exit`) next to its assignment.

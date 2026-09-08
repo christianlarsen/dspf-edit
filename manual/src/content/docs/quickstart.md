@@ -22,7 +22,7 @@ The tree shows two levels:
 - **File** — display file attributes (display size, command keys).
 - **Records** — each record's own attributes, and its fields and constants.
 
-**Left-click** an element to jump directly to its location in the DDS source. **Right-click** for context-aware actions (add a field, assign a command key, change indicators, and more) — see [Schema Tree](/guides/schema-tree/) for the full list.
+**Left-click** an element to jump directly to its location in the DDS source. **Right-click** for context-aware actions (add a field, assign a command key, change indicators, and more) — see [Schema Tree](/dspf-edit/guides/schema-tree/) for the full list.
 
 ## 4. Preview a record
 
@@ -30,11 +30,11 @@ Right-click a record and choose **Preview Screen Layout** (or use the inline pre
 
 ![Screen preview panel](/dspf-edit/screenshots/captura2.png)
 
-From the preview you can drag fields and constants to reposition them, simulate indicators, switch display format, and more — see [Screen Preview](/guides/screen-preview/).
+From the preview you can drag fields and constants to reposition them, simulate indicators, switch display format, and more — see [Screen Preview](/dspf-edit/guides/screen-preview/).
 
 ## Where to next
 
-- [Schema Tree](/guides/schema-tree/) — the full navigation and right-click reference.
-- [Screen Preview](/guides/screen-preview/) — everything the preview panel can do.
-- [Fields](/guides/fields/), [Constants](/guides/constants/), [Records](/guides/records/) — adding and editing elements.
-- [Indicators and Conditions](/guides/indicators/) — conditioning what's visible.
+- [Schema Tree](/dspf-edit/guides/schema-tree/) — the full navigation and right-click reference.
+- [Screen Preview](/dspf-edit/guides/screen-preview/) — everything the preview panel can do.
+- [Fields](/dspf-edit/guides/fields/), [Constants](/dspf-edit/guides/constants/), [Records](/dspf-edit/guides/records/) — adding and editing elements.
+- [Indicators and Conditions](/dspf-edit/guides/indicators/) — conditioning what's visible.

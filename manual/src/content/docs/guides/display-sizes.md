@@ -7,11 +7,11 @@ A display file's `DSPSIZ` can declare more than one screen format at once (e.g. 
 
 ## Adding a second display size
 
-Right-click the **File** node in the [Schema Tree](/guides/schema-tree/) and choose **Add Display Size**. This adds a second standard screen size to a file that currently declares only one.
+Right-click the **File** node in the [Schema Tree](/dspf-edit/guides/schema-tree/) and choose **Add Display Size**. This adds a second standard screen size to a file that currently declares only one.
 
 ## Switching which format is previewed
 
-The [Screen Preview](/guides/screen-preview/) toolbar has a display-format selector. Window positions/sizes and conditioned elements are resolved specifically for the selected format.
+The [Screen Preview](/dspf-edit/guides/screen-preview/) toolbar has a display-format selector. Window positions/sizes and conditioned elements are resolved specifically for the selected format.
 
 ## Editing per-format
 

@@ -5,7 +5,7 @@ description: Numeric formatting and preview color settings.
 
 ## Numeric (decimal) formatting
 
-The decimal point and thousands-separator convention used to preview `EDTCDE()`-edited numeric fields — for example `1,234.56` (US) versus `1.234,56` (European) — is configurable from the **⚙ Configuration** panel in the [Screen Preview](/guides/screen-preview/).
+The decimal point and thousands-separator convention used to preview `EDTCDE()`-edited numeric fields — for example `1,234.56` (US) versus `1.234,56` (European) — is configurable from the **⚙ Configuration** panel in the [Screen Preview](/dspf-edit/guides/screen-preview/).
 
 You can either:
 
@@ -21,4 +21,4 @@ The colors used to render the green-screen preview itself can be customized:
 - **Configure Preview Colors...** opens the color configuration.
 - **Reset Preview Colors to Default** restores the built-in defaults.
 
-This is separate from the DDS `DSPATR`/color keywords you apply to fields and constants — see [Colors and Attributes](/guides/colors-attributes/).
+This is separate from the DDS `DSPATR`/color keywords you apply to fields and constants — see [Colors and Attributes](/dspf-edit/guides/colors-attributes/).

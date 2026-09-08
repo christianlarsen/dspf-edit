@@ -3,7 +3,7 @@ title: Schema Tree
 description: Navigate a display file's structure and act on it from the right-click menu.
 ---
 
-The **DSPF STRUCTURE** panel, in the Explorer view, shows a live tree of the display file's structure. It updates automatically as you edit the source, and stays in sync with the [Screen Preview](/guides/screen-preview/) selection in both directions.
+The **DSPF STRUCTURE** panel, in the Explorer view, shows a live tree of the display file's structure. It updates automatically as you edit the source, and stays in sync with the [Screen Preview](/dspf-edit/guides/screen-preview/) selection in both directions.
 
 The tree has two levels: **File** and **Records**, with **Constants**, **Fields**, and **Attributes** nested under each record.
 
@@ -14,8 +14,8 @@ Shows the display file's own attributes — display size, command keys defined a
 Right-click the file node for:
 
 - **Create new records.**
-- **Assign command keys** — see [Command Keys](/guides/command-keys/). A key number already used at the other level (file vs. record) is excluded, so you can't end up with the same key defined as both `CA` and `CF`.
-- **Add Display Size** — adds a second standard screen size (`*DS3`/`*DS4`) to a file that currently declares only one. See [Multiple Display Sizes](/guides/display-sizes/).
+- **Assign command keys** — see [Command Keys](/dspf-edit/guides/command-keys/). A key number already used at the other level (file vs. record) is excluded, so you can't end up with the same key defined as both `CA` and `CF`.
+- **Add Display Size** — adds a second standard screen size (`*DS3`/`*DS4`) to a file that currently declares only one. See [Multiple Display Sizes](/dspf-edit/guides/display-sizes/).
 
 ## Records level
 
@@ -27,13 +27,13 @@ Each record node shows its own record-level attributes, and lists its constants 
 
 - **Add constant** / **Add field** / **Remove field**
 - **Copy record** / **Delete record**
-- **Add buttons** — constants that trigger record commands. See [Records](/guides/records/#add-buttons).
-- **Assign command keys** — same exclusion rule as at file level, see [Command Keys](/guides/command-keys/).
-- **Add / Remove / Change indicators** — see [Indicators and Conditions](/guides/indicators/).
+- **Add buttons** — constants that trigger record commands. See [Records](/dspf-edit/guides/records/#add-buttons).
+- **Assign command keys** — same exclusion rule as at file level, see [Command Keys](/dspf-edit/guides/command-keys/).
+- **Add / Remove / Change indicators** — see [Indicators and Conditions](/dspf-edit/guides/indicators/).
 - **Resizing** (window records only) — aware of every declared display size, resizing all of them at once.
 - **Change Window Title** (window records only) — targets the size currently being worked on, when the record declares more than one.
 - **Sort elements.**
-- **Preview Screen Layout** — also available as an inline button on the record. See [Screen Preview](/guides/screen-preview/).
+- **Preview Screen Layout** — also available as an inline button on the record. See [Screen Preview](/dspf-edit/guides/screen-preview/).
 
 ## Constants
 
@@ -45,7 +45,7 @@ Each constant shows its text, position (row/column), indicators, and attributes.
 - **Center constant on screen.**
 - **Change position** — absolute, or relative to an existing constant.
 - **Apply colors/attributes.**
-- **Add / Remove / Change indicators** — including more than 3 ANDed indicators (up to DDS's limit of 9, spilling onto continuation lines automatically) and OR'd conditions. See [Indicators and Conditions](/guides/indicators/).
+- **Add / Remove / Change indicators** — including more than 3 ANDed indicators (up to DDS's limit of 9, spilling onto continuation lines automatically) and OR'd conditions. See [Indicators and Conditions](/dspf-edit/guides/indicators/).
 - **Fill constant with characters.**
 
 ## Fields
@@ -63,8 +63,8 @@ Right-click a field for:
 - **Add validity checks.**
 - **Add editing keywords.**
 - **Add error messages.**
-- **Add / Remove / Change indicators** — same AND/OR support as constants. See [Indicators and Conditions](/guides/indicators/).
-- **Resolve Referenced Field** (referenced fields only) — see [Referenced Fields](/guides/referenced-fields/).
+- **Add / Remove / Change indicators** — same AND/OR support as constants. See [Indicators and Conditions](/dspf-edit/guides/indicators/).
+- **Resolve Referenced Field** (referenced fields only) — see [Referenced Fields](/dspf-edit/guides/referenced-fields/).
 
 ## Attributes
 

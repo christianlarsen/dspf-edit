@@ -3,7 +3,7 @@ title: Subfiles
 description: Previewing SFL/SFLCTL records, their paired header/detail record, and adding a commands record.
 ---
 
-Subfile (`SFL`/`SFLCTL`) records are recognized and rendered specially in the [Screen Preview](/guides/screen-preview/).
+Subfile (`SFL`/`SFLCTL`) records are recognized and rendered specially in the [Screen Preview](/dspf-edit/guides/screen-preview/).
 
 ![A subfile preview with header and detail rows](/dspf-edit/screenshots/captura9.png)
 
@@ -19,10 +19,10 @@ Detail rows can't be dragged up over the header record's own content, keeping th
 
 Right-click a `SFLCTL` record and choose **Add Commands Record** to create a new, empty record right after it for the subfile's function-key legend (e.g. "F3=Exit", "F12=Cancel") — conventionally kept separate from the `SFLCTL` itself.
 
-If the `SFLCTL` declares its own window directly (`WINDOW(startRow startCol rows cols)`), that window — along with its `WDWTITLE()`/`WDWBORDER()` — is moved onto the new record, and the `SFLCTL` is left with a `WINDOW(newRecordName)` reference, since only the record that owns the window actually renders those keywords. See [Add Commands Record](/guides/records/#add-commands-record) and [Windows](/guides/windows/#shared-windows).
+If the `SFLCTL` declares its own window directly (`WINDOW(startRow startCol rows cols)`), that window — along with its `WDWTITLE()`/`WDWBORDER()` — is moved onto the new record, and the `SFLCTL` is left with a `WINDOW(newRecordName)` reference, since only the record that owns the window actually renders those keywords. See [Add Commands Record](/dspf-edit/guides/records/#add-commands-record) and [Windows](/dspf-edit/guides/windows/#shared-windows).
 
 After the record is created, use **Add Constant** (or **Add Buttons**) on it to add the function-key texts.
 
 ## Multiple display sizes
 
-A subfile's `SFLPAG`/`SFLSIZ` can differ per `DSPSIZ` format. When previewing a file with more than one format, adjusting a subfile's page size only affects the format currently selected in the preview. See [Multiple Display Sizes](/guides/display-sizes/).
+A subfile's `SFLPAG`/`SFLSIZ` can differ per `DSPSIZ` format. When previewing a file with more than one format, adjusting a subfile's page size only affects the format currently selected in the preview. See [Multiple Display Sizes](/dspf-edit/guides/display-sizes/).
