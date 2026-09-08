@@ -9,6 +9,8 @@
 
 ![DSPF-edit demo](assets/demo.gif)
 
+📖 **[Read the full manual](https://christianlarsen.github.io/dspf-edit/)** for a complete walkthrough of every feature.
+
 ---
 
 ## Why DSPF-edit?
@@ -119,6 +121,8 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
 2. Go to **explorer view** in VS Code.
 3. The **schema view** will appear automatically with the name "DSPF STRUCTURE".  
 4. Use **left-click** to navigate, or **right-click** to access contextual options.  
+
+See the **[full manual](https://christianlarsen.github.io/dspf-edit/)** for a guided walkthrough and the complete feature reference.
 
 ---
 

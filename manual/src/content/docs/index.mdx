@@ -1,0 +1,57 @@
+---
+title: Display File DDS Edit
+description: A live schema view, drag-and-drop screen preview, and deep DDS keyword coverage for editing IBM i display files in VS Code and IBM Bob.
+template: splash
+hero:
+  title: Display File DDS Edit
+  tagline: Live schema view, drag-and-drop screen preview, and deep DDS keyword coverage for IBM i display files — right inside VS Code and IBM Bob.
+  image:
+    file: ../../assets/dds-icon.svg
+  actions:
+    - text: Quick Start
+      link: /dspf-edit/quickstart/
+      icon: right-arrow
+      variant: primary
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+DSPF-edit brings a live schema view, a drag-and-drop screen preview, and deep DDS keyword coverage to editing IBM i **display files** — right inside VS Code and IBM Bob. No more counting columns in SEU, no more round-trips through STRSDA on a 5250 session, no more guessing how a `WINDOW`, an indicator condition, or a `CHOICE()` field will actually render until you compile.
+
+![DSPF-edit demo](/dspf-edit/demo.gif)
+
+## Why DSPF-edit?
+
+DSPF-edit doesn't replace your compiler — it closes the gap between writing DDS and seeing the screen it produces, matching real **STRSDA** behavior field by field, so what you preview is what you get.
+
+|  | SEU / STRSDA (5250) | RDi | DSPF-edit |
+|---|:---:|:---:|:---:|
+| Live visual preview while you edit | ❌ | ⚠️ separate tool/step | ✅ inline, drag to reposition |
+| Auto-updating structure/schema view | ❌ | ✅ | ✅ |
+| Runs inside VS Code / IBM Bob | ❌ | ❌ (Eclipse) | ✅ |
+| Simulate indicators/colors without compiling | ❌ | ❌ | ✅ |
+| Multiple `DSPSIZ` formats (`*DS3`/`*DS4`) resolved side by side | ❌ | ⚠️ manual | ✅ |
+| AND/OR indicator conditions (up to DDS's 9-indicator limit) built visually | ❌ | ⚠️ manual | ✅ |
+
+## What's in this manual
+
+<CardGrid stagger>
+	<Card title="Quick Start" icon="rocket">
+		Open a display file and see the schema tree and screen preview for the first time.
+	</Card>
+	<Card title="Schema Tree" icon="list-format">
+		Navigate a display file's structure — file, records, fields, constants — and act on it from the right-click menu.
+	</Card>
+	<Card title="Screen Preview" icon="laptop">
+		A green-screen-style, drag-and-drop preview that stays in sync with the source and the tree.
+	</Card>
+	<Card title="Fields, Constants & Records" icon="pencil">
+		Add, edit, position, condition, and style every element of a record.
+	</Card>
+	<Card title="Windows & Subfiles" icon="document">
+		WINDOW records with real positioning, and SFL/SFLCTL previews with paired header/detail records.
+	</Card>
+	<Card title="Indicators & Conditions" icon="setting">
+		Build AND/OR indicator conditions visually, up to DDS's 9-indicator limit.
+	</Card>
+</CardGrid>

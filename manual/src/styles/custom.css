@@ -1,0 +1,25 @@
+/* Brand accent: the blue-cyan from the DSPF-edit icon (#00B4D8 -> #0077B6),
+   in place of Starlight's default purple/blue. */
+:root {
+	--sl-color-accent-low: hsl(195, 90%, 88%);
+	--sl-color-accent: hsl(199, 100%, 36%);
+	--sl-color-accent-high: hsl(198, 70%, 25%);
+}
+
+:root[data-theme='dark'] {
+	--sl-color-accent-low: hsl(198, 55%, 22%);
+	--sl-color-accent: hsl(195, 85%, 55%);
+	--sl-color-accent-high: hsl(195, 90%, 80%);
+}
+
+/* Screenshots/GIFs in the docs content: shown reduced, with a floating
+   3D-ish shadow. */
+.sl-markdown-content :is(img, video) {
+	display: block;
+	max-width: min(640px, 100%);
+	height: auto;
+	margin: 1.5rem auto;
+	border-radius: 8px;
+	border: 1px solid var(--sl-color-gray-5);
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25), 0 2px 6px rgba(0, 0, 0, 0.15);
+}
