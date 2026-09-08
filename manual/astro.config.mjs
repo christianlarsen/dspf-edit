@@ -22,6 +22,15 @@ export default defineConfig({
 			customCss: [
 				'./src/styles/custom.css',
 			],
+			head: [
+				{
+					tag: 'meta',
+					attrs: {
+						name: 'google-site-verification',
+						content: 'lkajDOE71BIg7e0gWmFHABNW2D3_-7YEbkUawvZarRk',
+					},
+				},
+			],
 			sidebar: [
 				{
 					label: 'Home',
