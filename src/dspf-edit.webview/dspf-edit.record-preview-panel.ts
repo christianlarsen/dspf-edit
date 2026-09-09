@@ -1658,7 +1658,10 @@ export class RecordPreviewPanel {
      * Finds the record's currently-active ERRMSG() message, if any: an ERRMSG keyword (record-level,
      * or on one of the record's own fields/constants) whose own conditioning indicator is satisfied
      * by the indicator simulation — same gating already used for COLOR()/DSPATR() via isItemDisplayed.
-     * Shown on the display's message line (the bottom row) like a real 5250 error, in white.
+     * Falls back to the SFLCTL record's own SFLMSG() (a subfile message) when no ERRMSG is active,
+     * matching the DDS manual's stated priority (ERRMSG over SFLMSG) and its requirement that SFLDSP
+     * be in effect for SFLMSG to be processed. Shown on the display's message line (the bottom row)
+     * like a real 5250 error/subfile message, in white.
      */
     private resolveErrorMessage(recordInfo: FieldsPerRecord): { text: string } | null {
         const candidates: { value: string; indicators?: DdsIndicator[]; displayFormat?: string }[] = [
@@ -1667,14 +1670,25 @@ export class RecordPreviewPanel {
             ...recordInfo.constants.flatMap(constant => constant.attributes)
         ];
 
-        const forFormat = filterForActiveFormat(candidates, this.activeDisplayFormat);
-        for (const attr of forFormat) {
-            if (!this.isItemDisplayed(attr.indicators, this.indicatorsEnabled)) {
-                continue;
-            };
+        const displayed = filterForActiveFormat(candidates, this.activeDisplayFormat)
+            .filter(attr => this.isItemDisplayed(attr.indicators, this.indicatorsEnabled));
+
+        for (const attr of displayed) {
             const errmsgMatch = attr.value.match(/^ERRMSG\('([^']+)'\s*(\d{2})?\)$/);
             if (errmsgMatch) {
                 return { text: errmsgMatch[1] };
+            };
+        };
+
+        const recordAttrs = filterForActiveFormat(recordInfo.attributes ?? [], this.activeDisplayFormat);
+        const sflDsp = recordAttrs.find(attr => attr.value === 'SFLDSP');
+        const sflDspActive = sflDsp ? this.isItemDisplayed(sflDsp.indicators, this.indicatorsEnabled) : false;
+        if (sflDspActive) {
+            for (const attr of displayed) {
+                const sflmsgMatch = attr.value.match(/^SFLMSG\('([^']+)'\s*(\d{2})?\)$/);
+                if (sflmsgMatch) {
+                    return { text: sflmsgMatch[1] };
+                };
             };
         };
         return null;

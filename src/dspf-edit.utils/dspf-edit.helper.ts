@@ -276,9 +276,13 @@ export function isAttributeLine(line: string): boolean {
     if (line.length > 16 && line[16] === 'R') {
         return false;
     };
-    // If there is a field, returns false    
+    // If there is a field, returns false
     const fieldName = line.substring(18, 27).trim();
     if (fieldName !== '') {
+        return false;
+    };
+    // If the line has its own row/col position, it starts a new constant, not a continuation
+    if (line.length > 43 && line.charAt(40) !== ' ' && line.charAt(43) !== ' ') {
         return false;
     };
 
