@@ -23,6 +23,10 @@ If the `SFLCTL` declares its own window directly (`WINDOW(startRow startCol rows
 
 After the record is created, use **Add Constant** (or **Add Buttons**) on it to add the function-key texts.
 
+## Subfile messages
+
+A `SFLCTL` record's `SFLMSG('text' indicator)` is shown on the preview's message line when its indicator is toggled on in the [Indicators](/dspf-edit/guides/indicators/) simulation, the same way a field or record's `ERRMSG()` is — see [Error messages](/dspf-edit/guides/fields/#error-messages). Per the DDS reference, an active `ERRMSG()` always takes priority over `SFLMSG()`, and `SFLMSG()` only takes effect while `SFLDSP` is itself in effect.
+
 ## Multiple display sizes
 
 A subfile's `SFLPAG`/`SFLSIZ` can differ per `DSPSIZ` format. When previewing a file with more than one format, adjusting a subfile's page size only affects the format currently selected in the preview. See [Multiple Display Sizes](/dspf-edit/guides/display-sizes/).

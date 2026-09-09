@@ -93,6 +93,10 @@ interface PreviewItem {
      */
     dataLength?: number;
     decimals?: number;
+    /** A field's RANGE()/COMP()/VALUES() validity checks, formatted as they read in DDS source
+     * (e.g. "VALUES(0 2 4 5 7 8)"), for display in the preview's selection bar. Undefined when the
+     * field has none, or for a constant. */
+    validityChecks?: string;
 };
 
 /** A rectangle in the coordinates of the canvas being drawn (the full display size). */
@@ -1428,7 +1432,8 @@ export class RecordPreviewPanel {
                     isResizable,
                     minLength,
                     dataLength: isReferenced ? undefined : effectiveLength,
-                    decimals: isReferenced ? undefined : effectiveDecimals
+                    decimals: isReferenced ? undefined : effectiveDecimals,
+                    validityChecks: this.formatValidityChecksForField(field.attributes)
                 };
 
                 // CNTFLD(n) wraps a field too long for one line across multiple rows, n characters
@@ -1642,6 +1647,22 @@ export class RecordPreviewPanel {
         };
 
         return result.sort((a, b) => parseInt(a.key.slice(1), 10) - parseInt(b.key.slice(1), 10));
+    };
+
+    /**
+     * Formats a field's RANGE()/COMP()/VALUES() validity checks for the preview's selection bar,
+     * exactly as they read in DDS source (e.g. "VALUES(0 2 4 5 7 8)"), joined with ", " when more
+     * than one is coded. Shown unconditionally (not gated by indicators, unlike DSPATR/COLOR/ERRMSG
+     * elsewhere in this file) since a validity check's own indicator only controls whether the check
+     * is *enforced*, not something the 5250 ever visibly toggles — the point here is just letting the
+     * user see what values the field accepts.
+     */
+    private formatValidityChecksForField(attributes: AttributeWithIndicators[]): string | undefined {
+        const checks = filterForActiveFormat(attributes, this.activeDisplayFormat)
+            .map(attr => attr.value)
+            .filter(value => /^(RANGE|COMP|VALUES)\([^)]+\)$/.test(value));
+
+        return checks.length > 0 ? checks.join(', ') : undefined;
     };
 
     /**
@@ -3380,6 +3401,9 @@ export class RecordPreviewPanel {
                 label = '1 constant selected — Pos= ' + item.row + ', ' + item.col + ', width ' + item.length;
             } else {
                 label = '1 field selected — Pos= ' + item.row + ', ' + item.col;
+            }
+            if (item.kind === 'field' && item.validityChecks) {
+                label += ' — ' + item.validityChecks;
             }
             selectionLabel.textContent = label;
         }

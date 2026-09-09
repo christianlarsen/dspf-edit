@@ -15,7 +15,7 @@ Up to DDS's limit of **9 ANDed indicators** on a single condition is supported. 
 
 ## OR'd conditions
 
-A condition can be made of several OR'd groups, each itself an AND of up to 9 indicators (e.g. `51 AND NOT 61 AND 53  OR  52`). You can add or remove a whole OR'd group, or edit the indicators within a single group, from the same dialog.
+A condition can be made of several OR'd groups, each itself an AND of up to 9 indicators (e.g. `51 AND NOT 61 AND 53  OR  52`). The menu lists every OR'd group with its own change/remove buttons, plus an option to add another OR'd condition.
 
 ## Reading conditions in the tree
 

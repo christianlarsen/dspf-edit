@@ -64,7 +64,7 @@ See [Windows](/dspf-edit/guides/windows/) for the full reference.
 
 ## Subfiles
 
-`SFL`/`SFLCTL` records show every `SFLPAG` row, and automatically preview their paired header/detail record. Detail rows can't be dragged up over the header's own content. See [Subfiles](/dspf-edit/guides/subfiles/).
+`SFL`/`SFLCTL` records show every `SFLPAG` row, and automatically preview their paired header/detail record. Detail rows can't be dragged up over the header's own content. A `SFLCTL` record's `SFLMSG()` shows on the message line the same way `ERRMSG()` does (which still takes priority over it, matching the DDS reference), while `SFLDSP` is in effect. See [Subfiles](/dspf-edit/guides/subfiles/).
 
 ## Field wrapping (`CNTFLD`)
 

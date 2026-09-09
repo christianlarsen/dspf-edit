@@ -7,13 +7,19 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
-import { isAttributeLine, findElementInsertionPoint, checkForEditorAndDocument, groupConsecutiveLines, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { findElementInsertionPoint, checkForEditorAndDocument, applyWorkspaceEdit, removeKeywordTextFromLines } from '../dspf-edit.utils/dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
 interface ValidityCheck {
     type: 'RANGE' | 'COMP' | 'VALUES';
     parameters: string[];
+    /** The keyword's own text exactly as parsed (e.g. "VALUES(1 2 3)") and its line range — only
+     * set for an existing check read off the field, used to locate/remove it precisely without
+     * disturbing sibling keywords. */
+    raw?: string;
+    lineIndex?: number;
+    lastLineIndex?: number;
 };
 
 interface CompParameters {
@@ -21,11 +27,16 @@ interface CompParameters {
     value: string;
 };
 
+/** One row of the validity-check summary menu — one of the 3 mutually exclusive check types. */
+interface ValidityCheckMenuItem extends vscode.QuickPickItem {
+    checkType: 'RANGE' | 'COMP' | 'VALUES';
+};
+
 // COMMAND REGISTRATION
 
 /**
  * Registers the add validity check command for DDS fields.
- * Allows users to interactively manage validity checks for fields.
+ * Allows users to interactively manage the validity check for fields.
  * @param context - The VS Code extension context
  */
 export function addValidityCheck(context: vscode.ExtensionContext): void {
@@ -39,8 +50,14 @@ export function addValidityCheck(context: vscode.ExtensionContext): void {
 // COMMAND HANDLER
 
 /**
- * Handles the add validity check command for a DDS field.
- * Manages existing validity checks and allows adding/removing checks.
+ * Handles the add validity check command for a DDS field. RANGE, COMP and VALUES are mutually
+ * exclusive in DDS — the manual is explicit that COMP allows "only one COMP keyword for a field",
+ * and lists COMP/RANGE/VALUES as unable to coexist with each other or with a CHECK(VN/VNE/...)
+ * keyword — so a field has at most one validity check at a time, never several to manage as a list.
+ * Shows a 3-row summary menu (RANGE/COMP/VALUES) with whichever one is currently set, letting the
+ * user jump straight to setting/changing it or removing it directly via its own trash button;
+ * setting a different type than the one currently in effect replaces it, the same way EDTCDE and
+ * EDTWRD replace each other in the editing-keywords command.
  * @param node - The DDS node containing the field
  */
 async function handleAddValidityCheckCommand(node: DdsNode): Promise<void> {
@@ -63,39 +80,6 @@ async function handleAddValidityCheckCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        // Get current validity checks from the field
-        const currentValidityChecks = getCurrentValidityChecksForField(node.ddsElement);
-
-        // Show current validity checks if any exist
-        if (currentValidityChecks.length > 0) {
-            const currentChecksList = currentValidityChecks.map(vc =>
-                `${vc.type}(${vc.parameters.join(' ')})`
-            ).join(', ');
-
-            const action = await vscode.window.showQuickPick(
-                ['Add more validity checks', 'Replace all validity checks', 'Remove all validity checks'],
-                {
-                    title: `Current validity checks: ${currentChecksList}`,
-                    placeHolder: 'Choose how to manage validity checks'
-                }
-            );
-
-            if (!action) return;
-
-            if (action === 'Remove all validity checks') {
-                await removeValidityChecksFromField(editor, node.ddsElement);
-                return;
-            };
-
-            if (action === 'Replace all validity checks') {
-                if (!(await removeValidityChecksFromField(editor, node.ddsElement))) {
-                    return;
-                };
-                // Continue to add new validity checks
-            };
-            // If "Add more validity checks", continue with current logic
-        };
-
         // Get field information to determine valid options
         const fieldInfo = getFieldInfo(node.ddsElement);
         if (!fieldInfo) {
@@ -103,27 +87,48 @@ async function handleAddValidityCheckCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        // Collect new validity checks to add
-        const selectedValidityChecks = await collectValidityChecksFromUser(fieldInfo);
+        // A field can have at most one of RANGE/COMP/VALUES — if the source somehow has more than
+        // one (invalid DDS), only the first one found is treated as "current".
+        const current = getCurrentValidityCheckForField(node.ddsElement);
 
-        if (selectedValidityChecks.length === 0) {
-            vscode.window.showInformationMessage('No validity checks selected.');
-            return;
+        let checkType: ValidityCheck['type'];
+
+        if (current) {
+            const choice = await showValidityCheckMenu(buildValidityCheckMenuItems(current), node.ddsElement.name);
+            if (!choice) return;
+
+            if (choice.action === 'remove') {
+                await removeOneValidityCheck(editor, node.ddsElement, current);
+                return;
+            };
+            checkType = choice.checkType;
+        } else {
+            const selectedType = await vscode.window.showQuickPick(
+                ['RANGE - Validation range', 'COMP - Value comparison', 'VALUES - Valid values list'],
+                {
+                    title: `Add Validity Check for ${node.ddsElement.name}`,
+                    placeHolder: 'Select validity check type'
+                }
+            );
+            if (!selectedType) return;
+            checkType = selectedType.split(' - ')[0] as ValidityCheck['type'];
         };
 
-        // Apply the selected validity checks to the field
-        if (!(await addValidityChecksToField(editor, node.ddsElement, selectedValidityChecks))) {
-            return;
+        // Collect the check's parameters, prefilled with the current value when the user picked
+        // the same type that's already set (i.e. they're changing it, not switching types).
+        const newCheck = await collectOneValidityCheck(checkType, fieldInfo, current?.type === checkType ? current : undefined);
+        if (!newCheck) return;
+
+        // Replace whatever check currently exists (of any of the 3 types) with the new one.
+        if (current) {
+            if (!(await removeOneValidityCheck(editor, node.ddsElement, current, true))) return;
         };
+        if (!(await addValidityCheckToField(editor, node.ddsElement, newCheck))) return;
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
 
-        const checksSummary = selectedValidityChecks.map(vc =>
-            `${vc.type}(${vc.parameters.join(' ')})`
-        ).join(', ');
-
         vscode.window.showInformationMessage(
-            `Added validity checks ${checksSummary} to ${node.ddsElement.name}.`
+            `Set validity check ${formatValidityCheck(newCheck)} on ${node.ddsElement.name}.`
         );
 
     } catch (error) {
@@ -132,58 +137,162 @@ async function handleAddValidityCheckCommand(node: DdsNode): Promise<void> {
     };
 };
 
-// VALIDITY CHECKS EXTRACTION FUNCTIONS
+// VALIDITY CHECK EXTRACTION FUNCTIONS
 
 /**
- * Extracts current validity checks from a DDS field.
+ * Extracts the field's current validity check, if any — RANGE, COMP and VALUES are mutually
+ * exclusive in DDS, so at most one of them is ever in effect.
  * @param element - The DDS field element
- * @returns Array of current validity checks
+ * @returns The current validity check, or undefined if none is set
  */
-function getCurrentValidityChecksForField(element: any): ValidityCheck[] {
+function getCurrentValidityCheckForField(element: any): ValidityCheck | undefined {
     // Find the field in the fieldsPerRecords data
     const recordInfo = fieldsPerRecords.find(r => r.record === element.recordname);
-    if (!recordInfo) return [];
+    if (!recordInfo) return undefined;
 
     const fieldInfo = recordInfo.fields.find(field => field.name === element.name);
-    if (!fieldInfo || !fieldInfo.attributes) return [];
+    if (!fieldInfo || !fieldInfo.attributes) return undefined;
 
-    // Extract validity check attributes
-    const validityChecks: ValidityCheck[] = [];
-    
-    fieldInfo.attributes.forEach(attrObj => {
+    for (const attrObj of fieldInfo.attributes) {
         const attr = attrObj.value;
-        // Check for RANGE
-        const rangeMatch = attr.match(/^RANGE\(([^)]+)\)$/);
-        if (rangeMatch) {
-            const params = rangeMatch[1].split(' ').filter(p => p.trim());
-            validityChecks.push({
-                type: 'RANGE',
-                parameters: params
-            });
+        const match = attr.match(/^(RANGE|COMP|VALUES)\(([^)]+)\)$/);
+        if (!match) continue;
+
+        return {
+            type: match[1] as ValidityCheck['type'],
+            parameters: match[2].split(' ').filter(p => p.trim()),
+            raw: attr,
+            lineIndex: attrObj.lineIndex,
+            lastLineIndex: attrObj.lastLineIndex
+        };
+    };
+
+    return undefined;
+};
+
+// VALIDITY CHECK SUMMARY MENU
+
+/** Formats a validity check exactly as it reads in DDS source, e.g. "VALUES(0 1 2)". */
+function formatValidityCheck(vc: ValidityCheck): string {
+    return `${vc.type}(${vc.parameters.join(' ')})`;
+};
+
+const EDIT_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('edit'), tooltip: 'Set/change' };
+const REMOVE_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('trash'), tooltip: 'Remove' };
+
+/**
+ * Builds the validity-check summary menu's 3 rows (RANGE/COMP/VALUES), each showing its currently
+ * assigned value (formatted exactly as it'd read in the DDS source, e.g. "VALUES(0 1 2)") or
+ * "(not set)" for the other two — mirroring the editing-keywords command's summary menu for another
+ * mutually exclusive keyword group (EDTCDE/EDTWRD).
+ * @param current - The field's current validity check
+ */
+function buildValidityCheckMenuItems(current: ValidityCheck): ValidityCheckMenuItem[] {
+    const row = (type: ValidityCheck['type'], label: string): ValidityCheckMenuItem => {
+        const isCurrent = current.type === type;
+        return {
+            checkType: type,
+            label,
+            description: isCurrent ? formatValidityCheck(current) : '(not set)',
+            buttons: isCurrent ? [EDIT_BUTTON, REMOVE_BUTTON] : [EDIT_BUTTON]
+        };
+    };
+
+    return [
+        row('RANGE', 'RANGE — Validation range'),
+        row('COMP', 'COMP — Value comparison'),
+        row('VALUES', 'VALUES — Valid values list')
+    ];
+};
+
+/**
+ * Shows the validity-check summary menu and resolves to what the user did: picked a row (or its
+ * edit button) to set/change it (`action: 'select'`), or clicked the current row's trash button to
+ * remove it (`action: 'remove'`) — undefined if dismissed. Needs the raw `createQuickPick` API
+ * rather than the simpler `showQuickPick` helper, since only it exposes per-item buttons
+ * (`onDidTriggerItemButton`).
+ * @param items - The menu's rows, from `buildValidityCheckMenuItems`
+ * @param fieldName - The field's name, for the menu's title
+ */
+function showValidityCheckMenu(
+    items: ValidityCheckMenuItem[],
+    fieldName: string
+): Promise<{ action: 'select' | 'remove'; checkType: ValidityCheck['type'] } | undefined> {
+    return new Promise(resolve => {
+        const quickPick = vscode.window.createQuickPick<ValidityCheckMenuItem>();
+        quickPick.items = items;
+        quickPick.title = `Validity check for ${fieldName}`;
+        quickPick.placeholder = 'RANGE, COMP and VALUES are mutually exclusive — setting one replaces any other';
+        quickPick.ignoreFocusOut = true;
+
+        let settled = false;
+        const finish = (result: { action: 'select' | 'remove'; checkType: ValidityCheck['type'] } | undefined) => {
+            if (settled) return;
+            settled = true;
+            resolve(result);
+            quickPick.hide();
         };
 
-        // Check for COMP
-        const compMatch = attr.match(/^COMP\(([^)]+)\)$/);
-        if (compMatch) {
-            const params = compMatch[1].split(' ').filter(p => p.trim());
-            validityChecks.push({
-                type: 'COMP',
-                parameters: params
-            });
-        };
+        quickPick.onDidTriggerItemButton(event => {
+            finish({ action: event.button === REMOVE_BUTTON ? 'remove' : 'select', checkType: event.item.checkType });
+        });
+        quickPick.onDidAccept(() => {
+            const picked = quickPick.selectedItems[0];
+            finish(picked ? { action: 'select', checkType: picked.checkType } : undefined);
+        });
+        quickPick.onDidHide(() => {
+            finish(undefined);
+            quickPick.dispose();
+        });
 
-        // Check for VALUES
-        const valuesMatch = attr.match(/^VALUES\(([^)]+)\)$/);
-        if (valuesMatch) {
-            const params = valuesMatch[1].split(' ').filter(p => p.trim());
-            validityChecks.push({
-                type: 'VALUES',
-                parameters: params
-            });
-        };
+        quickPick.show();
     });
+};
 
-    return validityChecks;
+/**
+ * Removes the field's current validity check (the summary menu's trash-button action, or the first
+ * step of changing it), using the same precise keyword-text removal as single-attribute deletion —
+ * only this check's own text is stripped from its line(s), leaving sibling keywords untouched.
+ * @param editor - The active text editor
+ * @param element - The DDS field the check belongs to
+ * @param check - The existing check to remove (must carry `raw`/`lineIndex`/`lastLineIndex`)
+ * @param silent - Suppresses the cursor nudge + confirmation message (used when immediately
+ * re-adding a replacement as part of "change")
+ */
+async function removeOneValidityCheck(
+    editor: vscode.TextEditor,
+    element: any,
+    check: ValidityCheck,
+    silent: boolean = false
+): Promise<boolean> {
+    if (check.raw === undefined || check.lineIndex === undefined || check.lastLineIndex === undefined) {
+        return false;
+    };
+
+    const preserveFirstLine = check.lineIndex === element.lineIndex;
+    if (!(await removeKeywordTextFromLines(editor, check.lineIndex, check.lastLineIndex, check.raw, preserveFirstLine))) {
+        return false;
+    };
+
+    if (!silent) {
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
+        vscode.window.showInformationMessage(`Removed validity check ${formatValidityCheck(check)} from ${element.name}.`);
+    };
+    return true;
+};
+
+/**
+ * Collects a single validity check of a given type, prefilled with its current value when changing
+ * an existing one of the same type.
+ * @param type - Which validity check type to collect
+ * @param fieldInfo - Field information to determine valid options
+ * @param current - The check's current value, when changing an existing one of this same type
+ */
+async function collectOneValidityCheck(type: ValidityCheck['type'], fieldInfo: any, current?: ValidityCheck): Promise<ValidityCheck | null> {
+    if (type === 'RANGE') return collectRangeParameters(fieldInfo, current);
+    if (type === 'COMP') return collectCompParameters(fieldInfo, current);
+    return collectValuesParameters(fieldInfo, current);
 };
 
 /**
@@ -201,56 +310,19 @@ function getFieldInfo(element: any): any {
 // USER INTERACTION FUNCTIONS
 
 /**
- * Collects validity checks from user through interactive selection.
- * @param fieldInfo - Field information to determine valid options
- * @returns Array of selected validity checks 
- */
-async function collectValidityChecksFromUser(fieldInfo: any): Promise<ValidityCheck[]> {
-    const selectedValidityChecks: ValidityCheck[] = [];
-
-    while (true) {
-        const availableOptions = ['RANGE - Validation range', 'COMP - Value comparison', 'VALUES - Valid values list', 'Finish adding checks'];
-        
-        const selectedOption = await vscode.window.showQuickPick(
-            availableOptions,
-            {
-                title: `Add Validity Check (${selectedValidityChecks.length} selected)`,
-                placeHolder: 'Select validity check type'
-            }
-        );
-
-        if (!selectedOption || selectedOption === 'Finish adding checks') break;
-
-        let validityCheck: ValidityCheck | null = null;
-
-        if (selectedOption.startsWith('RANGE')) {
-            validityCheck = await collectRangeParameters(fieldInfo);
-        } else if (selectedOption.startsWith('COMP')) {
-            validityCheck = await collectCompParameters(fieldInfo);
-        } else if (selectedOption.startsWith('VALUES')) {
-            validityCheck = await collectValuesParameters(fieldInfo);
-        };
-
-        if (validityCheck) {
-            selectedValidityChecks.push(validityCheck);
-        };
-    };
-
-    return selectedValidityChecks;
-};
-
-/**
  * Collects RANGE parameters from user.
  * @param fieldInfo - Field information
+ * @param current - The check's current from/to values, when changing an existing RANGE
  * @returns RANGE validity check or null if cancelled
  */
-async function collectRangeParameters(fieldInfo: any): Promise<ValidityCheck | null> {
+async function collectRangeParameters(fieldInfo: any, current?: ValidityCheck): Promise<ValidityCheck | null> {
     const fieldType = fieldInfo.type || 'A';
     const isNumeric = ['P', 'S', 'B', 'F', 'I'].includes(fieldType);
 
     const fromValue = await vscode.window.showInputBox({
         title: 'RANGE - From Value',
         prompt: `Enter the starting value for the range (Field type: ${fieldType})`,
+        value: current?.parameters[0],
         placeHolder: isNumeric ? 'e.g., 0, -100' : 'e.g., A, AA',
         validateInput: (value: string) => {
             if (!value.trim()) return 'From value is required';
@@ -263,6 +335,7 @@ async function collectRangeParameters(fieldInfo: any): Promise<ValidityCheck | n
     const toValue = await vscode.window.showInputBox({
         title: 'RANGE - To Value',
         prompt: `Enter the ending value for the range (Field type: ${fieldType})`,
+        value: current?.parameters[1],
         placeHolder: isNumeric ? 'e.g., 1000, 999' : 'e.g., Z, ZZ',
         validateInput: (value: string) => {
             if (!value.trim()) return 'To value is required';
@@ -281,9 +354,10 @@ async function collectRangeParameters(fieldInfo: any): Promise<ValidityCheck | n
 /**
  * Collects COMP parameters from user.
  * @param fieldInfo - Field information
+ * @param current - The check's current operator/value, when changing an existing COMP
  * @returns COMP validity check or null if cancelled
  */
-async function collectCompParameters(fieldInfo: any): Promise<ValidityCheck | null> {
+async function collectCompParameters(fieldInfo: any, current?: ValidityCheck): Promise<ValidityCheck | null> {
     const operators = [
         'EQ - Equal to',
         'NE - Not equal to',
@@ -298,7 +372,7 @@ async function collectCompParameters(fieldInfo: any): Promise<ValidityCheck | nu
     const selectedOperator = await vscode.window.showQuickPick(
         operators,
         {
-            title: 'COMP - Select Operator',
+            title: current ? `COMP - Select Operator (current: ${current.parameters[0]})` : 'COMP - Select Operator',
             placeHolder: 'Choose comparison operator'
         }
     );
@@ -310,6 +384,7 @@ async function collectCompParameters(fieldInfo: any): Promise<ValidityCheck | nu
     const value = await vscode.window.showInputBox({
         title: `COMP - Comparison Value (${operator})`,
         prompt: `Enter the value to compare against (Field type: ${fieldInfo.type || 'A'})`,
+        value: current?.parameters[1],
         placeHolder: 'e.g., 0, 100, A',
         validateInput: (value: string) => {
             if (!value.trim()) return 'Comparison value is required';
@@ -328,12 +403,14 @@ async function collectCompParameters(fieldInfo: any): Promise<ValidityCheck | nu
 /**
  * Collects VALUES parameters from user.
  * @param fieldInfo - Field information
+ * @param current - The check's current values list, when changing an existing VALUES
  * @returns VALUES validity check or null if cancelled
  */
-async function collectValuesParameters(fieldInfo: any): Promise<ValidityCheck | null> {
+async function collectValuesParameters(fieldInfo: any, current?: ValidityCheck): Promise<ValidityCheck | null> {
     const values = await vscode.window.showInputBox({
         title: 'VALUES - Valid Values List',
         prompt: `Enter valid values separated by spaces (Field type: ${fieldInfo.type || 'A'})`,
+        value: current?.parameters.join(' '),
         placeHolder: 'e.g., 0 1 2 or A B C',
         validateInput: (value: string) => {
             if (!value.trim()) return 'At least one valid value is required';
@@ -356,40 +433,35 @@ async function collectValuesParameters(fieldInfo: any): Promise<ValidityCheck | 
 // DDS MODIFICATION FUNCTIONS
 
 /**
- * Adds validity checks to a DDS field by inserting validity check lines after the field.
+ * Adds a validity check to a DDS field by inserting a validity check line after the field.
  * @param editor - The active text editor
- * @param element - The DDS field to add validity checks to
- * @param validityChecks - Array of validity checks to add
+ * @param element - The DDS field to add the validity check to
+ * @param validityCheck - The validity check to add
  */
-async function addValidityChecksToField(
+async function addValidityCheckToField(
     editor: vscode.TextEditor,
     element: any,
-    validityChecks: ValidityCheck[]
+    validityCheck: ValidityCheck
 ): Promise<boolean> {
     const insertionPoint = findElementInsertionPoint(editor, element);
     if (insertionPoint === -1) {
-        throw new Error('Could not find insertion point for validity checks');
+        throw new Error('Could not find insertion point for the validity check');
     };
 
     const workspaceEdit = new vscode.WorkspaceEdit();
     const uri = editor.document.uri;
 
-    // Insert each validity check line
-    let crInserted: boolean = false;
-    for (let i = 0; i < validityChecks.length; i++) {
-        const validityCheckLine = createValidityCheckLine(validityChecks[i]);
-        const insertPos = new vscode.Position(insertionPoint, 0);
-        if (!crInserted && insertPos.line >= editor.document.lineCount) {
-            workspaceEdit.insert(uri, insertPos, '\n');
-            crInserted = true;
-        };
-        workspaceEdit.insert(uri, insertPos, validityCheckLine);
-        if (i < validityChecks.length - 1 || insertPos.line < editor.document.lineCount) {
-            workspaceEdit.insert(uri, insertPos, '\n');
-        };
+    const validityCheckLine = createValidityCheckLine(validityCheck);
+    const insertPos = new vscode.Position(insertionPoint, 0);
+    if (insertPos.line >= editor.document.lineCount) {
+        workspaceEdit.insert(uri, insertPos, '\n');
+    };
+    workspaceEdit.insert(uri, insertPos, validityCheckLine);
+    if (insertPos.line < editor.document.lineCount) {
+        workspaceEdit.insert(uri, insertPos, '\n');
     };
 
-    return applyWorkspaceEdit(workspaceEdit, 'add the validity checks');
+    return applyWorkspaceEdit(workspaceEdit, 'add the validity check');
 };
 
 /**
@@ -408,140 +480,4 @@ function createValidityCheckLine(validityCheck: ValidityCheck): string {
     line += `${validityCheck.type}(${validityCheck.parameters.join(' ')})`;
 
     return line;
-};
-
-/**
- * Removes existing validity checks from a DDS field using precise character offsets.
- * Handles edge cases properly to avoid leaving blank lines at the end of the file.
- * @param editor - The active text editor
- * @param element - The DDS field to remove validity checks from
- */
-async function removeValidityChecksFromField(editor: vscode.TextEditor, element: any): Promise<boolean> {
-    const validityCheckLines = findExistingValidityCheckLines(editor, element);
-    if (validityCheckLines.length === 0) return true;
-
-    const document = editor.document;
-    const workspaceEdit = new vscode.WorkspaceEdit();
-    const uri = document.uri;
-
-    // Group lines by type: field line vs standalone validity check lines
-    const fieldLineIndex = element.lineIndex;
-    const standaloneValidityCheckLines = validityCheckLines.filter(lineIndex => lineIndex !== fieldLineIndex);
-    const hasFieldLineValidityCheck = validityCheckLines.includes(fieldLineIndex);
-
-    // Handle standalone validity check lines using precise offsets
-    if (standaloneValidityCheckLines.length > 0) {
-        const deletionRanges = calculateValidityCheckDeletionRanges(document, standaloneValidityCheckLines);
-        
-        // Apply deletions in reverse order to maintain offsets
-        for (let i = deletionRanges.length - 1; i >= 0; i--) {
-            const { startOffset, endOffset } = deletionRanges[i];
-            const startPos = document.positionAt(startOffset);
-            const endPos = document.positionAt(endOffset);
-            workspaceEdit.delete(uri, new vscode.Range(startPos, endPos));
-        };
-    };
-
-    // Handle validity check on field line (just remove the validity check part)
-    if (hasFieldLineValidityCheck) {
-        const line = document.lineAt(fieldLineIndex);
-        // Remove validity check keywords from the end of the line
-        const lineText = line.text;
-        const cleanedText = lineText.replace(/(RANGE|COMP|VALUES)\([^)]*\)/g, '').trimEnd();
-        workspaceEdit.replace(uri, line.range, cleanedText);
-    };
-
-    return applyWorkspaceEdit(workspaceEdit, 'remove the validity checks');
-};
-
-/**
- * Calculates precise deletion ranges for standalone validity check lines.
- * Handles edge cases to prevent blank lines at the end of the file.
- * @param document - The text document
- * @param validityCheckLines - Array of line indices containing standalone validity checks
- * @returns Array of deletion ranges with start and end offsets
- */
-function calculateValidityCheckDeletionRanges(
-    document: vscode.TextDocument, 
-    validityCheckLines: number[]
-): { startOffset: number; endOffset: number }[] {
-    const docText = document.getText();
-    const docLength = docText.length;
-    const ranges: { startOffset: number; endOffset: number }[] = [];
-    
-    // Group consecutive lines for more efficient deletion
-    const lineGroups = groupConsecutiveLines(validityCheckLines);
-    
-    for (const group of lineGroups) {
-        const firstLine = group[0];
-        const lastLine = group[group.length - 1];
-        
-        let startOffset: number;
-        let endOffset: number;
-        
-        if (lastLine === document.lineCount - 1) {
-            // Group includes the last line of the document
-            if (firstLine === 0) {
-                // Entire document is validity check lines - delete everything
-                startOffset = 0;
-                endOffset = docLength;
-            } else {
-                // Delete from end of previous line to end of file
-                const prevLineEndPos = document.lineAt(firstLine - 1).range.end;
-                startOffset = document.offsetAt(prevLineEndPos);
-                endOffset = docLength;
-            };
-        } else {
-            // Group is in the middle or at the beginning
-            startOffset = document.offsetAt(new vscode.Position(firstLine, 0));
-            
-            // Include the line break after the last line of the group
-            const afterGroupPos = document.lineAt(lastLine).rangeIncludingLineBreak.end;
-            endOffset = document.offsetAt(afterGroupPos);
-        };
-        
-        // Validate the range
-        if (startOffset < endOffset && startOffset >= 0 && endOffset <= docLength) {
-            ranges.push({ startOffset, endOffset });
-        };
-    };
-    
-    return ranges;
-};
-
-// LINE CREATION AND DETECTION FUNCTIONS
-
-/**
- * Finds existing validity check lines for a field.
- * @param editor - The active text editor
- * @param element - The DDS field
- * @returns Array of line indices containing validity checks
- */
-function findExistingValidityCheckLines(editor: vscode.TextEditor, element: any): number[] {
-    const validityCheckLines: number[] = [];
-    const startLine = element.lineIndex;
-
-    // Look for validity check lines after the field
-    for (let i = startLine; i < editor.document.lineCount; i++) {
-        const lineText = editor.document.lineAt(i).text;
-
-        // Special case: first line of a field can have validity checks
-        if (i === element.lineIndex) {
-            if (lineText.match(/(RANGE|COMP|VALUES)\(/)) {
-                validityCheckLines.push(i);
-            };
-            continue;
-        };
-
-        if (!lineText.trim().startsWith('A ') || !isAttributeLine(lineText)) {
-            break;
-        };
-
-        // Check if this is a validity check attribute
-        if (lineText.match(/(RANGE|COMP|VALUES)\(/)) {
-            validityCheckLines.push(i);
-        };
-    };
-
-    return validityCheckLines;
 };

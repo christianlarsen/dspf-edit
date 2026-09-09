@@ -29,6 +29,13 @@ interface IndicatorLineSpec {
     marker: ' ' | 'O';
 };
 
+/** One row of the indicators summary menu: an existing OR'd AND-group (`groupIndex` into the
+ * current condition), or one of the two trailing action rows. */
+interface IndicatorMenuItem extends vscode.QuickPickItem {
+    groupIndex: number;
+    action?: 'addOr' | 'removeAll';
+};
+
 // CONSTANTS
 
 /** DDS indicator slots per line (positions 8-16: three 3-character slots). */
@@ -104,22 +111,14 @@ async function handleAddIndicatorsCommand(node: DdsNode): Promise<void> {
         // Read the element's full condition: every OR'd AND-group, including continuation lines
         const { groups } = findIndicatorConditionBlock(editor, node.ddsElement.lineIndex);
 
-        let action: string | undefined;
+        // Show a summary menu — one row per existing OR'd condition, editable/removable
+        // individually — instead of the old flat "Add AND/Add OR/Modify/Remove a group/Replace
+        // all/Remove all" 6-choice picker.
         if (groups.length > 0) {
-            const options = ['Add AND indicator', 'Add OR condition', 'Modify existing indicators'];
-            if (groups.length > 1) {
-                options.push('Remove a group');
-            };
-            options.push('Replace all indicators', 'Remove all indicators');
+            const choice = await showIndicatorMenu(buildIndicatorMenuItems(groups), elementName);
+            if (!choice) return;
 
-            action = await vscode.window.showQuickPick(options, {
-                title: `Current condition: ${formatGroupsSummary(groups)}`,
-                placeHolder: 'Choose how to manage indicators'
-            });
-
-            if (!action) return;
-
-            if (action === 'Remove all indicators') {
+            if (choice.action === 'removeAll') {
                 if (!(await applyGroupsToElement(editor, node.ddsElement, []))) {
                     return;
                 };
@@ -128,11 +127,8 @@ async function handleAddIndicatorsCommand(node: DdsNode): Promise<void> {
                 return;
             };
 
-            if (action === 'Remove a group') {
-                const groupToRemove = await pickGroupIndex(groups, 'Select the OR condition to remove');
-                if (groupToRemove === undefined) return;
-
-                const remaining = groups.filter((_, i) => i !== groupToRemove);
+            if (choice.action === 'remove') {
+                const remaining = groups.filter((_, i) => i !== choice.groupIndex);
                 if (!(await applyGroupsToElement(editor, node.ddsElement, remaining))) {
                     return;
                 };
@@ -141,59 +137,33 @@ async function handleAddIndicatorsCommand(node: DdsNode): Promise<void> {
                 return;
             };
 
-            if (action === 'Modify existing indicators') {
-                if (!(await modifyExistingIndicators(editor, node.ddsElement, groups))) {
+            if (choice.action === 'edit') {
+                if (!(await modifyGroup(editor, node.ddsElement, groups, choice.groupIndex))) {
                     return;
                 };
                 await refreshEditorView();
                 return;
             };
 
-            if (action === 'Add OR condition') {
-                if (groups.length >= MAX_OR_CONDITIONS) {
-                    vscode.window.showWarningMessage(`Maximum of ${MAX_OR_CONDITIONS} OR'd conditions reached (DDS limit).`);
-                    return;
-                };
-                const newGroup = await collectIndicatorsFromUser(MAX_AND_INDICATORS);
-                if (newGroup.length === 0) {
-                    vscode.window.showInformationMessage('No indicators selected.');
-                    return;
-                };
-                if (!(await applyGroupsToElement(editor, node.ddsElement, [...groups, newGroup]))) {
-                    return;
-                };
-                await refreshEditorView();
-                vscode.window.showInformationMessage(`Added OR condition (${formatIndicatorsSummary(newGroup)}) to ${elementName}.`);
+            // choice.action === 'addOr'
+            if (groups.length >= MAX_OR_CONDITIONS) {
+                vscode.window.showWarningMessage(`Maximum of ${MAX_OR_CONDITIONS} OR'd conditions reached (DDS limit).`);
                 return;
             };
-
-            if (action === 'Add AND indicator') {
-                const groupIndex = groups.length === 1 ? 0 : await pickGroupIndex(groups, 'Add to which OR condition?');
-                if (groupIndex === undefined) return;
-
-                if (groups[groupIndex].length >= MAX_AND_INDICATORS) {
-                    vscode.window.showWarningMessage(`Maximum of ${MAX_AND_INDICATORS} ANDed indicators reached (DDS limit).`);
-                    return;
-                };
-                const newIndicators = await collectIndicatorsFromUser(MAX_AND_INDICATORS - groups[groupIndex].length);
-                if (newIndicators.length === 0) {
-                    vscode.window.showInformationMessage('No indicators selected.');
-                    return;
-                };
-                const updatedGroups = groups.map((g, i) => i === groupIndex ? [...g, ...newIndicators] : g);
-                if (!(await applyGroupsToElement(editor, node.ddsElement, updatedGroups))) {
-                    return;
-                };
-                await refreshEditorView();
-                vscode.window.showInformationMessage(`Added indicators (${formatIndicatorsSummary(newIndicators)}) to ${elementName}.`);
+            const newGroup = await collectIndicatorsFromUser(MAX_AND_INDICATORS);
+            if (newGroup.length === 0) {
+                vscode.window.showInformationMessage('No indicators selected.');
                 return;
             };
-
-            // action === 'Replace all indicators': falls through to collect a fresh condition below,
-            // replacing whatever was there in a single edit (nothing is touched until it's confirmed).
+            if (!(await applyGroupsToElement(editor, node.ddsElement, [...groups, newGroup]))) {
+                return;
+            };
+            await refreshEditorView();
+            vscode.window.showInformationMessage(`Added OR condition (${formatIndicatorsSummary(newGroup)}) to ${elementName}.`);
+            return;
         };
 
-        // No condition yet, or replacing: collect a single fresh AND group.
+        // No condition yet: collect a single fresh AND group.
         const newGroup = await collectIndicatorsFromUser(MAX_AND_INDICATORS);
         if (newGroup.length === 0) {
             vscode.window.showInformationMessage('No indicators selected.');
@@ -225,19 +195,78 @@ function elementDisplayName(element: any): string {
     return (element.kind === 'constant' || element.kind === 'field') ? element.name : 'attribute';
 };
 
+// INDICATORS SUMMARY MENU
+
+const EDIT_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('edit'), tooltip: 'Modify' };
+const REMOVE_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('trash'), tooltip: 'Remove' };
+
 /**
- * Asks the user to pick one of an element's OR'd AND-groups.
- * @param groups - The element's current OR'd AND-groups
- * @param title - QuickPick title
- * @returns The chosen group's index, or undefined if cancelled
+ * Builds the indicators summary menu's rows: one per existing OR'd AND-group (formatted as e.g.
+ * "51, N61, 53", with edit + trash buttons), plus an "Add OR condition..." row, plus a "Remove all"
+ * row when there's more than one group (with just one, its own trash button already does the same
+ * thing).
+ * @param groups - The element's current OR'd AND-groups, from `findIndicatorConditionBlock`
  */
-async function pickGroupIndex(groups: IndicatorAssignment[][], title: string): Promise<number | undefined> {
-    const items = groups.map((group, index) => ({
-        label: `Condition ${index + 1}: ${formatIndicatorsSummary(group)}`,
-        index
+function buildIndicatorMenuItems(groups: IndicatorAssignment[][]): IndicatorMenuItem[] {
+    const items: IndicatorMenuItem[] = groups.map((group, index) => ({
+        groupIndex: index,
+        label: groups.length > 1 ? `Condition ${index + 1}: ${formatIndicatorsSummary(group)}` : formatIndicatorsSummary(group),
+        buttons: [EDIT_BUTTON, REMOVE_BUTTON]
     }));
-    const picked = await vscode.window.showQuickPick(items, { title, placeHolder: 'Choose a condition' });
-    return picked?.index;
+
+    items.push({ groupIndex: -1, action: 'addOr', label: '$(add) Add OR condition...' });
+
+    if (groups.length > 1) {
+        items.push({ groupIndex: -1, action: 'removeAll', label: '$(trash) Remove all indicators' });
+    };
+
+    return items;
+};
+
+/**
+ * Shows the indicators summary menu and resolves to what the user did: picked a row (or its edit
+ * button) to modify that OR'd condition (`action: 'edit'`), clicked a row's trash button to remove
+ * just that one (`action: 'remove'`), or picked one of the trailing action rows
+ * (`'addOr'`/`'removeAll'`) — undefined if dismissed. Needs the raw `createQuickPick` API rather
+ * than the simpler `showQuickPick` helper, since only it exposes per-item buttons
+ * (`onDidTriggerItemButton`).
+ * @param items - The menu's rows, from `buildIndicatorMenuItems`
+ * @param elementName - The element's name, for the menu's title
+ */
+function showIndicatorMenu(
+    items: IndicatorMenuItem[],
+    elementName: string
+): Promise<{ action: 'edit' | 'remove' | 'addOr' | 'removeAll'; groupIndex: number } | undefined> {
+    return new Promise(resolve => {
+        const quickPick = vscode.window.createQuickPick<IndicatorMenuItem>();
+        quickPick.items = items;
+        quickPick.title = `Indicators for ${elementName}`;
+        quickPick.placeholder = 'Select a condition to modify, use its buttons, or add an OR condition';
+        quickPick.ignoreFocusOut = true;
+
+        let settled = false;
+        const finish = (result: { action: 'edit' | 'remove' | 'addOr' | 'removeAll'; groupIndex: number } | undefined) => {
+            if (settled) return;
+            settled = true;
+            resolve(result);
+            quickPick.hide();
+        };
+
+        quickPick.onDidTriggerItemButton(event => {
+            finish({ action: event.button === REMOVE_BUTTON ? 'remove' : 'edit', groupIndex: event.item.groupIndex });
+        });
+        quickPick.onDidAccept(() => {
+            const picked = quickPick.selectedItems[0];
+            if (!picked) { finish(undefined); return; };
+            finish({ action: picked.action ?? 'edit', groupIndex: picked.groupIndex });
+        });
+        quickPick.onDidHide(() => {
+            finish(undefined);
+            quickPick.dispose();
+        });
+
+        quickPick.show();
+    });
 };
 
 // INLINE ATTRIBUTE HANDLING
@@ -489,17 +518,6 @@ function formatIndicatorsSummary(indicators: IndicatorAssignment[]): string {
     return indicators.map(ind => `${ind.isNegated ? 'N' : ''}${ind.value}`).join(', ');
 };
 
-/**
- * Formats a full condition — one or more OR'd AND-groups — into a readable summary string.
- * @param groups - The element's OR'd AND-groups
- * @returns Formatted summary string, e.g. "51, N61, 53  OR  52  OR  81, 82"
- */
-function formatGroupsSummary(groups: IndicatorAssignment[][]): string {
-    if (groups.length === 0) return 'None';
-
-    return groups.map(formatIndicatorsSummary).join('  OR  ');
-};
-
 // USER INTERACTION FUNCTIONS
 
 /**
@@ -560,21 +578,20 @@ async function collectIndicatorsFromUser(maxIndicators: number = MAX_AND_INDICAT
 };
 
 /**
- * Modifies an element's existing indicator condition. When it spans more than one OR'd group, asks
- * which one to work on first; a single group (the common case) skips straight to the per-indicator
- * flow below, unchanged from before OR support existed.
+ * Modifies one of an element's OR'd AND-groups — which one is already chosen (its summary menu
+ * row), so this goes straight to the per-indicator flow: add a new indicator, change or remove an
+ * existing one, or clear the whole group and start over.
  * @param editor - The active text editor
  * @param element - The DDS element
  * @param groups - The element's current OR'd AND-groups
+ * @param groupIndex - Which group to modify
  */
-async function modifyExistingIndicators(
+async function modifyGroup(
     editor: vscode.TextEditor,
     element: any,
-    groups: IndicatorAssignment[][]
+    groups: IndicatorAssignment[][],
+    groupIndex: number
 ): Promise<boolean> {
-    const groupIndex = groups.length === 1 ? 0 : await pickGroupIndex(groups, 'Which OR condition do you want to modify?');
-    if (groupIndex === undefined) return true;
-
     const currentIndicators = groups[groupIndex];
     const indicatorChoices = currentIndicators.map((indicator, index) =>
         `Position ${index + 1}: ${indicator.isNegated ? 'N' : ''}${indicator.value}`

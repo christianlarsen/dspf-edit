@@ -28,7 +28,7 @@ Right-click a record and choose **New Field**, or click **+ Field** in the [Scre
 
 ## Validity checks
 
-**Add validity checks** applies DDS field-validation keywords (e.g. range/comparison/value checks) to the field.
+**Add validity checks** applies DDS field-validation keywords (range/comparison/value checks) to the field. `RANGE`, `COMP`, and `VALUES` are mutually exclusive in DDS — a field can only have one of the three at a time — so the menu shows all three slots and whichever one is currently set; picking a different one automatically replaces it.
 
 ## Editing keywords
 
@@ -36,7 +36,7 @@ Right-click a record and choose **New Field**, or click **+ Field** in the [Scre
 
 ## Error messages
 
-**Add error messages** attaches a DDS error-message keyword (e.g. `ERRMSG()`) to the field, shown in the preview per the same message-line rules as window `ERRMSG()` — see [Screen Preview](/dspf-edit/guides/screen-preview/#windows).
+**Add error messages** attaches a DDS error-message keyword (e.g. `ERRMSG()`) to the field, shown in the preview per the same message-line rules as window `ERRMSG()` — see [Screen Preview](/dspf-edit/guides/screen-preview/#windows). Unlike validity checks, a field can carry several `ERRMSG()`s at once, each gated by its own indicator — the menu lists them all, letting you change or remove one individually, add another, or clear them all.
 
 ## Indicators
 
