@@ -93,6 +93,10 @@ interface PreviewItem {
      */
     dataLength?: number;
     decimals?: number;
+    /** A field's RANGE()/COMP()/VALUES() validity checks, formatted as they read in DDS source
+     * (e.g. "VALUES(0 2 4 5 7 8)"), for display in the preview's selection bar. Undefined when the
+     * field has none, or for a constant. */
+    validityChecks?: string;
 };
 
 /** A rectangle in the coordinates of the canvas being drawn (the full display size). */
@@ -1428,7 +1432,8 @@ export class RecordPreviewPanel {
                     isResizable,
                     minLength,
                     dataLength: isReferenced ? undefined : effectiveLength,
-                    decimals: isReferenced ? undefined : effectiveDecimals
+                    decimals: isReferenced ? undefined : effectiveDecimals,
+                    validityChecks: this.formatValidityChecksForField(field.attributes)
                 };
 
                 // CNTFLD(n) wraps a field too long for one line across multiple rows, n characters
@@ -1645,6 +1650,22 @@ export class RecordPreviewPanel {
     };
 
     /**
+     * Formats a field's RANGE()/COMP()/VALUES() validity checks for the preview's selection bar,
+     * exactly as they read in DDS source (e.g. "VALUES(0 2 4 5 7 8)"), joined with ", " when more
+     * than one is coded. Shown unconditionally (not gated by indicators, unlike DSPATR/COLOR/ERRMSG
+     * elsewhere in this file) since a validity check's own indicator only controls whether the check
+     * is *enforced*, not something the 5250 ever visibly toggles — the point here is just letting the
+     * user see what values the field accepts.
+     */
+    private formatValidityChecksForField(attributes: AttributeWithIndicators[]): string | undefined {
+        const checks = filterForActiveFormat(attributes, this.activeDisplayFormat)
+            .map(attr => attr.value)
+            .filter(value => /^(RANGE|COMP|VALUES)\([^)]+\)$/.test(value));
+
+        return checks.length > 0 ? checks.join(', ') : undefined;
+    };
+
+    /**
      * Whether a field's own ERRMSG() is currently active (its conditioning indicator satisfied) —
      * the field it's attached to is shown in reverse image while its error is in effect, same as a
      * real 5250 highlights the field an error message refers to.
@@ -1658,7 +1679,10 @@ export class RecordPreviewPanel {
      * Finds the record's currently-active ERRMSG() message, if any: an ERRMSG keyword (record-level,
      * or on one of the record's own fields/constants) whose own conditioning indicator is satisfied
      * by the indicator simulation — same gating already used for COLOR()/DSPATR() via isItemDisplayed.
-     * Shown on the display's message line (the bottom row) like a real 5250 error, in white.
+     * Falls back to the SFLCTL record's own SFLMSG() (a subfile message) when no ERRMSG is active,
+     * matching the DDS manual's stated priority (ERRMSG over SFLMSG) and its requirement that SFLDSP
+     * be in effect for SFLMSG to be processed. Shown on the display's message line (the bottom row)
+     * like a real 5250 error/subfile message, in white.
      */
     private resolveErrorMessage(recordInfo: FieldsPerRecord): { text: string } | null {
         const candidates: { value: string; indicators?: DdsIndicator[]; displayFormat?: string }[] = [
@@ -1667,14 +1691,25 @@ export class RecordPreviewPanel {
             ...recordInfo.constants.flatMap(constant => constant.attributes)
         ];
 
-        const forFormat = filterForActiveFormat(candidates, this.activeDisplayFormat);
-        for (const attr of forFormat) {
-            if (!this.isItemDisplayed(attr.indicators, this.indicatorsEnabled)) {
-                continue;
-            };
+        const displayed = filterForActiveFormat(candidates, this.activeDisplayFormat)
+            .filter(attr => this.isItemDisplayed(attr.indicators, this.indicatorsEnabled));
+
+        for (const attr of displayed) {
             const errmsgMatch = attr.value.match(/^ERRMSG\('([^']+)'\s*(\d{2})?\)$/);
             if (errmsgMatch) {
                 return { text: errmsgMatch[1] };
+            };
+        };
+
+        const recordAttrs = filterForActiveFormat(recordInfo.attributes ?? [], this.activeDisplayFormat);
+        const sflDsp = recordAttrs.find(attr => attr.value === 'SFLDSP');
+        const sflDspActive = sflDsp ? this.isItemDisplayed(sflDsp.indicators, this.indicatorsEnabled) : false;
+        if (sflDspActive) {
+            for (const attr of displayed) {
+                const sflmsgMatch = attr.value.match(/^SFLMSG\('([^']+)'\s*(\d{2})?\)$/);
+                if (sflmsgMatch) {
+                    return { text: sflmsgMatch[1] };
+                };
             };
         };
         return null;
@@ -3366,6 +3401,9 @@ export class RecordPreviewPanel {
                 label = '1 constant selected — Pos= ' + item.row + ', ' + item.col + ', width ' + item.length;
             } else {
                 label = '1 field selected — Pos= ' + item.row + ', ' + item.col;
+            }
+            if (item.kind === 'field' && item.validityChecks) {
+                label += ' — ' + item.validityChecks;
             }
             selectionLabel.textContent = label;
         }

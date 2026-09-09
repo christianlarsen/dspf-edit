@@ -43,6 +43,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
   - Simulate indicators on/off to preview conditional fields, constants, and attributes.
   - A function-key legend (`F3`, `F12`, ...) shows every command key available to the record being previewed (file-level + record-level CAxx/CFxx); a key still shows even when its indicator condition isn't currently met (so you can see it's defined), switching to solid/inverted styling when it's actually active.
   - An active `ERRMSG()` on a window shows on the window's own reserved message line (its last content row) when the window doesn't specify `*NOMSGLIN`, matching real DDS behavior, instead of always at the bottom of the physical screen.
+  - A subfile's `SFLMSG()` also shows on the message line when its indicator is active and `SFLDSP` is in effect, the same way `ERRMSG()` does (which still takes priority over it, matching the DDS reference).
   - For files with more than one DSPSIZ format (e.g. *DS3/*DS4), switch which one is previewed — window positions/sizes and conditioned elements are resolved for the selected format. Dragging/resizing/centering a window, or adjusting a subfile's SFLPAG/SFLSIZ, only affects the size currently being previewed.
   - The "Indicators" toggle and the selected display format persist when switching which record is previewed in the same panel.
   - Stays in sync with the schema tree selection in both directions.
@@ -150,8 +151,10 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.4.1** - 2026-09-05
-- Fixed: window title (`WDWTITLE`) and border (`WDWBORDER`) had stopped rendering in the preview — a regression from 1.4.0, whose keyword parser didn't handle keywords with nested parentheses.
+**1.5.0** - 2026-09-09
+- Added: subfile messages (`SFLMSG`) now show on the preview's message line during indicator simulation, the same way error messages already do.
+- Added: Validity Checks, Error Messages, and Indicators now use an editable summary menu (change/remove per item) instead of the old "Add more/Replace all/Remove all" picker.
+- Fixed: removing/replacing all attributes (and colors/keys/error messages/validity checks) on one constant could wipe out attributes on unrelated constants later in the same record.
 
 ---
 

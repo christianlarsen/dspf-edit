@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.5.0] - 2026-09-09
+### Added
+- Preview: an active `SFLMSG()` on a subfile control record (SFLCTL) is now shown on the message line during indicator simulation, the same way `ERRMSG()` already is — respecting ERRMSG's priority over SFLMSG and requiring `SFLDSP` to be in effect, per the DDS reference.
+- Preview: selecting a field with a validity check now also shows it (e.g. `VALUES(0 2 4 5 7 8)`) in the selection bar, alongside its name and position.
+- Add Validity Check: replaced with a summary menu showing all three mutually exclusive keywords (RANGE/COMP/VALUES) and whichever one is currently set, each with its own change (✏️) and remove (🗑️) button — instead of the old "Add more/Replace all/Remove all" flow, which allowed invalid DDS (e.g. a duplicate `VALUES`, or `VALUES` together with `RANGE`). Setting one now automatically replaces whichever of the three is already in effect; changing an existing one pre-fills its current value.
+- Add Error Messages: replaced with a summary menu listing every existing `ERRMSG`, each with its own change/remove buttons, plus "Add error message..." and "Remove all" — unlike validity checks, a field can legitimately carry several `ERRMSG`s, each gated by its own indicator.
+- Add Indicators: replaced the flat "Add AND/Add OR/Modify/Remove a group/Replace all/Remove all" picker with a summary menu listing every OR'd condition, each with its own modify/remove buttons, plus "Add OR condition..." and "Remove all".
+### Fixed
+- Remove/Replace All Attributes (and the equivalent commands for colors, keys, error messages, and validity checks): removing/replacing on one constant could also strip attributes off unrelated constants later in the same record — the scan used to find where an element's attributes end didn't recognize the next constant's own row/column as a boundary.
+
 ## [1.4.1] - 2026-09-05
 ### Fixed
 - Preview: window title (`WDWTITLE`) and border (`WDWBORDER`) stopped rendering — a regression from 1.4.0's multi-keyword-per-line parsing fix. Its keyword tokenizer didn't handle keywords with nested parentheses, e.g. `WDWTITLE((*TEXT '...') *TOP)` or `WDWBORDER((*COLOR BLU) (*DSPATR RI))`, shredding them into fragments instead of keeping each as one attribute.

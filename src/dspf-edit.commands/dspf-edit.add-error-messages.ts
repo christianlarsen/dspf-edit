@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
-import { isAttributeLine, findElementInsertionPointRecordFirstLine, checkForEditorAndDocument, groupConsecutiveLines, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { isAttributeLine, findElementInsertionPointRecordFirstLine, checkForEditorAndDocument, groupConsecutiveLines, applyWorkspaceEdit, removeKeywordTextFromLines } from '../dspf-edit.utils/dspf-edit.helper';
 
 // INTERFACES AND TYPES
 
@@ -16,6 +16,19 @@ interface ErrorMessageConfig {
     messageText: string;
     responseIndicator?: string;
     useResponseIndicator: boolean;
+    /** The keyword's own text exactly as parsed (e.g. "ERRMSG('No stock' 31)") and its line range —
+     * only set for an existing message read off the field, used to locate/remove it precisely
+     * without disturbing sibling keywords or other messages. */
+    raw?: string;
+    lineIndex?: number;
+    lastLineIndex?: number;
+};
+
+/** One row of the error-messages summary menu: an existing ERRMSG occurrence (`messageIndex` into
+ * the current list), or one of the two trailing action rows. */
+interface ErrorMessageMenuItem extends vscode.QuickPickItem {
+    messageIndex: number;
+    action?: 'addNew' | 'removeAll';
 };
 
 // COMMAND REGISTRATION
@@ -67,23 +80,16 @@ async function handleAddErrorMessageCommand(node: DdsNode): Promise<void> {
         // Get current error messages from the field
         const currentErrorMessages = getCurrentErrorMessages(field);
 
-        // Show current error messages if any exist
+        // Show a summary menu — one row per existing message, editable/removable individually —
+        // instead of the old "Add more/Replace all/Remove all" 3-choice picker. Unlike RANGE/COMP/
+        // VALUES, ERRMSG can legitimately be coded more than once on the same field (the manual is
+        // explicit: "You can specify ERRMSG ... more than once for a single field"), each with its
+        // own trigger indicator, so a real list — not a mutually-exclusive set — is the right shape.
         if (currentErrorMessages.length > 0) {
-            const currentMessagesList = currentErrorMessages.map(msg =>
-                `${msg.indicator}: "${msg.messageText}"${msg.responseIndicator ? ` (Response: ${msg.responseIndicator})` : ''}`
-            ).join('; ');
+            const choice = await showErrorMessageMenu(buildErrorMessageMenuItems(currentErrorMessages), field.name);
+            if (!choice) return;
 
-            const action = await vscode.window.showQuickPick(
-                ['Add more error messages', 'Replace all error messages', 'Remove all error messages'],
-                {
-                    title: `Current error messages: ${currentMessagesList}`,
-                    placeHolder: 'Choose how to manage error messages'
-                }
-            );
-
-            if (!action) return;
-
-            if (action === 'Remove all error messages') {
+            if (choice.action === 'removeAll') {
                 if (!(await removeErrorMessagesFromField(editor, field))) {
                     return;
                 };
@@ -94,12 +100,27 @@ async function handleAddErrorMessageCommand(node: DdsNode): Promise<void> {
                 return;
             };
 
-            if (action === 'Replace all error messages') {
-                if (!(await removeErrorMessagesFromField(editor, field))) {
-                    return;
-                };
+            if (choice.action === 'remove') {
+                await removeOneErrorMessage(editor, field, currentErrorMessages[choice.messageIndex]);
+                return;
             };
-            // If "Add more error messages", continue with current logic
+
+            if (choice.action === 'edit') {
+                const existing = currentErrorMessages[choice.messageIndex];
+                const updated = await collectOneErrorMessage(existing);
+                if (!updated) return;
+
+                if (!(await removeOneErrorMessage(editor, field, existing, true))) return;
+                if (!(await addErrorMessagesToField(editor, field, [updated]))) return;
+                await vscode.commands.executeCommand('cursorRight');
+                await vscode.commands.executeCommand('cursorLeft');
+
+                vscode.window.showInformationMessage(
+                    `Updated error message (indicator ${updated.indicator}) on field '${field.name}'.`
+                );
+                return;
+            };
+            // choice.action === 'addNew' falls through to the add flow below
         };
 
         // Collect new error messages to add
@@ -178,12 +199,147 @@ function getCurrentErrorMessages(field: any): ErrorMessageConfig[] {
                     messageText: errmsgMatch[1],
                     responseIndicator: errmsgMatch[2],
                     useResponseIndicator: !!errmsgMatch[2],
+                    raw: attribute,
+                    lineIndex: attrObj.lineIndex,
+                    lastLineIndex: attrObj.lastLineIndex
                 });
             };
         });
     };
 
     return errorMessages;
+};
+
+// ERROR MESSAGES SUMMARY MENU
+
+const EDIT_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('edit'), tooltip: 'Change' };
+const REMOVE_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('trash'), tooltip: 'Remove' };
+
+/**
+ * Builds the error-messages summary menu's rows: one per existing ERRMSG occurrence (its trigger
+ * indicator + text, with edit + trash buttons), plus an "Add error message..." row, plus a
+ * "Remove all" row when there's more than one message (with just one, its own trash button already
+ * does the same thing).
+ * @param currentMessages - The field's current error messages, from `getCurrentErrorMessages`
+ */
+function buildErrorMessageMenuItems(currentMessages: ErrorMessageConfig[]): ErrorMessageMenuItem[] {
+    const items: ErrorMessageMenuItem[] = currentMessages.map((msg, index) => ({
+        messageIndex: index,
+        label: `IND ${msg.indicator} — "${msg.messageText}"`,
+        description: msg.responseIndicator ? `Response: ${msg.responseIndicator}` : undefined,
+        buttons: [EDIT_BUTTON, REMOVE_BUTTON]
+    }));
+
+    items.push({ messageIndex: -1, action: 'addNew', label: '$(add) Add error message...' });
+
+    if (currentMessages.length > 1) {
+        items.push({ messageIndex: -1, action: 'removeAll', label: '$(trash) Remove all error messages' });
+    };
+
+    return items;
+};
+
+/**
+ * Shows the error-messages summary menu and resolves to what the user did: picked a row (or its
+ * edit button) to change it (`action: 'edit'`), clicked a row's trash button to remove just that
+ * one (`action: 'remove'`), or picked one of the trailing action rows (`'addNew'`/`'removeAll'`) —
+ * undefined if dismissed. Needs the raw `createQuickPick` API rather than the simpler `showQuickPick`
+ * helper, since only it exposes per-item buttons (`onDidTriggerItemButton`).
+ * @param items - The menu's rows, from `buildErrorMessageMenuItems`
+ * @param fieldName - The field's name, for the menu's title
+ */
+function showErrorMessageMenu(
+    items: ErrorMessageMenuItem[],
+    fieldName: string
+): Promise<{ action: 'edit' | 'remove' | 'addNew' | 'removeAll'; messageIndex: number } | undefined> {
+    return new Promise(resolve => {
+        const quickPick = vscode.window.createQuickPick<ErrorMessageMenuItem>();
+        quickPick.items = items;
+        quickPick.title = `Error messages for ${fieldName}`;
+        quickPick.placeholder = 'Select a message to change, use its buttons, or add a new one';
+        quickPick.ignoreFocusOut = true;
+
+        let settled = false;
+        const finish = (result: { action: 'edit' | 'remove' | 'addNew' | 'removeAll'; messageIndex: number } | undefined) => {
+            if (settled) return;
+            settled = true;
+            resolve(result);
+            quickPick.hide();
+        };
+
+        quickPick.onDidTriggerItemButton(event => {
+            finish({ action: event.button === REMOVE_BUTTON ? 'remove' : 'edit', messageIndex: event.item.messageIndex });
+        });
+        quickPick.onDidAccept(() => {
+            const picked = quickPick.selectedItems[0];
+            if (!picked) { finish(undefined); return; };
+            finish({ action: picked.action ?? 'edit', messageIndex: picked.messageIndex });
+        });
+        quickPick.onDidHide(() => {
+            finish(undefined);
+            quickPick.dispose();
+        });
+
+        quickPick.show();
+    });
+};
+
+/**
+ * Removes just one existing error message (the summary menu's trash-button action, or the first
+ * step of editing one), using the same precise keyword-text removal as single-attribute deletion —
+ * only this message's own text is stripped from its line(s), leaving sibling keywords and other
+ * messages untouched.
+ * @param editor - The active text editor
+ * @param field - The DDS field the message belongs to
+ * @param message - The existing message to remove (must carry `raw`/`lineIndex`/`lastLineIndex`)
+ * @param silent - Suppresses the cursor nudge + confirmation message (used when immediately
+ * re-adding a replacement as part of "edit")
+ */
+async function removeOneErrorMessage(
+    editor: vscode.TextEditor,
+    field: any,
+    message: ErrorMessageConfig,
+    silent: boolean = false
+): Promise<boolean> {
+    if (message.raw === undefined || message.lineIndex === undefined || message.lastLineIndex === undefined) {
+        return false;
+    };
+
+    const preserveFirstLine = message.lineIndex === field.lineIndex;
+    if (!(await removeKeywordTextFromLines(editor, message.lineIndex, message.lastLineIndex, message.raw, preserveFirstLine))) {
+        return false;
+    };
+
+    if (!silent) {
+        await vscode.commands.executeCommand('cursorRight');
+        await vscode.commands.executeCommand('cursorLeft');
+        vscode.window.showInformationMessage(`Removed error message (indicator ${message.indicator}) from field '${field.name}'.`);
+    };
+    return true;
+};
+
+/**
+ * Collects a changed error message, prefilled with its current indicator/text/response indicator.
+ * @param current - The message's current value
+ */
+async function collectOneErrorMessage(current: ErrorMessageConfig): Promise<ErrorMessageConfig | null> {
+    const indicator = await collectIndicatorForErrorMessage(current.indicator);
+    if (!indicator) return null;
+
+    const messageText = await collectErrorMessageText(current.messageText);
+    if (!messageText) return null;
+
+    const useResponseIndicator = await askUseResponseIndicator(current.useResponseIndicator);
+    if (useResponseIndicator === undefined) return null;
+
+    let responseIndicator: string | undefined | null;
+    if (useResponseIndicator) {
+        responseIndicator = await collectResponseIndicator(indicator, current.responseIndicator);
+        if (!responseIndicator) return null;
+    };
+    if (responseIndicator === null) responseIndicator = undefined;
+
+    return { indicator, messageText, responseIndicator, useResponseIndicator };
 };
 
 // USER INTERACTION FUNCTIONS
@@ -240,12 +396,14 @@ async function collectErrorMessagesFromUser(): Promise<ErrorMessageConfig[]> {
 
 /**
  * Collects conditioning indicator for an error message.
+ * @param current - The message's current indicator, when changing an existing one
  * @returns Selected indicator or null if cancelled
  */
-async function collectIndicatorForErrorMessage(): Promise<string | null> {
+async function collectIndicatorForErrorMessage(current?: string): Promise<string | null> {
     const indicator = await vscode.window.showInputBox({
         title: 'Error Message Indicator',
         prompt: 'Enter the indicator that will trigger this error message (01-99)',
+        value: current,
         placeHolder: '31',
         validateInput: (value: string) => {
             if (!value.trim()) return 'Indicator is required';
@@ -265,12 +423,14 @@ async function collectIndicatorForErrorMessage(): Promise<string | null> {
 
 /**
  * Collects error message text from user.
+ * @param current - The message's current text, when changing an existing one
  * @returns Message text or null if cancelled
  */
-async function collectErrorMessageText(): Promise<string | null> {
+async function collectErrorMessageText(current?: string): Promise<string | null> {
     const messageText = await vscode.window.showInputBox({
         title: 'Error Message Text',
         prompt: 'Enter the error message text to display',
+        value: current,
         placeHolder: 'No stock available',
         validateInput: validateErrorMessageText
     });
@@ -305,9 +465,10 @@ function validateErrorMessageText(value: string): string | null {
 
 /**
  * Asks user if they want to use a response indicator.
+ * @param current - Whether the message currently uses one, when changing an existing message
  * @returns true if yes, false if no, undefined if cancelled
  */
-async function askUseResponseIndicator(): Promise<boolean | undefined> {
+async function askUseResponseIndicator(current?: boolean): Promise<boolean | undefined> {
     const choice = await vscode.window.showQuickPick(
         [
             {
@@ -322,7 +483,7 @@ async function askUseResponseIndicator(): Promise<boolean | undefined> {
             }
         ],
         {
-            title: 'Response Indicator',
+            title: current !== undefined ? `Response Indicator (current: ${current ? 'used' : 'not used'})` : 'Response Indicator',
             placeHolder: 'Choose whether to use a response indicator'
         }
     );
@@ -334,13 +495,14 @@ async function askUseResponseIndicator(): Promise<boolean | undefined> {
 /**
  * Collects response indicator from user.
  * @param optionIndicator - The option indicator for reference
+ * @param current - The message's current response indicator, when changing an existing one
  * @returns Response indicator or null if cancelled
  */
-async function collectResponseIndicator(optionIndicator: string): Promise<string | null> {
+async function collectResponseIndicator(optionIndicator: string, current?: string): Promise<string | null> {
     const responseIndicator = await vscode.window.showInputBox({
         title: 'Response Indicator',
         prompt: `Enter response indicator (typically same as option indicator: ${optionIndicator})`,
-        value: optionIndicator, // Default to same as option indicator
+        value: current ?? optionIndicator, // Default to same as option indicator
         placeHolder: optionIndicator,
         validateInput: (value: string) => {
             if (!value.trim()) return 'Response indicator is required';
