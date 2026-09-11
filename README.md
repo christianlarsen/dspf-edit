@@ -156,6 +156,9 @@ See the full changelog [here](./CHANGELOG.md).
 - Changed: Schema Tree icons now use VS Code's native codicons instead of emoji, for consistent rendering across themes and platforms.
 - Changed: the "Indicators" and "Attributes" subnodes no longer appear anywhere in the tree when there's nothing under them.
 - Removed: the Move Field/Constant Left/Right (1)/(5) inline tree buttons — dragging in the Screen Preview already covers this.
+- Fixed: Add Validity Check's `VALUES` now validates each value against the field's type and length as you type, instead of allowing invalid DDS like mixing a quoted character value with a bare number.
+- Fixed: adding a field or constant to a subfile (SFL) record from the tree now correctly refuses to place it on top of its subfile-control header, matching what the Screen Preview already enforced; the preview's own header-overlap check (and drag boundary) is also more accurate now.
+- Fixed: a long-standing internal row/column mix-up for fields and constants inside subfile (SFL) records — it silently affected Change Position, Center, Copy Field/Constant, Sort Elements, Fill Constant, and Window Resize (the Screen Preview itself was unaffected, since it already had its own workaround).
 
 ---
 

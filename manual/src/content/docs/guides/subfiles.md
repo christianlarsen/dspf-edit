@@ -13,7 +13,7 @@ The preview shows all `SFLPAG` rows for the subfile, and automatically pairs the
 
 ## Dragging detail rows
 
-Detail rows can't be dragged up over the header record's own content, keeping the preview physically consistent with how the subfile actually renders.
+Detail rows can't be dragged up over the header record's own content, keeping the preview physically consistent with how the subfile actually renders. The same boundary applies when adding a new field or constant to the detail record — whether by clicking in the preview or via the tree's **Add field**/**Add constant** — so it can't be placed on top of the header either.
 
 ## Adding a commands record
 

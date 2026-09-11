@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { fileSizeAttributes, fieldsPerRecords, getRecordSize } from '../dspf-edit.model/dspf-edit.model';
+import { fileSizeAttributes, fieldsPerRecords, getRecordSize, getSubfileMinDetailRow } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, parseSize } from '../dspf-edit.utils/dspf-edit.helper';
 
 /**
@@ -181,15 +181,19 @@ function getMaxCols(): number {
 /**
  * Bounds a new field's position can validly land in, for a given record. When the record is a
  * window, that's its own (typically smaller) content rectangle, not the whole file's declared
- * screen size; a non-window (base display) record uses the whole file's declared size.
+ * screen size; a non-window (base display) record uses the whole file's declared size. For a
+ * subfile detail (SFL) record, `minRow` also excludes whatever rows its SFLCTL header's own
+ * fields/constants occupy — DDS doesn't allow a subfile-control record's static content to overlap
+ * the subfile record's own fields.
  * @param recordName - The record to resolve bounds for
  */
-function getPositionBounds(recordName: string): { maxRows: number; maxCols: number } {
+function getPositionBounds(recordName: string): { minRow: number; maxRows: number; maxCols: number } {
     const size = getRecordSize(recordName);
+    const minRow = getSubfileMinDetailRow(recordName) ?? 1;
     if (size?.source === 'window') {
-        return { maxRows: size.rows, maxCols: size.cols };
+        return { minRow, maxRows: size.rows, maxCols: size.cols };
     };
-    return { maxRows: getMaxRows(), maxCols: getMaxCols() };
+    return { minRow, maxRows: getMaxRows(), maxCols: getMaxCols() };
 }
 
 /**
@@ -982,10 +986,14 @@ async function getRelativeFieldPosition(editor: vscode.TextEditor, recordElement
     };
 
     // Validate the new position
-    const { maxRows, maxCols } = getPositionBounds(recordElement.name);
+    const { minRow, maxRows, maxCols } = getPositionBounds(recordElement.name);
 
-    if (newRow < 1 || newRow > maxRows) {
-        vscode.window.showErrorMessage(`Cannot position field at row ${newRow}. Row must be between 1 and ${maxRows}.`);
+    if (newRow < minRow || newRow > maxRows) {
+        vscode.window.showErrorMessage(
+            minRow > 1
+                ? `Cannot position field at row ${newRow} — it's occupied by the subfile header. Row must be between ${minRow} and ${maxRows}.`
+                : `Cannot position field at row ${newRow}. Row must be between 1 and ${maxRows}.`
+        );
         return null;
     };
 
@@ -1013,14 +1021,16 @@ async function getRelativeFieldPosition(editor: vscode.TextEditor, recordElement
  * (a window's own content rectangle) rather than the whole file's declared size
  */
 async function getAbsoluteFieldPosition(fieldName: string, recordName: string): Promise<FieldPosition | null> {
-    const { maxRows, maxCols } = getPositionBounds(recordName);
+    const { minRow, maxRows, maxCols } = getPositionBounds(recordName);
 
     // Get row position
     const row = await vscode.window.showInputBox({
         title: `Position for field '${fieldName}' - Row`,
-        prompt: `Enter row position (1-${maxRows})`,
+        prompt: minRow > 1
+            ? `Enter row position (${minRow}-${maxRows}) — rows above ${minRow} are occupied by the subfile header`
+            : `Enter row position (1-${maxRows})`,
         placeHolder: "10",
-        validateInput: (value) => validateNumericRange(value, 1, maxRows, "Row")
+        validateInput: (value) => validateNumericRange(value, minRow, maxRows, "Row")
     });
     if (!row) return null;
 

@@ -75,13 +75,9 @@ interface PreviewItem {
     /** For a resizable field: the shortest length its own type allows (decimals + 1 for a numeric field with decimals, else 1). */
     minLength?: number;
     /**
-     * True for a genuine constant literal (same gating as `isResizable` — not a system keyword)
-     * that isn't part of a subfile record. Drives whether the preview offers a *second* drag handle,
-     * on the constant's left edge, to grow/shrink its *leading* blank padding instead of its
-     * trailing one. Excluded for a subfile record: the parser stores its row/column swapped, and
-     * unlike the right handle (which never touches position), this one has to rewrite the constant's
-     * column — not worth risking writing it to the wrong raw source column without a way to verify
-     * against real STRSDA for a subfile.
+     * True for a genuine constant literal (same gating as `isResizable` — not a system keyword).
+     * Drives whether the preview offers a *second* drag handle, on the constant's left edge, to
+     * grow/shrink its *leading* blank padding instead of its trailing one.
      */
     isResizableLeft?: boolean;
     /** For a left-resizable constant: the shortest length that doesn't eat into its own non-leading-blank text (mirrors `minLength`, from the other end). */
@@ -1159,6 +1155,10 @@ export class RecordPreviewPanel {
         // A subfile detail (SFL) record's own rows shouldn't be draggable up into the area already
         // occupied by its SFLCTL header's static content (labels, titles...) — that's not a valid
         // screen layout, the repeating detail area has to start below wherever the header ends.
+        // Kept in absolute canvas coordinates (item.row already includes rowOffset — see buildItems'
+        // `row: trueRow + rowOffset`) since that's the frame the drag-clamp code (below, and in the
+        // webview) compares it against; resolveClickPosition converts its own screen click back to
+        // this same absolute frame for the comparison instead of the other way around.
         let minDetailRow: number | null = null;
         if (isSflRecordInfo(recordInfo)) {
             const pairName = findSubfilePairRecordName(this.recordName);
@@ -1348,11 +1348,6 @@ export class RecordPreviewPanel {
     private buildItems(recordInfo: FieldsPerRecord, rowOffset: number, colOffset: number, isBackground: boolean): PreviewItem[] {
         const items: PreviewItem[] = [];
 
-        // The parser stores a subfile (SFL) record's field/constant row and column swapped
-        // (SFL rows are tracked as a "horizontal" position internally). Undo that swap here to
-        // get the real screen row/col for display.
-        const isSfl = isSflRecordInfo(recordInfo);
-
         // Indicator toggling only applies to the record being actively previewed; an overlaid
         // background record always uses the resting state (every indicator OFF), regardless of
         // what's toggled for the foreground record.
@@ -1367,8 +1362,8 @@ export class RecordPreviewPanel {
                 continue;
             };
 
-            const trueRow = isSfl ? field.col : field.row;
-            const trueCol = isSfl ? field.row : field.col;
+            const trueRow = field.row;
+            const trueCol = field.col;
 
             if (trueRow > 0 && trueCol > 0) {
                 const activeAttrs = this.getActiveAttributes(field.attributes, useLiveIndicators);
@@ -1508,8 +1503,8 @@ export class RecordPreviewPanel {
                 continue;
             };
 
-            const trueRow = isSfl ? constant.col : constant.row;
-            const trueCol = isSfl ? constant.row : constant.col;
+            const trueRow = constant.row;
+            const trueCol = constant.col;
 
             if (trueRow > 0 && trueCol > 0) {
                 const activeAttrs = this.getActiveAttributes(constant.attributes, useLiveIndicators);
@@ -1545,12 +1540,7 @@ export class RecordPreviewPanel {
                     // offered — only trailing blank padding can be added/removed.
                     isResizable: !isSystemConstant,
                     minLength: Math.max(constant.name.replace(/\s+$/, '').length, 1),
-                    // Left-edge handle: excluded for a subfile record — the parser stores its
-                    // row/column swapped (see `isSfl` above), and unlike the right handle (which
-                    // never touches position), a left-resize has to rewrite the constant's column —
-                    // not worth risking writing it to the wrong raw source column without a way to
-                    // verify against real STRSDA for a subfile. See PreviewItem.isResizableLeft.
-                    isResizableLeft: !isSystemConstant && !isSfl,
+                    isResizableLeft: !isSystemConstant,
                     minLengthLeft: Math.max(constant.name.replace(/^\s+/, '').length, 1)
                 });
             };
@@ -1985,9 +1975,7 @@ export class RecordPreviewPanel {
         };
 
         // The raw source columns are always "Line spec" (38-41) / "Position spec" (41-44) — i.e.
-        // row/col in that fixed order — for every record type. A subfile only swaps which of these
-        // ends up labeled model.row/model.col internally (see buildItems' undo); the physical
-        // columns themselves never swap, so no subfile-specific handling is needed here.
+        // row/col in that fixed order — for every record type, subfile detail (SFL) records included.
         const workspaceEdit = new vscode.WorkspaceEdit();
         const uri = editor.document.uri;
 
@@ -2193,9 +2181,12 @@ export class RecordPreviewPanel {
             );
             return null;
         };
-        if (minDetailRow !== null && row < minDetailRow) {
+        // minDetailRow is in absolute canvas coordinates (see resolveActiveGeometry) — compare
+        // against screenRow, not the record-local row, so this agrees with the drag-clamp's own
+        // frame instead of allowing a drag to sneak a row further up than a fresh placement would.
+        if (minDetailRow !== null && screenRow < minDetailRow) {
             vscode.window.showWarningMessage(
-                `Cannot place a ${kind} on row ${row} — it's occupied by the subfile header (rows below ${minDetailRow} only).`
+                `Cannot place a ${kind} on row ${row} — it's occupied by the subfile header (rows below ${minDetailRow - rowOffset} only).`
             );
             return null;
         };

@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { fileSizeAttributes, fieldsPerRecords, getRecordSize } from '../dspf-edit.model/dspf-edit.model';
+import { fileSizeAttributes, fieldsPerRecords, getRecordSize, getSubfileMinDetailRow } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, findEndLineIndex, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 
 // TYPE DEFINITIONS
@@ -63,15 +63,19 @@ function getMaxCols(): number {
 /**
  * Bounds a new constant's position can validly land in, for a given record. When the record is a
  * window, that's its own (typically smaller) content rectangle, not the whole file's declared
- * screen size; a non-window (base display) record uses the whole file's declared size.
+ * screen size; a non-window (base display) record uses the whole file's declared size. For a
+ * subfile detail (SFL) record, `minRow` also excludes whatever rows its SFLCTL header's own
+ * fields/constants occupy — DDS doesn't allow a subfile-control record's static content to overlap
+ * the subfile record's own fields.
  * @param recordName - The record to resolve bounds for
  */
-function getPositionBounds(recordName: string): { maxRows: number; maxCols: number } {
+function getPositionBounds(recordName: string): { minRow: number; maxRows: number; maxCols: number } {
     const size = getRecordSize(recordName);
+    const minRow = getSubfileMinDetailRow(recordName) ?? 1;
     if (size?.source === 'window') {
-        return { maxRows: size.rows, maxCols: size.cols };
+        return { minRow, maxRows: size.rows, maxCols: size.cols };
     };
-    return { maxRows: getMaxRows(), maxCols: getMaxCols() };
+    return { minRow, maxRows: getMaxRows(), maxCols: getMaxCols() };
 };
 
 // COMMAND REGISTRATION FUNCTIONS
@@ -328,9 +332,13 @@ async function getRelativePosition(editor: vscode.TextEditor, recordElement: any
         : referenceConstant.row + 1;
 
     // Validate the new row position
-    const { maxRows } = getPositionBounds(recordElement.name);
-    if (newRow < 1 || newRow > maxRows) {
-        vscode.window.showErrorMessage(`Cannot position constant at row ${newRow}. Row must be between 1 and ${maxRows}.`);
+    const { minRow, maxRows } = getPositionBounds(recordElement.name);
+    if (newRow < minRow || newRow > maxRows) {
+        vscode.window.showErrorMessage(
+            minRow > 1
+                ? `Cannot position constant at row ${newRow} — it's occupied by the subfile header. Row must be between ${minRow} and ${maxRows}.`
+                : `Cannot position constant at row ${newRow}. Row must be between 1 and ${maxRows}.`
+        );
         return null;
     };
 
@@ -352,7 +360,7 @@ async function getAbsolutePositionForRecord(recordElement: any): Promise<Constan
 
     const row = await vscode.window.showInputBox({
         title: `Enter row position for constant in record ${recordElement.name}`,
-        validateInput: value => validateRowInput(value, bounds.maxRows)
+        validateInput: value => validateRowInput(value, bounds.maxRows, bounds.minRow)
     });
     if (!row) return null;
 
@@ -386,7 +394,7 @@ async function getManualPosition(): Promise<ConstantPosition | null> {
 
     const row = await vscode.window.showInputBox({
         title: "Enter row position for constant",
-        validateInput: value => validateRowInput(value, bounds.maxRows)
+        validateInput: value => validateRowInput(value, bounds.maxRows, bounds.minRow)
     });
     if (!row) return null;
 
@@ -524,10 +532,12 @@ function validateConstantText(value: string): string | null {
  * @param maxRows - Highest valid row (the record's window content, or the file's declared size)
  * @returns Error message or null if valid
  */
-function validateRowInput(value: string, maxRows: number): string | null {
+function validateRowInput(value: string, maxRows: number, minRow: number = 1): string | null {
     const num = parseInt(value, 10);
-    if (isNaN(num) || num < 1 || num > maxRows) {
-        return `Row must be a number between 1 and ${maxRows}.`;
+    if (isNaN(num) || num < minRow || num > maxRows) {
+        return minRow > 1
+            ? `Row must be a number between ${minRow} and ${maxRows} — rows above ${minRow} are occupied by the subfile header.`
+            : `Row must be a number between 1 and ${maxRows}.`;
     }
     return null;
 };

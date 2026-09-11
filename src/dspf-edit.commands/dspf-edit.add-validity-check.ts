@@ -401,32 +401,114 @@ async function collectCompParameters(fieldInfo: any, current?: ValidityCheck): P
 };
 
 /**
- * Collects VALUES parameters from user.
+ * Whether a field is numeric for VALUES-entry validation purposes, per the same DDS Type/decimal-
+ * positions default rule used elsewhere in the extension (see isNumericFieldType in
+ * dspf-edit.record-preview-panel.ts): 'A' is always character, anything else non-blank is always
+ * numeric, and a blank Type is character only when decimal positions are also blank.
+ * @param fieldInfo - Field information
+ */
+function isNumericFieldForValues(fieldInfo: any): boolean {
+    const trimmedType = (fieldInfo.type || '').trim().toUpperCase();
+    return trimmedType !== '' ? trimmedType !== 'A' : fieldInfo.decimals !== undefined;
+};
+
+/**
+ * Splits a VALUES input string into its individual value tokens, treating a single-quoted run as
+ * one token even if it contains embedded spaces (e.g. `'AB CD'`) — a naive split on whitespace
+ * would otherwise tear a multi-word character literal in two.
+ * @param raw - The raw text typed into the VALUES input box
+ */
+function tokenizeValuesInput(raw: string): string[] {
+    const tokens: string[] = [];
+    let i = 0;
+    while (i < raw.length) {
+        while (i < raw.length && /\s/.test(raw[i])) i++;
+        if (i >= raw.length) break;
+
+        if (raw[i] === "'") {
+            const end = raw.indexOf("'", i + 1);
+            if (end === -1) {
+                tokens.push(raw.slice(i)); // Unterminated quote — kept as-is, validateValueToken rejects it.
+                break;
+            };
+            tokens.push(raw.slice(i, end + 1));
+            i = end + 1;
+        } else {
+            const start = i;
+            while (i < raw.length && !/\s/.test(raw[i])) i++;
+            tokens.push(raw.slice(start, i));
+        };
+    };
+    return tokens;
+};
+
+/**
+ * Validates one VALUES() entry against the field it belongs to, per the DDS reference: "A value can
+ * be a numeric or a character value, corresponding in length to the field that is to be tested. A
+ * character value must be enclosed in single quotation marks. A numeric value is restricted to the
+ * digits 0 through 9 and can be preceded by a minus sign." Since a field's data type is fixed, every
+ * entry must match it the same way — there's no such thing as a mixed character/numeric list, so
+ * e.g. `VALUES('A' 'B' 55)` on a 1-character field is invalid DDS on two counts: 55 isn't quoted,
+ * and even quoted ('55') it would be 2 characters against a 1-character field.
+ * @param token - One value token, exactly as typed (including surrounding quotes, if any)
+ * @param isNumeric - Whether the field is numeric (see isNumericFieldForValues)
+ * @param length - The field's length, in characters/digits
+ */
+function validateValueToken(token: string, isNumeric: boolean, length: number): string | null {
+    const isQuoted = token.length >= 2 && token.startsWith("'") && token.endsWith("'");
+
+    if (isNumeric) {
+        if (isQuoted) return `${token} is quoted, but this is a numeric field — VALUES entries must not be quoted.`;
+        if (!/^-?\d+(\.\d+)?$/.test(token)) return `'${token}' isn't a valid numeric value.`;
+        return null;
+    };
+
+    if (!isQuoted) return `${token} must be enclosed in single quotes ('${token}') — this is a character field.`;
+    const content = token.slice(1, -1);
+    if (content.length > length) return `${token} is longer than the field (${length} character${length === 1 ? '' : 's'}).`;
+    return null;
+};
+
+/**
+ * Collects VALUES parameters from user, validating each one against the field's type and length so
+ * the result is always valid DDS — a character field rejects an unquoted or over-length entry, and
+ * a numeric field rejects a quoted one, instead of silently writing an invalid VALUES() to the
+ * source (e.g. mixing 'A' 'B' with a bare 55 on a 1-character field).
  * @param fieldInfo - Field information
  * @param current - The check's current values list, when changing an existing VALUES
  * @returns VALUES validity check or null if cancelled
  */
 async function collectValuesParameters(fieldInfo: any, current?: ValidityCheck): Promise<ValidityCheck | null> {
+    if ((fieldInfo.type || '').trim().toUpperCase() === 'F') {
+        vscode.window.showWarningMessage('VALUES cannot be specified on a floating-point field.');
+        return null;
+    };
+
+    const isNumeric = isNumericFieldForValues(fieldInfo);
+    const length = fieldInfo.length ?? 0;
+
     const values = await vscode.window.showInputBox({
         title: 'VALUES - Valid Values List',
-        prompt: `Enter valid values separated by spaces (Field type: ${fieldInfo.type || 'A'})`,
+        prompt: `Enter valid values separated by spaces (Field type: ${isNumeric ? 'numeric' : 'character'}, length ${length})`,
         value: current?.parameters.join(' '),
-        placeHolder: 'e.g., 0 1 2 or A B C',
+        placeHolder: isNumeric ? 'e.g., 0 1 2 -5' : "e.g., 'A' 'B' 'C'",
         validateInput: (value: string) => {
             if (!value.trim()) return 'At least one valid value is required';
-            const valueList = value.trim().split(/\s+/);
-            if (valueList.length === 0) return 'At least one valid value is required';
+            const tokens = tokenizeValuesInput(value);
+            if (tokens.length === 0) return 'At least one valid value is required';
+            for (const token of tokens) {
+                const error = validateValueToken(token, isNumeric, length);
+                if (error) return error;
+            };
             return null;
         }
     });
 
     if (values === undefined) return null;
 
-    const valuesList = values.trim().split(/\s+/).filter(v => v.trim());
-
     return {
         type: 'VALUES',
-        parameters: valuesList
+        parameters: tokenizeValuesInput(values)
     };
 };
 

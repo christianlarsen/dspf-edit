@@ -482,24 +482,18 @@ function parseFieldElement(
     const { attributes, nextIndex } = extractAttributes('F', lines, lineIndex, true, components.indicators, components.displayFormat);
     const refTarget = isReferenced ? parseReffldTarget(attributes, components.fieldName) : undefined;
 
-    // Check if the current record (lastRecord) is a subfile by looking at its attributes
-    const currentRecordEntry = fieldsPerRecords.find(r => r.record === lastRecord);
-    const isSubfile = currentRecordEntry ? isSubfileRecord(currentRecordEntry.attributes) : false;
-
     // Resolve DDS relative record format ("+n" position, blank line) against the preceding
-    // field/constant in this record, using the raw (pre-subfile-swap) row/col as written in source.
+    // field/constant in this record, using the raw row/col as written in source. The raw Line spec
+    // (positions 39-41) and Position spec (42-44) are always literally row and column respectively —
+    // for a subfile detail (SFL) record exactly as for any other record type. (An earlier version of
+    // this parser swapped them for SFL records, believing DDS reversed their meaning there; real DDS
+    // source disproves that — every field on one subfile line shares the same Line spec value and
+    // differs only in Position, exactly as the row/column labels say. That swap was reverted here;
+    // see the row/column reads in dspf-edit.commands/*.ts and dspf-edit.utils/dspf-edit.helper.ts,
+    // which all assume this same direct mapping.)
     const { row: resolvedRow, col: resolvedCol } = resolvePosition(components.row, components.col, components.colRelative);
-
-    // For subfiles, swap row and column positions
-    let finalRow = resolvedRow;
-    let finalCol = resolvedCol;
-
-    if (isSubfile && !isHidden) {
-        // In subfiles, the positions are swapped: what appears in the "row" position is actually the column,
-        // and what appears in the "column" position is actually the row
-        finalRow = resolvedCol;
-        finalCol = resolvedRow;
-    };
+    const finalRow = resolvedRow;
+    const finalCol = resolvedCol;
 
     if (!isHidden && resolvedRow !== undefined && resolvedCol !== undefined) {
         // A bare system keyword field (DATE/TIME/USER/SYSNAME) renders at its fixed placeholder
@@ -565,22 +559,12 @@ function parseConstantElement(
     }));
     const attributes = [...inlineAttributes, ...(continuationAttributes || [])];
 
-    // Check if the current record (lastRecord) is a subfile by looking at its attributes
-    const currentRecordEntry = fieldsPerRecords.find(r => r.record === lastRecord);
-    const isSubfile = currentRecordEntry ? isSubfileRecord(currentRecordEntry.attributes) : false;
-
     // Resolve DDS relative record format ("+n" position, blank line) against the preceding
-    // field/constant in this record, using the raw (pre-subfile-swap) row/col as written in source.
+    // field/constant in this record, using the raw row/col as written in source — see the matching
+    // comment in parseFieldElement on why this is never swapped for a subfile (SFL) record.
     const { row: resolvedRow, col: resolvedCol } = resolvePosition(components.row, components.col, components.colRelative);
-
-    // For subfiles, swap row and column positions
-    let finalRow = resolvedRow;
-    let finalCol = resolvedCol;
-
-    if (isSubfile) {
-        finalRow = resolvedCol;
-        finalCol = resolvedRow;
-    };
+    const finalRow = resolvedRow;
+    const finalCol = resolvedCol;
 
     if (resolvedRow !== undefined && resolvedCol !== undefined) {
         // A bare system keyword constant (DATE/TIME/USER/SYSNAME) renders at its fixed placeholder
