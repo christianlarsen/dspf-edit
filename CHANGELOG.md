@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Bug fixes and stability enhancements.
 
 ## [1.6.0] - 2026-09-11
+### Added
+- A **Preview (DSPF-edit)** CodeLens above each record's `R` line in the DDS source, opening DSPF-edit's own Screen Preview for that record — useful when another extension (e.g. IBM i Renderer) already contributes its own "Preview" CodeLens on the same line, since a CodeLens command from one extension can't be redirected to another's.
 ### Changed
 - Schema Tree: icons now use VS Code's native codicons (`ThemeIcon`) instead of emoji, rendering consistently across color themes and platforms.
 - Schema Tree: the "Indicators" and "Attributes" subnodes no longer appear — at any level (file, record, field, or constant) — when there's nothing under them, instead of showing as a non-expandable, empty node.

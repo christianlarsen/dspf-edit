@@ -24,6 +24,14 @@ export function previewRecord(context: vscode.ExtensionContext, treeProvider: Dd
         })
     );
 
+    // Invoked by the "Preview (DSPF-edit)" CodeLens (see dspf-edit.record-codelens-provider.ts)
+    // with just the record's name, rather than a tree node.
+    context.subscriptions.push(
+        vscode.commands.registerCommand("dspf-edit.preview-record-by-name", (recordName: string) => {
+            showRecordInPreview(recordName, treeProvider);
+        })
+    );
+
     const treeView = treeProvider.getTreeView();
     if (treeView) {
         context.subscriptions.push(

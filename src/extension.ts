@@ -6,6 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsTreeProvider } from './dspf-edit.providers/dspf-edit.providers';
+import { DdsRecordCodeLensProvider } from './dspf-edit.providers/dspf-edit.record-codelens-provider';
 import { registerCommands } from './dspf-edit.commands/register-commands';
 import { ExtensionState } from './dspf-edit.states/state';
 import { initializeDocumentListeners } from './dspf-edit.listeners/listeners';
@@ -36,7 +37,13 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(treeView);
 
 	initializeDocumentListeners(context, treeProvider);
-	
+
+	// "Preview (DSPF-edit)" CodeLens above each record, so it opens DSPF-edit's own preview
+	// instead of (or alongside) another extension's "Preview" CodeLens on the same line.
+	context.subscriptions.push(
+		vscode.languages.registerCodeLensProvider({ language: 'dds.dspf' }, new DdsRecordCodeLensProvider(treeProvider))
+	);
+
 	// Register all commands
 	registerCommands(context, treeProvider);
 };

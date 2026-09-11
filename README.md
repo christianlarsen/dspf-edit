@@ -152,6 +152,7 @@ See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
 **1.6.0** - 2026-09-11
+- Added: a "Preview (DSPF-edit)" CodeLens above each record in the DDS source, opening DSPF-edit's own Screen Preview — useful when another extension already puts its own "Preview" CodeLens on the same line.
 - Changed: Schema Tree icons now use VS Code's native codicons instead of emoji, for consistent rendering across themes and platforms.
 - Changed: the "Indicators" and "Attributes" subnodes no longer appear anywhere in the tree when there's nothing under them.
 - Removed: the Move Field/Constant Left/Right (1)/(5) inline tree buttons — dragging in the Screen Preview already covers this.
