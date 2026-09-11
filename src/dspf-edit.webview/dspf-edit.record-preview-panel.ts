@@ -1349,8 +1349,8 @@ export class RecordPreviewPanel {
         const items: PreviewItem[] = [];
 
         // The parser stores a subfile (SFL) record's field/constant row and column swapped
-        // (a leftover of how move-fields/move-constants track "horizontal" movement for SFLs).
-        // Undo that swap here to get the real screen row/col for display.
+        // (SFL rows are tracked as a "horizontal" position internally). Undo that swap here to
+        // get the real screen row/col for display.
         const isSfl = isSflRecordInfo(recordInfo);
 
         // Indicator toggling only applies to the record being actively previewed; an overlaid
@@ -1971,8 +1971,7 @@ export class RecordPreviewPanel {
     /**
      * Applies a drag-and-drop move from the preview (one item, or several dragged together as a
      * multi-selection): writes each one's new row/column back into its own DDS source line, at the
-     * same fixed columns used by the move-fields/move-constants commands (raw columns 38-41 for
-     * the row/line spec, 41-44 for the column/position spec). All moves land in a single
+     * fixed raw columns 38-41 (row/line spec) and 41-44 (column/position spec). All moves land in a single
      * WorkspaceEdit, so a group move is also a single undo step.
      * Each screen position is converted back to record-local coordinates using the offset that was
      * applied when its item was built (non-zero only for a window's own fields/constants).

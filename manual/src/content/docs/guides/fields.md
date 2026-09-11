@@ -20,7 +20,7 @@ Right-click a record and choose **New Field**, or click **+ Field** in the [Scre
 
 - **Change Position** — move it to an absolute row/column, or position it relative to an existing field or constant.
 - **Center** — center it horizontally on the screen.
-- You can also drag a field directly in the [Screen Preview](/dspf-edit/guides/screen-preview/), or nudge it with the tree's **Move Field Left/Right (1)** and **Move Field Left/Right (5)** commands.
+- You can also drag a field directly in the [Screen Preview](/dspf-edit/guides/screen-preview/).
 
 ## Colors and attributes
 

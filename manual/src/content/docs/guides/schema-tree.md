@@ -50,7 +50,7 @@ Each constant shows its text, position (row/column), indicators, and attributes.
 
 ## Fields
 
-Each field shows its name, length, type, position (row/column), and flags such as *referenced* or *hidden*. Indicators and attributes are expandable; an OR'd condition is grouped into its ANDed sub-conditions (`Group 1 (AND)` / `OR` / `Group 2 (AND)` / ...) instead of a flat list. Hovering a conditioned field, constant, or attribute shows the full condition (e.g. `51 AND NOT 61 AND 53  OR  52`) as a tooltip.
+Each field shows its name, length, type, position (row/column), and flags such as *referenced* or *hidden*. Indicators and attributes are expandable when present — a field or constant with neither shows as a plain leaf, with no expand arrow. An OR'd condition is grouped into its ANDed sub-conditions (`Group 1 (AND)` / `OR` / `Group 2 (AND)` / ...) instead of a flat list. Hovering a conditioned field, constant, or attribute shows the full condition (e.g. `51 AND NOT 61 AND 53  OR  52`) as a tooltip.
 
 Right-click a field for:
 

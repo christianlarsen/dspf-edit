@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.6.0] - 2026-09-11
+### Changed
+- Schema Tree: icons now use VS Code's native codicons (`ThemeIcon`) instead of emoji, rendering consistently across color themes and platforms.
+- Schema Tree: the "Indicators" and "Attributes" subnodes no longer appear — at any level (file, record, field, or constant) — when there's nothing under them, instead of showing as a non-expandable, empty node.
+### Removed
+- Schema Tree: the Move Field/Constant Left/Right (1)/(5) inline tree buttons — dragging a field or constant directly in the Screen Preview already covers the same repositioning, making the dedicated buttons redundant.
+
 ## [1.5.0] - 2026-09-09
 ### Added
 - Preview: an active `SFLMSG()` on a subfile control record (SFLCTL) is now shown on the message line during indicator simulation, the same way `ERRMSG()` already is — respecting ERRMSG's priority over SFLMSG and requiring `SFLDSP` to be in effect, per the DDS reference.

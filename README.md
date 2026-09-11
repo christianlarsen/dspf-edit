@@ -151,10 +151,10 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.5.0** - 2026-09-09
-- Added: subfile messages (`SFLMSG`) now show on the preview's message line during indicator simulation, the same way error messages already do.
-- Added: Validity Checks, Error Messages, and Indicators now use an editable summary menu (change/remove per item) instead of the old "Add more/Replace all/Remove all" picker.
-- Fixed: removing/replacing all attributes (and colors/keys/error messages/validity checks) on one constant could wipe out attributes on unrelated constants later in the same record.
+**1.6.0** - 2026-09-11
+- Changed: Schema Tree icons now use VS Code's native codicons instead of emoji, for consistent rendering across themes and platforms.
+- Changed: the "Indicators" and "Attributes" subnodes no longer appear anywhere in the tree when there's nothing under them.
+- Removed: the Move Field/Constant Left/Right (1)/(5) inline tree buttons — dragging in the Screen Preview already covers this.
 
 ---
 
