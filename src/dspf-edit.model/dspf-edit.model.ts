@@ -342,6 +342,39 @@ export function getRecordSize(recordName: string): DdsSize | undefined {
 };
 
 /**
+ * For a subfile detail (SFL) record, the lowest row a new field/constant can validly occupy: one
+ * past the last row occupied by its SFLCTL header's own fields/constants — DDS doesn't allow a
+ * subfile-control record's static content to overlap the subfile record's own fields (see the SFL
+ * keyword reference), and the repeating detail area always starts below wherever the header ends.
+ * Returns undefined when the record isn't a subfile detail record, or its header has no
+ * fields/constants of its own (nothing to avoid).
+ * @param recordName - Name of the record being added to
+ */
+export function getSubfileMinDetailRow(recordName: string): number | undefined {
+  const record = fieldsPerRecords.find(r => r.record === recordName);
+  if (!record || !record.attributes?.some(attr => attr.value === 'SFL')) {
+    return undefined;
+  };
+
+  const control = fieldsPerRecords.find(r =>
+    r.attributes?.some(attr => {
+      const match = attr.value.match(/^SFLCTL\(\s*([A-Za-z0-9@#$]+)\s*\)$/i);
+      return Boolean(match && match[1].toUpperCase() === recordName.toUpperCase());
+    })
+  );
+  if (!control) {
+    return undefined;
+  };
+
+  const headerRows = [
+    ...control.fields.map(f => f.row),
+    ...control.constants.map(c => c.row)
+  ].filter((r): r is number => typeof r === 'number' && r > 0);
+
+  return headerRows.length > 0 ? Math.max(...headerRows) + 1 : undefined;
+};
+
+/**
  * Get all records that have size information.
  */
 export function getAllRecordSizes(): Array<{ record: string; size: DdsSize }> {

@@ -20,7 +20,7 @@ Right-click a record and choose **New Field**, or click **+ Field** in the [Scre
 
 - **Change Position** — move it to an absolute row/column, or position it relative to an existing field or constant.
 - **Center** — center it horizontally on the screen.
-- You can also drag a field directly in the [Screen Preview](/dspf-edit/guides/screen-preview/), or nudge it with the tree's **Move Field Left/Right (1)** and **Move Field Left/Right (5)** commands.
+- You can also drag a field directly in the [Screen Preview](/dspf-edit/guides/screen-preview/).
 
 ## Colors and attributes
 
@@ -29,6 +29,8 @@ Right-click a record and choose **New Field**, or click **+ Field** in the [Scre
 ## Validity checks
 
 **Add validity checks** applies DDS field-validation keywords (range/comparison/value checks) to the field. `RANGE`, `COMP`, and `VALUES` are mutually exclusive in DDS — a field can only have one of the three at a time — so the menu shows all three slots and whichever one is currently set; picking a different one automatically replaces it.
+
+`VALUES` entries are validated against the field as you type them: a character field requires each value in single quotes (e.g. `'A' 'B'`) and rejects one longer than the field itself, while a numeric field requires plain, unquoted numbers — matching the DDS rule that every entry in the list must match the field's own type, never a mix of both. `VALUES` also isn't offered on a floating-point field, which DDS doesn't allow it on at all.
 
 ## Editing keywords
 

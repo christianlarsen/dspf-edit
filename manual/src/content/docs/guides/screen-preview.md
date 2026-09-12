@@ -5,7 +5,7 @@ description: A green-screen-style, drag-and-drop preview that stays in sync with
 
 The Screen Preview is a visual, green-screen-style rendering of a record's fields and constants — colors, `DSPATR` attributes, and placeholders for output/input/both fields — built to match how the field would actually appear under **STRSDA**.
 
-Open it from the schema tree: right-click a record and choose **Preview Screen Layout**, or use the inline preview button next to the record.
+Open it from the schema tree: right-click a record and choose **Preview Screen Layout**, or use the inline preview button next to the record. A **Preview (DSPF-edit)** CodeLens above each record's `R` line in the DDS source opens it too — handy if another extension (e.g. IBM i Renderer) already puts its own "Preview" CodeLens on the same line, since that one can't be redirected to DSPF-edit's preview.
 
 ![Screen Preview panel with a populated record](/dspf-edit/screenshots/captura4.png)
 
@@ -72,7 +72,9 @@ A field coded with `CNTFLD(n)` wraps across multiple lines in the preview, `n` c
 
 ## Function-key legend
 
-A function-key legend (`F3`, `F12`, ...) shows every command key available to the record being previewed — both file-level and record-level `CAxx`/`CFxx` keys. A key still shows even when its indicator condition isn't currently met, so you can see it's defined; it switches to solid/inverted styling when it's actually active under the current simulated indicators.
+A function-key legend (`F3`, `F12`, ...) shows every command key available to the record being previewed — file-level, record-level, and (for a subfile) its `SFL`/`SFLCTL` pair's own `CAxx`/`CFxx` keys, since both preview together as one screen. A key still shows even when its indicator condition isn't currently met, so you can see it's defined; it switches to solid/inverted styling when it's actually active under the current simulated indicators.
+
+A subfile's `SFLDROP`/`SFLFOLD` fold/truncate key, if declared, shows apart from the rest after a `|` separator, in blue — see [Subfiles](/dspf-edit/guides/subfiles/).
 
 ## Multiple display sizes
 

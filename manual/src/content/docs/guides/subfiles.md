@@ -13,7 +13,20 @@ The preview shows all `SFLPAG` rows for the subfile, and automatically pairs the
 
 ## Dragging detail rows
 
-Detail rows can't be dragged up over the header record's own content, keeping the preview physically consistent with how the subfile actually renders.
+Detail rows can't be dragged up over the header record's own content, keeping the preview physically consistent with how the subfile actually renders. The same boundary applies when adding a new field or constant to the detail record — whether by clicking in the preview or via the tree's **Add field**/**Add constant** — so it can't be placed on top of the header either.
+
+## Fold and truncate (SFLDROP/SFLFOLD)
+
+When the `SFLCTL` record declares `SFLDROP(CAnn|CFnn)` or `SFLFOLD(CAnn|CFnn)` — the key that lets the workstation user switch a multi-line subfile record between a compact, one-line-per-record "truncated" form and its full "folded" form — that key shows in the preview's function-key legend on its own, after a `|` separator, in blue. Filled blue means the subfile is currently folded; outlined means truncated.
+
+- **Previewing the `SFLCTL` header record**: the key is clickable and simulates the real 5250 toggle. It starts in whichever state the DDS keyword declares — truncated for `SFLDROP`, folded for `SFLFOLD` (folded wins if both are coded on the same key, per the DDS reference) — and switches on click. While truncated, the subfile shows proportionally more page rows than `SFLPAG`, since each record only takes one line instead of several — matching how DDS itself describes the truncated form.
+- **Previewing the subfile detail record itself**: always shown fully folded, so every field and constant stays visible and editable at a glance. The key shows disabled here — toggling the detail's own preview to truncated would hide most of its fields, which isn't useful while actively editing it.
+
+To see the truncated form or try the toggle, preview the header record rather than the detail record.
+
+### Assigning SFLDROP/SFLFOLD
+
+Right-click a `SFLCTL` record and choose **Subfile Drop/Fold** for a summary menu listing `SFLDROP` and `SFLFOLD`, each showing its current command key (and any conditioning indicator) or "(not set)" — same menu style as [Editing Keywords](/dspf-edit/guides/fields/#editing-keywords). Pick a row (or its change button) to assign it to a `CAnn`/`CFnn` key, optionally conditioned by an indicator, or use its own remove button to take it off entirely.
 
 ## Adding a commands record
 

@@ -19,7 +19,7 @@ Right-click a record and choose **New Constant**, or click **+ Constant** in the
 
 - **Change Position** — move it to an absolute row/column, or position it relative to an existing constant or field.
 - **Center** — center it horizontally on the screen.
-- You can also drag a constant directly in the [Screen Preview](/dspf-edit/guides/screen-preview/), or nudge it with the tree's **Move Constant Left/Right (1)** and **Move Constant Left/Right (5)** commands.
+- You can also drag a constant directly in the [Screen Preview](/dspf-edit/guides/screen-preview/).
 
 ## Fill constant
 

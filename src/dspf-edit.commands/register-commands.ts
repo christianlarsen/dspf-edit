@@ -22,6 +22,7 @@ import { addCommandsRecord } from './dspf-edit.add-commands-record';
 import { addColor } from './dspf-edit.add-color';
 import { addAttribute } from './dspf-edit.add-attribute';
 import { addKeyCommand } from './dspf-edit.add-keys';
+import { addSflDropSflFold } from './dspf-edit.sfldrop-sflfold';
 import { addValidityCheck } from './dspf-edit.add-validity-check';
 import { editingKeywords } from './dspf-edit.add-editing-keywords';
 import { addErrorMessage } from './dspf-edit.add-error-messages';
@@ -35,8 +36,6 @@ import { copyConstant } from './dspf-edit.copy-constant';
 import { removeElement } from './dspf-edit.remove-element';
 import { removeAttribute } from './dspf-edit.remove-attribute';
 import { renameField, renameRecord } from './dspf-edit.rename';
-import { moveConstantLeft1, moveConstantLeft5, moveConstantRight1, moveConstantRight5 } from './dspf-edit.move-constants';
-import { moveFieldLeft1, moveFieldLeft5, moveFieldRight1, moveFieldRight5 } from './dspf-edit.move-fields';
 import { previewRecord } from './dspf-edit.preview-record';
 import { resolveReferencedFieldCommand, resolveAllReferencedFieldsCommand } from './dspf-edit.resolve-referenced-field';
 import { PreviewColorsPanel } from '../dspf-edit.webview/dspf-edit.preview-colors-panel';
@@ -61,6 +60,7 @@ export const commands = [
     { name: 'addColor', handler: addColor, needsTreeProvider: false },
     { name: 'addAttribute', handler: addAttribute, needsTreeProvider: false },
     { name: 'addKey', handler: addKeyCommand, needsTreeProvider: false },
+    { name: 'addSflDropSflFold', handler: addSflDropSflFold, needsTreeProvider: false },
     { name: 'addValidityCheck', handler: addValidityCheck, needsTreeProvider: false },
     { name: 'addEditingKeywords', handler: editingKeywords, needsTreeProvider: false },
     { name: 'addErrorMessage', handler: addErrorMessage, needsTreeProvider: false },
@@ -75,14 +75,6 @@ export const commands = [
     { name: 'removeAttribute', handler: removeAttribute, needsTreeProvider: false },
     { name: 'renameField', handler: renameField, needsTreeProvider: false },
     { name: 'renameRecord', handler: renameRecord, needsTreeProvider: false },
-    { name: 'moveConstantLeft1', handler: moveConstantLeft1, needsTreeProvider: false },
-    { name: 'moveConstantLeft5', handler: moveConstantLeft5, needsTreeProvider: false },
-    { name: 'moveConstantRight1', handler: moveConstantRight1, needsTreeProvider: false },
-    { name: 'moveConstantRight5', handler: moveConstantRight5, needsTreeProvider: false },
-    { name: 'moveFieldLeft1', handler: moveFieldLeft1, needsTreeProvider: false },
-    { name: 'moveFieldLeft5', handler: moveFieldLeft5, needsTreeProvider: false },
-    { name: 'moveFieldRight1', handler: moveFieldRight1, needsTreeProvider: false },
-    { name: 'moveFieldRight5', handler: moveFieldRight5, needsTreeProvider: false },
     { name: 'resolveReferencedField', handler: resolveReferencedFieldCommand, needsTreeProvider: true },
     { name: 'resolveAllReferencedFields', handler: resolveAllReferencedFieldsCommand, needsTreeProvider: true }
 
