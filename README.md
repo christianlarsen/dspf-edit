@@ -151,8 +151,10 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.6.0** - 2026-09-11
+**1.6.0** - 2026-09-12
 - Added: a "Preview (DSPF-edit)" CodeLens above each record in the DDS source, opening DSPF-edit's own Screen Preview — useful when another extension already puts its own "Preview" CodeLens on the same line.
+- Added: Screen Preview simulates a subfile's `SFLDROP`/`SFLFOLD` fold/truncate key — shown separately in the function-key legend, in blue. Previewing the header record lets you toggle it (starting truncated/folded per the DDS keyword, like the real 5250); previewing the detail record itself always shows every field for editing, with the toggle disabled.
+- Added: a "Subfile Drop/Fold" command on subfile control (SFLCTL) records — right-click and pick it for a summary menu listing `SFLDROP`/`SFLFOLD` with their current command key/indicator, each with its own change/remove buttons.
 - Changed: Schema Tree icons now use VS Code's native codicons instead of emoji, for consistent rendering across themes and platforms.
 - Changed: the "Indicators" and "Attributes" subnodes no longer appear anywhere in the tree when there's nothing under them.
 - Removed: the Move Field/Constant Left/Right (1)/(5) inline tree buttons — dragging in the Screen Preview already covers this.

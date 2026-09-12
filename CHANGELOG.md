@@ -8,9 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
-## [1.6.0] - 2026-09-11
+## [1.6.0] - 2026-09-12
 ### Added
 - A **Preview (DSPF-edit)** CodeLens above each record's `R` line in the DDS source, opening DSPF-edit's own Screen Preview for that record — useful when another extension (e.g. IBM i Renderer) already contributes its own "Preview" CodeLens on the same line, since a CodeLens command from one extension can't be redirected to another's.
+- Screen Preview: `SFLDROP`/`SFLFOLD` (the subfile fold/truncate toggle key) now shows in the function-key legend — synthesizing a description ("Expand/Collapse Subfile") when the key has none of its own, which real DDS doesn't require. Shown apart from the regular keys, after a `|` separator, in blue, filled when the subfile is currently folded.
+  - Previewing the **subfile-control (header) record**: starts in whichever state the DDS keyword declares (`SFLDROP` → truncated, `SFLFOLD` → folded; both on the same key → folded wins, matching the reference), and the legend key is clickable to toggle between them, simulating the real 5250 behavior — including the truncated form correctly showing proportionally more subfile-page rows than `SFLPAG`, since each takes one line instead of several.
+  - Previewing the **subfile detail record itself**: always shown fully folded, regardless of the keyword, so every field and constant stays visible and editable — the legend key is disabled there, since toggling it would make normally-hidden rows draggable without the same safety net the header's (non-interactive) view has.
+  - Also fixed along the way: the function-key legend only ever looked at the record being previewed directly, so previewing a subfile detail record on its own showed none of its `SFLCTL` header's CA/CF keys, even though both preview together as one screen.
+- A **Subfile Drop/Fold** command on subfile control (SFLCTL) records: right-click and pick it for a summary menu listing `SFLDROP`/`SFLFOLD` with their current command key and any conditioning indicator (or "not set"), each with its own change/remove buttons — same style as Editing Keywords and Validity Checks.
 ### Changed
 - Schema Tree: icons now use VS Code's native codicons (`ThemeIcon`) instead of emoji, rendering consistently across color themes and platforms.
 - Schema Tree: the "Indicators" and "Attributes" subnodes no longer appear — at any level (file, record, field, or constant) — when there's nothing under them, instead of showing as a non-expandable, empty node.

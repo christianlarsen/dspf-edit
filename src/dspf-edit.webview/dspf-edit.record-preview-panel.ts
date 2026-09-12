@@ -777,25 +777,68 @@ function extractFunctionKeyCommands(attributes: DdsAttribute[] | undefined): Fun
 };
 
 /**
+ * Parses a subfile-control record's own SFLDROP(CAnn|CFnn) or SFLFOLD(CAnn|CFnn) keyword, if any,
+ * into a synthetic function-key legend entry — DDS itself doesn't require (or generate) any
+ * on-screen text for this key, since the fold/truncate toggle is handled entirely by the system,
+ * not the program; a programmer who wants the end user to know the key exists has to separately
+ * code a plain CAnn/CFnn(nn 'text') for it. When they don't, this fills that gap in the preview's
+ * own legend so the key isn't invisible. Only synthesized when `existingKeyNumbers` doesn't already
+ * have a real, described definition for the same key number — that one wins, matching DDS's own key
+ * resolution. When both keywords are coded (legitimately, on the same key), whichever is found first
+ * is enough; the description doesn't depend on which.
+ * @param attributes - The record's own attributes (both keywords are only valid on the SFLCTL record)
+ * @param existingKeyNumbers - Key numbers already carrying a real CAxx/CFxx(nn 'text') description
+ */
+function extractSflFoldToggleCommand(attributes: DdsAttribute[] | undefined, existingKeyNumbers: Set<string>): FunctionKeyCommand | undefined {
+    for (const attr of attributes ?? []) {
+        const match = attr.value.match(/^SFL(?:DROP|FOLD)\(\s*(CA|CF)(\d{2})\s*\)$/i);
+        if (match && !existingKeyNumbers.has(match[2])) {
+            return {
+                type: match[1].toUpperCase() as 'CA' | 'CF',
+                keyNumber: match[2],
+                description: 'Expand/Collapse Subfile',
+                indicators: attr.indicators,
+                displayFormat: attr.displayFormat
+            };
+        };
+    };
+    return undefined;
+};
+
+/**
  * Resolves the candidate function-key commands (CAxx/CFxx) for a record, for the preview's
- * function-key legend: the record's own, plus the file-level ones (which apply to every record
- * format) — except for any key number the record already defines itself, which entirely overrides
- * the file-level one for that number, matching how DDS actually resolves it at runtime. A key
- * number can still yield more than one candidate here (e.g. two indicator-conditioned alternates,
- * "CA03 cond. on 50" / "CA03 cond. on N50") — narrowing that down to the one that currently applies
- * (by display format, then by indicator state) is the caller's job, the same way it's already done
- * for every other conditionable item in the preview (see `isItemDisplayed`/`filterForActiveFormat`).
+ * function-key legend: the record's own, its subfile pair's (an SFL detail record has none of its
+ * own — its SFLCTL header carries them all, e.g. SFLDROP and most CAxx/CFxx keys — and the two
+ * always preview together as one screen, see findSubfilePairRecordName), plus the file-level ones
+ * (which apply to every record format) — except for any key number a more specific level already
+ * defines, which entirely overrides a less specific one for that number (own record, then its pair,
+ * then file-level), matching how DDS actually resolves it at runtime. A key number can still yield
+ * more than one candidate here (e.g. two indicator-conditioned alternates, "CA03 cond. on 50" /
+ * "CA03 cond. on N50") — narrowing that down to the one that currently applies (by display format,
+ * then by indicator state) is the caller's job, the same way it's already done for every other
+ * conditionable item in the preview (see `isItemDisplayed`/`filterForActiveFormat`).
  * @param recordName - Name of the record being previewed
  */
 function getEffectiveFunctionKeyCommands(recordName: string): FunctionKeyCommand[] {
     const record = fieldsPerRecords.find(r => r.record === recordName);
     const recordCommands = extractFunctionKeyCommands(record?.attributes);
-    const overriddenNumbers = new Set(recordCommands.map(cmd => cmd.keyNumber));
 
+    const pairName = findSubfilePairRecordName(recordName);
+    const pairRecord = pairName ? fieldsPerRecords.find(r => r.record === pairName) : undefined;
+    const recordKeyNumbers = new Set(recordCommands.map(cmd => cmd.keyNumber));
+    const pairCommands = extractFunctionKeyCommands(pairRecord?.attributes)
+        .filter(cmd => !recordKeyNumbers.has(cmd.keyNumber));
+
+    const overriddenNumbers = new Set([...recordKeyNumbers, ...pairCommands.map(cmd => cmd.keyNumber)]);
     const fileCommands = extractFunctionKeyCommands(attributesFileLevel)
         .filter(cmd => !overriddenNumbers.has(cmd.keyNumber));
 
-    return [...recordCommands, ...fileCommands];
+    // SFLDROP/SFLFOLD are only ever valid on the SFLCTL record — whichever of `record`/`pairRecord` that is.
+    const sflToggleExcluded = new Set([...overriddenNumbers, ...fileCommands.map(cmd => cmd.keyNumber)]);
+    const sflToggleCommand = extractSflFoldToggleCommand(record?.attributes, sflToggleExcluded)
+        ?? extractSflFoldToggleCommand(pairRecord?.attributes, sflToggleExcluded);
+
+    return [...recordCommands, ...pairCommands, ...fileCommands, ...(sflToggleCommand ? [sflToggleCommand] : [])];
 };
 
 /** Whether a record's attributes include the SFL keyword (i.e. it's a subfile detail record). */
@@ -820,6 +863,56 @@ function findSflControlRecord(sflRecordName: string): FieldsPerRecord | undefine
         })
     );
 };
+
+/**
+ * The SFLCTL attributes relevant to a subfile's fold/truncate toggle, for a record name that could
+ * be either the SFL detail record or its SFLCTL pair — both keywords are only ever valid on the
+ * control record, so this always resolves to that one's own attributes regardless of which name
+ * was passed.
+ * @param recordName - Name of the record being previewed (SFL or SFLCTL)
+ */
+function sflControlAttributesFor(recordName: string): DdsAttribute[] | undefined {
+    const record = fieldsPerRecords.find(r => r.record === recordName);
+    if (!record) {
+        return undefined;
+    };
+    return isSflRecordInfo(record) ? findSflControlRecord(recordName)?.attributes : record.attributes;
+};
+
+/**
+ * The key number (e.g. "10") that toggles a subfile's fold/truncate state — from either SFLDROP or
+ * SFLFOLD, whichever the SFLCTL record declares — if the given record (an SFL detail record or its
+ * SFLCTL pair, either name works) has one. Used both to gate the truncation row filter (see
+ * `subfileExpanded`/buildSubfileDisplayItems) and to identify which function-key legend entry should
+ * behave as the toggle (see getVisibleFunctionKeys), whether its shown description came from an
+ * explicit CAxx/CFxx(...) or was synthesized because there wasn't one (see
+ * extractSflFoldToggleCommand). Per the DDS reference, both keywords are ignored entirely when the
+ * whole record already fits on one display line — the row filter itself already handles that as a
+ * no-op (there's nothing to truncate), so no extra check for it is needed here.
+ * @param recordName - Name of the record being previewed (SFL or SFLCTL)
+ */
+function findSflFoldToggleKeyNumber(recordName: string): string | undefined {
+    for (const attr of sflControlAttributesFor(recordName) ?? []) {
+        const match = attr.value.match(/^SFL(?:DROP|FOLD)\(\s*(?:CA|CF)(\d{2})\s*\)$/i);
+        if (match) {
+            return match[1];
+        };
+    };
+    return undefined;
+};
+
+/**
+ * Whether a subfile's *initial* toggle state (before the user has touched it) should be folded
+ * rather than truncated, per the DDS reference: SFLFOLD alone starts folded; SFLDROP alone starts
+ * truncated; when both are coded (legitimately, on the same key), SFLFOLD's initial state wins. Only
+ * consulted for the header (SFLCTL) record's own view — the detail record's own view always forces
+ * folded regardless (see resolveSubfileExpanded), so this never applies there.
+ * @param recordName - Name of the record being previewed (SFL or SFLCTL)
+ */
+function sflInitiallyFolded(recordName: string): boolean {
+    return sflControlAttributesFor(recordName)?.some(attr => /^SFLFOLD\(/i.test(attr.value)) ?? false;
+};
+
 
 /**
  * Finds an SFLCTL record's own SFLPAG() attribute (the candidate matching activeFormat, when
@@ -932,6 +1025,14 @@ export class RecordPreviewPanel {
     private overlayRecordName: string | undefined;
     private indicatorsEnabled = false;
     private activeIndicators: Set<number> = new Set();
+    /** Simulates a subfile's SFLDROP/SFLFOLD toggle, once the user has actually clicked it — only
+     * meaningful while previewing the SFLCTL (header) record, since the detail record's own preview
+     * always forces folded regardless (see resolveSubfileExpanded/canToggleSubfileFold), so editing
+     * it always shows every field/constant. undefined (the default) means "not yet touched", in
+     * which case the header's own DDS-declared initial state applies instead (see
+     * sflInitiallyFolded). true shows every row of the subfile's template ("folded"); false shows
+     * only its first row ("truncated"). */
+    private subfileExpandedOverride: boolean | undefined = undefined;
     private activeDisplayFormat: string | undefined;
     private lastRecordInfo: FieldsPerRecord | undefined;
     private lastSize: DdsSize | undefined;
@@ -1191,9 +1292,10 @@ export class RecordPreviewPanel {
 
         const canvasSize = isWindow ? { rows: defaultSize.rows, cols: defaultSize.cols } : { rows: size.rows, cols: size.cols };
 
-        const items = this.buildItems(recordInfo, rowOffset, colOffset, false);
+        let items = this.buildItems(recordInfo, rowOffset, colOffset, false);
         if (isSflRecordInfo(recordInfo)) {
-            items.push(...this.buildSubfileRepeats(items, this.recordName));
+            const { visibleBase, repeats } = this.buildSubfileDisplayItems(items, this.recordName);
+            items = [...visibleBase, ...repeats];
         };
 
         // The overlaid (background) record can be previewed on its own, whether or not it's itself
@@ -1300,7 +1402,9 @@ export class RecordPreviewPanel {
             minDetailRow,
             items,
             backgroundItems,
-            functionKeys
+            functionKeys,
+            subfileExpanded: this.resolveSubfileExpanded(),
+            subfileToggleEnabled: this.canToggleSubfileFold()
         });
     };
 
@@ -1321,9 +1425,10 @@ export class RecordPreviewPanel {
         const rOffset = isWin && size ? size.originRow + (WINDOW_BORDER_TOP - 1) : 0;
         const cOffset = isWin && size ? size.originCol + (WINDOW_BORDER_LEFT - 1) : 0;
 
-        const items = this.buildItems(record, rOffset, cOffset, true);
+        let items = this.buildItems(record, rOffset, cOffset, true);
         if (isSflRecordInfo(record)) {
-            items.push(...this.buildSubfileRepeats(items, recordName));
+            const { visibleBase, repeats } = this.buildSubfileDisplayItems(items, recordName);
+            items = [...visibleBase, ...repeats];
         };
 
         // A same-window item (an auto-paired SFL/SFLCTL half, or the window's owner) is part of
@@ -1616,8 +1721,9 @@ export class RecordPreviewPanel {
      * none currently apply).
      * @param recordName - Name of the record being previewed
      */
-    private getVisibleFunctionKeys(recordName: string): { key: string; description: string; active: boolean }[] {
+    private getVisibleFunctionKeys(recordName: string): { key: string; description: string; active: boolean; isSflDrop: boolean }[] {
         const forFormat = filterForActiveFormat(getEffectiveFunctionKeyCommands(recordName), this.activeDisplayFormat);
+        const sflDropKeyNumber = findSflFoldToggleKeyNumber(recordName);
 
         const byKeyNumber = new Map<string, FunctionKeyCommand[]>();
         for (const cmd of forFormat) {
@@ -1629,11 +1735,16 @@ export class RecordPreviewPanel {
             };
         };
 
-        const result: { key: string; description: string; active: boolean }[] = [];
+        const result: { key: string; description: string; active: boolean; isSflDrop: boolean }[] = [];
         for (const [keyNumber, candidates] of byKeyNumber) {
             const activeCandidate = candidates.find(cmd => this.isItemDisplayed(cmd.indicators, this.indicatorsEnabled));
             const chosen = activeCandidate ?? candidates[0];
-            result.push({ key: `F${parseInt(keyNumber, 10)}`, description: chosen.description, active: Boolean(activeCandidate) });
+            result.push({
+                key: `F${parseInt(keyNumber, 10)}`,
+                description: chosen.description,
+                active: Boolean(activeCandidate),
+                isSflDrop: keyNumber === sflDropKeyNumber
+            });
         };
 
         return result.sort((a, b) => parseInt(a.key.slice(1), 10) - parseInt(b.key.slice(1), 10));
@@ -1760,29 +1871,78 @@ export class RecordPreviewPanel {
     };
 
     /**
-     * Repeats a subfile's own base items for each additional visible page row (SFLPAG), stacked
-     * downward. The repeats are display-only: dragging/clicking always targets the single real
-     * source line, so only the first (base) instance stays interactive.
-     * @param baseItems - The subfile's own items, as built for its first (real) row
+     * Whether the fold/truncate toggle is offered at all: only while previewing the SFLCTL (header)
+     * record, never while previewing the SFL detail record itself — the detail's own preview always
+     * shows every row instead (see resolveSubfileExpanded), so every field/constant stays visible and
+     * editable, and there's never a "was it hidden or did I really drag it there" question when
+     * moving one. Previewing the header shows the detail as a (non-interactive) background pairing,
+     * where toggling between truncated and folded is purely visual and doesn't touch draggability.
+     */
+    private canToggleSubfileFold(): boolean {
+        const record = fieldsPerRecords.find(r => r.record === this.recordName);
+        return !record || !isSflRecordInfo(record);
+    };
+
+    /**
+     * Resolves whether a subfile's fold/truncate simulation is currently "folded": always folded
+     * while previewing the SFL detail record directly, so every field/constant stays visible and
+     * editable at a glance (see `canToggleSubfileFold` — folding is never offered there in the first
+     * place, precisely so it can never be anything else). While previewing the SFLCTL (header)
+     * record, it's whatever the user last explicitly toggled to (`subfileExpandedOverride`),
+     * persisting across which record is being previewed — same as the Indicators toggle — or, before
+     * the user has touched it at all, the DDS-declared initial state (see sflInitiallyFolded:
+     * SFLFOLD starts folded, SFLDROP alone starts truncated).
+     */
+    private resolveSubfileExpanded(): boolean {
+        if (!this.canToggleSubfileFold()) {
+            return true;
+        };
+        return this.subfileExpandedOverride ?? sflInitiallyFolded(this.recordName);
+    };
+
+    /**
+     * Builds a subfile's actually-displayed base row(s) plus its repeating page rows (SFLPAG),
+     * stacked downward. The repeats are display-only: dragging/clicking always targets the single
+     * real source line, so only the base instance stays interactive.
+     *
+     * Accounts for the simulated truncated/folded state (see `resolveSubfileExpanded`): folded shows
+     * `baseItems` as-is, `SFLPAG` times, each instance the record's full (multi-row) height — per
+     * the DDS reference, that's exactly what SFLPAG counts. Truncated instead shows only each
+     * instance's first template row, one screen row apart instead of the full row span — since that
+     * uses the same total screen space one row at a time rather than several, proportionally more
+     * instances fit in it (`SFLPAG` times however many rows a folded instance spans), matching "more
+     * records are displayed [truncated] than are specified on SFLPAG" in the reference.
+     * @param baseItems - The subfile's own items, as built for its first (real) row, at full height
      * @param recordName - Name of the subfile (SFL) record
      */
-    private buildSubfileRepeats(baseItems: PreviewItem[], recordName: string): PreviewItem[] {
-        const sflPag = findSubfilePageSize(recordName, this.activeDisplayFormat);
-        if (!sflPag || sflPag <= 1 || baseItems.length === 0) {
-            return [];
+    private buildSubfileDisplayItems(baseItems: PreviewItem[], recordName: string): { visibleBase: PreviewItem[]; repeats: PreviewItem[] } {
+        if (baseItems.length === 0) {
+            return { visibleBase: baseItems, repeats: [] };
         };
 
         const rows = baseItems.map(item => item.row);
-        const rowSpan = Math.max(...rows) - Math.min(...rows) + 1;
+        const minRow = Math.min(...rows);
+        const foldedRowSpan = Math.max(...rows) - minRow + 1;
+
+        const truncated = !this.resolveSubfileExpanded() && findSflFoldToggleKeyNumber(recordName) !== undefined;
+        const visibleBase = truncated ? baseItems.filter(item => item.row === minRow) : baseItems;
+        const rowSpan = truncated ? 1 : foldedRowSpan;
+
+        const sflPag = findSubfilePageSize(recordName, this.activeDisplayFormat);
+        if (!sflPag || sflPag <= 1) {
+            return { visibleBase, repeats: [] };
+        };
+
+        const pageCount = truncated ? sflPag * foldedRowSpan : sflPag;
 
         const repeats: PreviewItem[] = [];
-        for (let page = 1; page < sflPag; page++) {
-            for (const item of baseItems) {
+        for (let page = 1; page < pageCount; page++) {
+            for (const item of visibleBase) {
                 repeats.push({ ...item, row: item.row + page * rowSpan, isInteractive: false });
             };
         };
 
-        return repeats;
+        return { visibleBase, repeats };
     };
 
     /**
@@ -1890,6 +2050,17 @@ export class RecordPreviewPanel {
                 this.activeIndicators.add(message.number);
             };
             this.render();
+            return;
+        };
+
+        if (message?.type === 'toggleSubfileDrop') {
+            // Defense in depth: the webview already disables the badge's click handler while
+            // previewing the detail record directly (see canToggleSubfileFold), but a stray/stale
+            // message shouldn't be able to fold it open there regardless.
+            if (this.canToggleSubfileFold()) {
+                this.subfileExpandedOverride = !this.resolveSubfileExpanded();
+                this.render();
+            };
             return;
         };
 
@@ -2611,6 +2782,7 @@ export class RecordPreviewPanel {
     private getHtml(): string {
         const bg = getBackgroundColor();
         const fg = getDdsColorMap().GRN;
+        const sflToggleColor = getDdsColorMap().BLU;
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2749,6 +2921,26 @@ export class RecordPreviewPanel {
     .function-key-badge.active {
         color: ${bg};
         background: ${fg};
+    }
+    .function-key-separator {
+        display: inline-block;
+        margin: 0 4px;
+        color: ${fg};
+        opacity: 0.5;
+        font-size: 11px;
+    }
+    .function-key-badge.sfl-toggle {
+        border-color: ${sflToggleColor};
+        color: ${sflToggleColor};
+    }
+    .function-key-badge.sfl-toggle.active {
+        color: ${bg};
+        background: ${sflToggleColor};
+    }
+    .function-key-badge.sfl-toggle.disabled {
+        border-color: #666666;
+        color: #666666;
+        cursor: default;
     }
 </style>
 </head>
@@ -4011,14 +4203,46 @@ export class RecordPreviewPanel {
         }
     }
 
-    function rebuildFunctionKeyList(functionKeys) {
+    function rebuildFunctionKeyList(functionKeys, subfileExpanded, subfileToggleEnabled) {
         functionKeyList.innerHTML = '';
 
-        for (const fk of functionKeys) {
+        // The SFLDROP/SFLFOLD toggle isn't a real defined command key like the rest — it's this
+        // preview's own fold/truncate simulation — so it's kept out of the regular sorted list and
+        // appended after a "|" separator, in its own blue color, filled only while folded. Disabled
+        // (greyed out, unclickable) while previewing the SFL detail record directly, since folding
+        // it open there would make its normally-hidden rows draggable without any bounds keeping a
+        // drag inside this one subfile record's own row span — see canToggleSubfileFold on the host.
+        const regularKeys = functionKeys.filter(fk => !fk.isSflDrop);
+        const sflToggleKey = functionKeys.find(fk => fk.isSflDrop);
+
+        for (const fk of regularKeys) {
             const badge = document.createElement('span');
             badge.className = 'function-key-badge' + (fk.active ? ' active' : '');
             badge.textContent = fk.key;
             badge.title = fk.description;
+            functionKeyList.appendChild(badge);
+        }
+
+        if (sflToggleKey) {
+            const separator = document.createElement('span');
+            separator.className = 'function-key-separator';
+            separator.textContent = '|';
+            functionKeyList.appendChild(separator);
+
+            const badge = document.createElement('span');
+            badge.className = 'function-key-badge sfl-toggle'
+                + (subfileExpanded ? ' active' : '')
+                + (subfileToggleEnabled ? '' : ' disabled');
+            badge.textContent = sflToggleKey.key;
+            if (subfileToggleEnabled) {
+                badge.title = sflToggleKey.description + ' (' + (subfileExpanded ? 'folded — click to truncate' : 'truncated — click to fold') + ')';
+                badge.style.cursor = 'pointer';
+                badge.addEventListener('click', () => {
+                    vscode.postMessage({ type: 'toggleSubfileDrop' });
+                });
+            } else {
+                badge.title = sflToggleKey.description + ' (always folded while previewing the detail record, so every field stays visible — preview the header record to see the truncated form)';
+            }
             functionKeyList.appendChild(badge);
         }
     }
@@ -4063,7 +4287,7 @@ export class RecordPreviewPanel {
             // seeing which function keys are defined at a glance, without an extra click.
             const hasFunctionKeys = message.functionKeys && message.functionKeys.length > 0;
             functionKeyList.style.display = hasFunctionKeys ? 'block' : 'none';
-            rebuildFunctionKeyList(message.functionKeys || []);
+            rebuildFunctionKeyList(message.functionKeys || [], Boolean(message.subfileExpanded), Boolean(message.subfileToggleEnabled));
 
             const hasSflPag = typeof message.sflPag === 'number';
             sflpagBar.style.display = hasSflPag ? 'inline-flex' : 'none';

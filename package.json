@@ -129,6 +129,10 @@
         "title": "Command Keys"
       },
       {
+        "command": "dspf-edit.add-sfldrop-sflfold",
+        "title": "Subfile Drop/Fold"
+      },
+      {
         "command": "dspf-edit.add-validity-check",
         "title": "Validity Checks"
       },
@@ -332,6 +336,11 @@
           "command": "dspf-edit.add-commands-record",
           "when": "view == dspf-edit.schema-view && viewItem =~ /\\bsflctl\\b/",
           "group": "records_navigation2@2"
+        },
+        {
+          "command": "dspf-edit.add-sfldrop-sflfold",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\bsflctl\\b/",
+          "group": "records_navigation2@3"
         },
         {
           "command": "dspf-edit.add-key",

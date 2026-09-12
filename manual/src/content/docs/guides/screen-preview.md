@@ -72,7 +72,9 @@ A field coded with `CNTFLD(n)` wraps across multiple lines in the preview, `n` c
 
 ## Function-key legend
 
-A function-key legend (`F3`, `F12`, ...) shows every command key available to the record being previewed — both file-level and record-level `CAxx`/`CFxx` keys. A key still shows even when its indicator condition isn't currently met, so you can see it's defined; it switches to solid/inverted styling when it's actually active under the current simulated indicators.
+A function-key legend (`F3`, `F12`, ...) shows every command key available to the record being previewed — file-level, record-level, and (for a subfile) its `SFL`/`SFLCTL` pair's own `CAxx`/`CFxx` keys, since both preview together as one screen. A key still shows even when its indicator condition isn't currently met, so you can see it's defined; it switches to solid/inverted styling when it's actually active under the current simulated indicators.
+
+A subfile's `SFLDROP`/`SFLFOLD` fold/truncate key, if declared, shows apart from the rest after a `|` separator, in blue — see [Subfiles](/dspf-edit/guides/subfiles/).
 
 ## Multiple display sizes
 
