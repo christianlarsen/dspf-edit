@@ -37,6 +37,10 @@ Right-click a record for **Command Keys**. A key number already assigned at the 
 
 **Add / Remove / Change indicators** on a record — see [Indicators and Conditions](/dspf-edit/guides/indicators/).
 
+## Change Input Default
+
+Right-click the **File** node, or a **Record** node, and choose **Change Input Default** to manage a parameterless `CHGINPDFT` — removes the underline input-capable fields otherwise get by default. Only this parameterless form is supported for now; if the record (or file) already has `CHGINPDFT` with parameters, the command tells you and leaves it alone. Invoked on a record, it also warns when the file already has its own `CHGINPDFT`, since that one already applies to every record (a lower level overrides a higher one, same as real DDS). See [Default underline on input-capable fields](/dspf-edit/guides/colors-attributes/#default-underline-on-input-capable-fields).
+
 ## Resizing (window records)
 
 For a `WINDOW` record, **Change Window Size** resizes the window. The command is aware of every display size the file declares (`*DS3`/`*DS4`, ...) and resizes all of them together, keeping the record consistent across formats. You can also resize directly by dragging in the [Screen Preview](/dspf-edit/guides/screen-preview/).

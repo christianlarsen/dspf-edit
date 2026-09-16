@@ -11,7 +11,7 @@ Right-click a record and choose **New Field**, or click **+ Field** in the [Scre
 
 ## Edit / Rename / Remove
 
-- **Edit Field** — change a field's attributes.
+- **Edit Field** — change a field's name, size, and kind (alphanumeric ↔ numeric). Switching kind writes the type column the same way the quick **New Field** flow does, and — if the switch would leave keywords that no longer apply (`EDTCDE`/`EDTWRD`/`EDTMSK` need a numeric field; `CHECK(LC)`/`LOWER` need a character one) — asks to confirm removing them first, listing exactly what will go.
 - **Rename** — change a field's name, updating references to it.
 - **Remove field** — delete it from the record.
 - **Copy Field** — duplicate it, to the same record or a different one.

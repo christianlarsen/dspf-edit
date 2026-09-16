@@ -37,6 +37,10 @@ Select a field or constant — or several, with `Ctrl`/`Cmd`+click — to get a 
 
 ![Multi-select actions menu in the preview](/dspf-edit/screenshots/captura6.png)
 
+With a selection active, pressing `Delete` or `Backspace` deletes it directly — same confirmation dialog as the menu's own **Delete**, without having to open the menu first.
+
+Right-clicking a field or constant opens this same **⋮ Actions** menu directly, instead of the browser's native context menu — selecting it first (replacing the current selection) if it wasn't already selected; right-clicking one that's already part of a multi-selection keeps the whole group.
+
 ## Simulating indicators
 
 Toggle **Indicators** in the toolbar to simulate indicators on/off and preview conditional fields, constants, and attributes without compiling or connecting to a 5250 session. See [Indicators and Conditions](/dspf-edit/guides/indicators/) for how conditions are built.
@@ -50,6 +54,8 @@ The Indicators toggle, and the selected display format, persist when you switch 
 Overlay any other record (dimmed) behind the one being previewed, to see how the two compose — useful for checking a detail record against its header, or a window against the record behind it.
 
 ![Overlaying a record behind the preview](/dspf-edit/screenshots/captura8.png)
+
+**Double-click anywhere on a dimmed background record** — the manual overlay, an SFL/SFLCTL auto-paired header/detail (see [Subfiles](/dspf-edit/guides/subfiles/)), or a shared window's owner — to switch the preview to it, the same as picking it in the tree. Works anywhere across the rows the background occupies, not just directly on one of its fields/constants.
 
 ## Windows
 

@@ -4,12 +4,13 @@
 [![Installs](https://vsmarketplacebadges.dev/installs/ChristianLarsen.dspf-edit.svg)](https://marketplace.visualstudio.com/items?itemName=ChristianLarsen.dspf-edit)
 [![Rating](https://vsmarketplacebadges.dev/rating-star/ChristianLarsen.dspf-edit.svg)](https://marketplace.visualstudio.com/items?itemName=ChristianLarsen.dspf-edit&ssr=false#review-details)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Manual](https://img.shields.io/badge/manual-read%20it-blue)](https://christianlarsen.github.io/dspf-edit/)
 
-**DSPF-edit** brings a live schema view, a drag-and-drop screen preview, and deep DDS keyword coverage to editing IBM i **display files** — right inside VS Code. No more counting columns in SEU, no more round-trips through STRSDA on a 5250 session, no more guessing how a `WINDOW`, an indicator condition, or a `CHOICE()` field will actually render until you compile.
+**DSPF-edit** turns DDS display-file editing into a visual, live experience right inside VS Code — see the screen you're building as you build it, instead of guessing until you compile.
+
+> 📖 **[Read the full manual →](https://christianlarsen.github.io/dspf-edit/)** — step-by-step guides for every feature, from your first field to windows, subfiles, and indicator conditions.
 
 ![DSPF-edit demo](assets/demo.gif)
-
-📖 **[Read the full manual](https://christianlarsen.github.io/dspf-edit/)** for a complete walkthrough of every feature.
 
 ---
 
@@ -49,6 +50,9 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
   - Stays in sync with the schema tree selection in both directions.
   - "Focus" maximizes the preview so it fills the editing area, hiding the DDS source editor beside it; "Show code" brings the source back.
   - Select a field or constant (or several, with Ctrl/Cmd+click) to get a "⋮ Actions" menu: add color/attribute, copy, or delete — applied to every selected element at once for a multi-selection. A single selected field or constant also gets Rename.../Edit Text..., Indicators..., and — for fields — Validity Checks..., Editing Keywords..., and Error Messages..., the same commands the tree's context menu offers, so most of what you'd do from the tree is also reachable straight from the preview.
+  - Press `Delete`/`Backspace` with one or more fields/constants selected to delete them directly — same confirmation as the "⋮ Actions" menu's Delete.
+  - Double-click a dimmed background record (an SFL/SFLCTL auto-paired header/detail, the manual overlay, or a shared window's owner) to switch the preview to it, the same as picking it in the tree.
+  - Right-click a field or constant to open the "⋮ Actions" menu directly, instead of the browser's native Cut/Copy/Paste menu — selecting it first if it wasn't already selected.
   - The decimal point and thousands-separator convention used to preview `EDTCDE()`-edited numeric fields — US or European — is configurable from the "⚙ Configuration" panel, either picked manually or fetched with one click from the connected IBM i's `QDECFMT` system value.
 
 ### 🧭 Schema navigation
@@ -62,6 +66,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
     - Create new records.
     - Assign command keys — a key number already used at the other level (file vs. record) is excluded, so you can't end up with the same key defined as both CA and CF.
     - Add Display Size: adds a second standard screen size (*DS3/*DS4) to a file that currently declares only one.
+    - Change Input Default: manages a parameterless `CHGINPDFT` — removes the automatic underline input-capable fields otherwise get by default.
 
 ### Records level
   - Right-click options:
@@ -77,6 +82,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
     - Add "buttons" (constants for record commands).
     - Assign command keys — a key number already used at the other level (file vs. record) is excluded, so you can't end up with the same key defined as both CA and CF.
     - Add / Remove / Change indicators.
+    - Change Input Default: manages a parameterless `CHGINPDFT` for this record — removes the automatic underline input-capable fields otherwise get by default. Warns if the file already has one at file level.
     - Resizing (if window record) — aware of every declared display size, resizing all of them at once.
     - Change Window Title (if window record) — targets the size being worked on when the record declares more than one.
     - Sort elements.
@@ -98,7 +104,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
   - Show name, length, type, position (row/column), and flags (referenced/hidden).
   - Indicators and attributes are expandable; an OR'd condition is grouped into its ANDed sub-conditions ("Group 1 (AND)" / "OR" / "Group 2 (AND)" / ...) instead of one flat list. Hovering a conditioned field/constant/attribute shows the full condition (e.g. `51 AND NOT 61 AND 53  OR  52`) as a tooltip.
   - Right-click options:
-    - Edit field.
+    - Edit field — name, size, and kind (alphanumeric ↔ numeric); switching kind offers to remove any keyword that no longer applies (e.g. `EDTCDE`/`EDTWRD` when going alphanumeric).
     - Copy field (to the same or different record).
     - Remove field.
     - Center field on screen.
@@ -151,16 +157,12 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.6.0** - 2026-09-12
-- Added: a "Preview (DSPF-edit)" CodeLens above each record in the DDS source, opening DSPF-edit's own Screen Preview — useful when another extension already puts its own "Preview" CodeLens on the same line.
-- Added: Screen Preview simulates a subfile's `SFLDROP`/`SFLFOLD` fold/truncate key — shown separately in the function-key legend, in blue. Previewing the header record lets you toggle it (starting truncated/folded per the DDS keyword, like the real 5250); previewing the detail record itself always shows every field for editing, with the toggle disabled.
-- Added: a "Subfile Drop/Fold" command on subfile control (SFLCTL) records — right-click and pick it for a summary menu listing `SFLDROP`/`SFLFOLD` with their current command key/indicator, each with its own change/remove buttons.
-- Changed: Schema Tree icons now use VS Code's native codicons instead of emoji, for consistent rendering across themes and platforms.
-- Changed: the "Indicators" and "Attributes" subnodes no longer appear anywhere in the tree when there's nothing under them.
-- Removed: the Move Field/Constant Left/Right (1)/(5) inline tree buttons — dragging in the Screen Preview already covers this.
-- Fixed: Add Validity Check's `VALUES` now validates each value against the field's type and length as you type, instead of allowing invalid DDS like mixing a quoted character value with a bare number.
-- Fixed: adding a field or constant to a subfile (SFL) record from the tree now correctly refuses to place it on top of its subfile-control header, matching what the Screen Preview already enforced; the preview's own header-overlap check (and drag boundary) is also more accurate now.
-- Fixed: a long-standing internal row/column mix-up for fields and constants inside subfile (SFL) records — it silently affected Change Position, Center, Copy Field/Constant, Sort Elements, Fill Constant, and Window Resize (the Screen Preview itself was unaffected, since it already had its own workaround).
+**1.7.0** - 2026-09-16
+- Added: a "Change Input Default" command on records and at file level, managing a parameterless `CHGINPDFT` — removes the automatic underline input-capable fields otherwise get by default. The Screen Preview already honors it (a field with its own `DSPATR(UL)` is unaffected).
+- Added: Edit Field can now also change a field's kind — alphanumeric ↔ numeric — not just its name and size, offering to remove any keyword that no longer applies (`EDTCDE`/`EDTWRD`/`EDTMSK`, `CHECK(LC)`/`LOWER`) before switching.
+- Added: Screen Preview — `Delete`/`Backspace` with a selection deletes it directly, same confirmation as the "⋮ Actions" menu's Delete.
+- Added: Screen Preview — double-clicking a dimmed background record (SFL/SFLCTL pairing, manual overlay, or a shared window's owner) switches the preview to it, the same as picking it in the tree.
+- Added: Screen Preview — right-clicking a field or constant opens the "⋮ Actions" menu directly instead of the browser's native Cut/Copy/Paste menu, selecting it first if needed.
 
 ---
 

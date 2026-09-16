@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.7.0] - 2026-09-16
+### Added
+- A **Change Input Default** command on records and at file level, managing the parameterless form of `CHGINPDFT` — removes the automatic underline input-capable fields otherwise get by default. If the file already has it at file level, the record-level command warns you before offering to add/remove its own. The Screen Preview already reads this keyword: an input-capable field no longer forces its underline on when `CHGINPDFT` is in effect for it, unless the field carries its own `DSPATR(UL)`, which always takes priority.
+- Edit Field can now also change a field's kind — alphanumeric ↔ numeric — not just its name and size. Switching kind writes the type column the same way the quick "Add Field" flow does (blank for alphanumeric; `S`, or `Y` when it has decimals, for numeric). If the switch would leave keywords that no longer apply (`EDTCDE`/`EDTWRD`/`EDTMSK` need a numeric field; `CHECK(LC)`/`LOWER` need a character one), a confirmation lists exactly what will be removed before anything is changed.
+- Screen Preview: pressing `Delete`/`Backspace` with one or more fields/constants selected deletes them directly — same confirmation dialog as the "⋮ Actions" menu's Delete, without having to open it first.
+- Screen Preview: double-clicking a dimmed background record — an SFL/SFLCTL auto-paired header or detail, the manual overlay, or a shared window's owner — switches the preview to that record, the same as picking it in the tree. Works anywhere across the rows the background occupies, not just directly on one of its fields/constants.
+- Screen Preview: right-clicking a field or constant now opens the same "⋮ Actions" menu instead of the browser's native context menu (Cut/Copy/Paste), which was never useful there. Right-clicking an item that isn't already selected selects it first (replacing the current selection); right-clicking one already part of a multi-selection keeps the whole group.
+
 ## [1.6.0] - 2026-09-12
 ### Added
 - A **Preview (DSPF-edit)** CodeLens above each record's `R` line in the DDS source, opening DSPF-edit's own Screen Preview for that record — useful when another extension (e.g. IBM i Renderer) already contributes its own "Preview" CodeLens on the same line, since a CodeLens command from one extension can't be redirected to another's.
