@@ -8,7 +8,7 @@
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
@@ -131,6 +131,10 @@
       {
         "command": "dspf-edit.add-sfldrop-sflfold",
         "title": "Subfile Drop/Fold"
+      },
+      {
+        "command": "dspf-edit.add-chginpdft",
+        "title": "Change Input Default"
       },
       {
         "command": "dspf-edit.add-validity-check",
@@ -348,6 +352,11 @@
           "group": "records_navigation3@1"
         },
         {
+          "command": "dspf-edit.add-chginpdft",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
+          "group": "records_navigation3@2"
+        },
+        {
           "command": "dspf-edit.sort-elements",
           "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
           "group": "records_navigation4@1"
@@ -381,6 +390,11 @@
           "command": "dspf-edit.add-display-size",
           "when": "view == dspf-edit.schema-view && viewItem == file",
           "group": "file_navigation2@2"
+        },
+        {
+          "command": "dspf-edit.add-chginpdft",
+          "when": "view == dspf-edit.schema-view && viewItem == file",
+          "group": "file_navigation2@3"
         },
         {
           "command": "dspf-edit.fill-constant",

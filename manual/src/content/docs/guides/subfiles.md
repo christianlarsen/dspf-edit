@@ -11,6 +11,10 @@ Subfile (`SFL`/`SFLCTL`) records are recognized and rendered specially in the [S
 
 The preview shows all `SFLPAG` rows for the subfile, and automatically pairs the subfile detail record with its `SFLCTL` header record so both preview together as they'd actually appear on screen.
 
+## Jumping between header and detail
+
+Double-click anywhere on the dimmed counterpart — the header while previewing the detail record, or vice versa — to switch the preview to it. See [Overlay](/dspf-edit/guides/screen-preview/#overlay).
+
 ## Dragging detail rows
 
 Detail rows can't be dragged up over the header record's own content, keeping the preview physically consistent with how the subfile actually renders. The same boundary applies when adding a new field or constant to the detail record — whether by clicking in the preview or via the tree's **Add field**/**Add constant** — so it can't be placed on top of the header either.

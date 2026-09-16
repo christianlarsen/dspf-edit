@@ -5,7 +5,7 @@
 */
 
 import * as vscode from 'vscode';
-import { FieldsPerRecord, DdsSize, DdsAttribute, AttributeWithIndicators, DdsIndicator, fieldsPerRecords, attributesFileLevel, records, getDefaultSize, getAvailableDisplayFormats, getSizeForFormat, SYSTEM_FIELD_PLACEHOLDER, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
+import { FieldsPerRecord, FieldInfo, DdsSize, DdsAttribute, AttributeWithIndicators, DdsIndicator, fieldsPerRecords, attributesFileLevel, records, getDefaultSize, getAvailableDisplayFormats, getSizeForFormat, SYSTEM_FIELD_PLACEHOLDER, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, updateTreeProvider, applyWorkspaceEdit, applyDisplayFormatSplitEdit } from '../dspf-edit.utils/dspf-edit.helper';
 import { getBackgroundColor, getDdsColorMap, getReferencedFieldColor } from '../dspf-edit.utils/dspf-edit.preview-colors';
 import { getDecimalSeparators } from '../dspf-edit.utils/dspf-edit.decimal-format';
@@ -51,6 +51,14 @@ interface PreviewItem {
     /** True for input-capable fields (usage I or B), shown underlined instead of boxed. Always false for constants and output-only fields. */
     isInputCapable: boolean;
     /**
+     * True when `isInputCapable`'s automatic underline actually applies. False only when a
+     * CHGINPDFT keyword (with no parameters) coded on the field, its record, or the file — nearest
+     * level wins — has suppressed that default; a field with its own DSPATR() naming UL is always
+     * exempt from that suppression (see `isDefaultUnderlineSuppressed`), so this is otherwise always
+     * true for an input-capable field.
+     */
+    hasDefaultUnderline: boolean;
+    /**
      * True when this background item shares the *same* window as the record being previewed
      * (an auto-paired SFL/SFLCTL half, or the window's owner record) rather than belonging to a
      * genuinely different record positioned behind it. The window's own opaque frame is drawn over
@@ -58,6 +66,13 @@ interface PreviewItem {
      * must be drawn on top of that frame fill, since they're part of the window's own content.
      */
     sameWindow?: boolean;
+    /**
+     * Which record this item belongs to — only set on a background item (see `isBackground`).
+     * Drives the preview's double-click-to-switch gesture: double-clicking a dimmed background
+     * item (e.g. an SFL detail record's own SFLCTL header, shown behind it automatically) retargets
+     * the whole preview to that record, the same as picking it in the tree.
+     */
+    sourceRecord?: string;
     /**
      * True for a referenced field (REFFLD/position-29 `R`): its real type/length live in the
      * external database field, which dspf-edit has no way to read, so it can't be previewed at its
@@ -1438,6 +1453,7 @@ export class RecordPreviewPanel {
         const sameWindow = foregroundOwner !== undefined && windowOwnerOf(recordName, this.activeDisplayFormat) === foregroundOwner;
         for (const item of items) {
             item.sameWindow = sameWindow;
+            item.sourceRecord = recordName;
         };
 
         return items;
@@ -1507,6 +1523,7 @@ export class RecordPreviewPanel {
                 // sign/decimal position the same way — see getUneditedNumericMask), and not
                 // PSHBTNFLD (DDS requires it to be exactly length 2 — resizing it would produce
                 // uncompilable DDS).
+                const isInputCapable = usageCode === 'I' || usageCode === 'B';
                 const isSystemField = Boolean(SYSTEM_FIELD_PLACEHOLDER[field.name.trim().toUpperCase()]);
                 const isPushButtonField = activeAttrs.some(attr => /^PSHBTNFLD\b/i.test(attr.value));
                 const isResizable = !field.referenced && !isSystemField && !editingMask && !isPushButtonField;
@@ -1527,7 +1544,8 @@ export class RecordPreviewPanel {
                     colOffset,
                     isBackground,
                     isInteractive: !isBackground,
-                    isInputCapable: usageCode === 'I' || usageCode === 'B',
+                    isInputCapable,
+                    hasDefaultUnderline: isInputCapable && !this.isDefaultUnderlineSuppressed(recordInfo, field),
                     isReferenced,
                     isResizable,
                     minLength,
@@ -1592,6 +1610,7 @@ export class RecordPreviewPanel {
                             underline: false,
                             isInteractive: false,
                             isInputCapable: false,
+                            hasDefaultUnderline: false,
                             isReferenced: false,
                             isResizable: false
                         });
@@ -1638,6 +1657,7 @@ export class RecordPreviewPanel {
                     isBackground,
                     isInteractive: !isBackground,
                     isInputCapable: false,
+                    hasDefaultUnderline: false,
                     // A constant has no LENGTH keyword of its own in DDS — its width *is* its quoted
                     // literal's character count — so it's only resizable when it's a genuine literal
                     // (not a bare system keyword like DATE/USER, whose real display text isn't its
@@ -1706,6 +1726,35 @@ export class RecordPreviewPanel {
             result.push(attr);
         };
         return result;
+    };
+
+    /**
+     * Resolves whether an input-capable field's automatic default underline is currently suppressed
+     * by CHGINPDFT. Per the DDS reference, a bare CHGINPDFT (no parameters) removes the underline
+     * that input-capable fields otherwise get by default; CHGINPDFT with parameters only adds the
+     * listed attributes and leaves the default underline untouched — so only the bare form is
+     * treated as suppressing it here. Indicators are never valid on CHGINPDFT, so — unlike
+     * DSPATR()/COLOR() — there's no live/resting-state distinction: whichever level is nearest
+     * (field, then record, then file — a lower level always overrides a higher one, same as real
+     * DDS) decides unconditionally. A field that codes its own DSPATR() naming UL is exempt: the
+     * manual is explicit that CHGINPDFT can't control underlining for such a field, so its own
+     * (possibly indicator-conditioned) DSPATR(UL) is the sole authority there — already reflected in
+     * the `underline` field, independent of this default.
+     * @param recordInfo - The field's own record
+     * @param field - The field to check
+     */
+    private isDefaultUnderlineSuppressed(recordInfo: FieldsPerRecord, field: FieldInfo): boolean {
+        const ownsUnderlineAttr = field.attributes?.some(attr => /^DSPATR\(.*\bUL\b.*\)$/i.test(attr.value.trim()));
+        if (ownsUnderlineAttr) {
+            return false;
+        };
+
+        const findChginpdft = (attributes: { value: string; displayFormat?: string }[] | undefined) =>
+            filterForActiveFormat(attributes ?? [], this.activeDisplayFormat)
+                .find(attr => /^CHGINPDFT(\(|$)/i.test(attr.value.trim()));
+
+        const nearest = findChginpdft(field.attributes) ?? findChginpdft(recordInfo.attributes) ?? findChginpdft(attributesFileLevel);
+        return nearest !== undefined && nearest.value.trim().toUpperCase() === 'CHGINPDFT';
     };
 
     /**
@@ -2007,6 +2056,19 @@ export class RecordPreviewPanel {
 
         if (message?.type === 'elementMenu' && Array.isArray(message.lineIndices)) {
             await this.showElementMenu(message.lineIndices);
+            return;
+        };
+
+        if (message?.type === 'deleteSelection' && Array.isArray(message.lineIndices)) {
+            await this.deleteSelection(message.lineIndices);
+            return;
+        };
+
+        if (message?.type === 'switchToRecord' && typeof message.recordName === 'string') {
+            // Reuses the exact same retargeting path as the tree/CodeLens (dspf-edit.preview-record.ts's
+            // "dspf-edit.preview-record-by-name"), so the panel keeps following the newly-targeted
+            // record's own refresh source afterwards, same as any other way of switching records.
+            await vscode.commands.executeCommand('dspf-edit.preview-record-by-name', message.recordName);
             return;
         };
 
@@ -2555,9 +2617,7 @@ export class RecordPreviewPanel {
      * @param lineIndices - Zero-based source line indices of the selected fields/constants
      */
     private async showElementMenu(lineIndices: number[]): Promise<void> {
-        const resolved = await Promise.all(lineIndices.map(li => this.treeProvider?.findFieldOrConstantNode(li)));
-        const nodes = resolved.filter((n): n is DdsNode =>
-            !!n && (n.ddsElement.kind === 'field' || n.ddsElement.kind === 'constant'));
+        const nodes = await this.resolveElementNodes(lineIndices);
         if (nodes.length === 0) {
             return;
         };
@@ -2619,6 +2679,44 @@ export class RecordPreviewPanel {
             } else {
                 await removeElements(editor, nodes);
             };
+        };
+
+        if (editor) {
+            this.forceReparse(editor.document);
+        };
+    };
+
+    /**
+     * Resolves the preview's selected canvas line indices back to their tree nodes, keeping only
+     * fields/constants (the only kinds selectable in the preview). Shared by `showElementMenu` and
+     * `deleteSelection` so both agree on exactly what a selection resolves to.
+     * @param lineIndices - Zero-based source line indices of the selected fields/constants
+     */
+    private async resolveElementNodes(lineIndices: number[]): Promise<DdsNode[]> {
+        const resolved = await Promise.all(lineIndices.map(li => this.treeProvider?.findFieldOrConstantNode(li)));
+        return resolved.filter((n): n is DdsNode =>
+            !!n && (n.ddsElement.kind === 'field' || n.ddsElement.kind === 'constant'));
+    };
+
+    /**
+     * Deletes the currently selected fields/constants directly — the preview's Delete/Backspace
+     * keyboard shortcut. Reuses the exact same delete path as "Actions... > Delete" in
+     * `showElementMenu` (dspf-edit.remove-element for a single element, removeElements for more than
+     * one), so the same confirmation dialog is shown before anything is actually removed.
+     * @param lineIndices - Zero-based source line indices of the selected fields/constants
+     */
+    private async deleteSelection(lineIndices: number[]): Promise<void> {
+        const nodes = await this.resolveElementNodes(lineIndices);
+        if (nodes.length === 0) {
+            return;
+        };
+
+        const { editor } = checkForEditorAndDocument();
+
+        if (nodes.length === 1) {
+            await vscode.commands.executeCommand('dspf-edit.remove-element', nodes[0]);
+        } else if (editor) {
+            await removeElements(editor, nodes);
         };
 
         if (editor) {
@@ -3137,7 +3235,7 @@ export class RecordPreviewPanel {
         }
         ctx.textAlign = 'start';
 
-        if (item.underline || item.isInputCapable) {
+        if (item.underline || item.hasDefaultUnderline) {
             ctx.strokeStyle = item.reverseImage ? '${bg}' : item.color;
             ctx.beginPath();
             ctx.moveTo(x, y + CHAR_H - 2.5);
@@ -3638,6 +3736,36 @@ export class RecordPreviewPanel {
         );
     }
 
+    // Hit-tests the dimmed background record(s) for the double-click-to-switch gesture — by row
+    // range per source record rather than requiring the click to land exactly on a field/constant's
+    // own text, the way findItemAt does for the foreground. A background block (an SFLCTL header,
+    // an SFL detail area, a shared window's owner...) reads as one visual region to the user, blank
+    // cells included, so double-clicking anywhere across the rows it occupies — not just its actual
+    // characters — switches to it.
+    function findBackgroundItemAt(ev) {
+        const { row } = cellAt(ev);
+        const rowRangeBySourceRecord = {};
+        for (const item of currentBackgroundItems) {
+            if (!item.sourceRecord) {
+                continue;
+            }
+            const range = rowRangeBySourceRecord[item.sourceRecord];
+            if (range) {
+                range.min = Math.min(range.min, item.row);
+                range.max = Math.max(range.max, item.row);
+            } else {
+                rowRangeBySourceRecord[item.sourceRecord] = { min: item.row, max: item.row };
+            }
+        }
+        for (const sourceRecord in rowRangeBySourceRecord) {
+            const range = rowRangeBySourceRecord[sourceRecord];
+            if (row >= range.min && row <= range.max) {
+                return { sourceRecord };
+            }
+        }
+        return undefined;
+    }
+
     function isOverResizeHandle(ev) {
         if (!currentOuterFrame) {
             return false;
@@ -3783,6 +3911,20 @@ export class RecordPreviewPanel {
     document.addEventListener('keydown', (ev) => {
         if (ev.key === 'Escape' && placingKind) {
             setPlacingKind(null);
+            return;
+        }
+
+        // Delete/Backspace (Mac laptop keyboards only have the latter) removes the current
+        // selection, same as "Actions... > Delete" — but only when focus isn't inside a text
+        // input/select/checkbox in the toolbar, where the key should edit that control's own value
+        // instead.
+        if ((ev.key === 'Delete' || ev.key === 'Backspace') && selectedLineIndices.size > 0) {
+            const target = ev.target;
+            const isFormControl = target && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+            if (!isFormControl) {
+                ev.preventDefault();
+                vscode.postMessage({ type: 'deleteSelection', lineIndices: [...selectedLineIndices] });
+            }
         }
     });
 
@@ -3919,6 +4061,20 @@ export class RecordPreviewPanel {
         }
     });
 
+    canvas.addEventListener('dblclick', (ev) => {
+        // Double-clicking a foreground item is a no-op here (there's nothing background-specific
+        // to do) — only a dimmed background item (e.g. an SFL/SFLCTL auto-paired counterpart, the
+        // manual overlay, or a shared window's owner) responds, by retargeting the whole preview to
+        // whichever record it belongs to, same as picking that record in the tree.
+        if (findItemAt(ev)) {
+            return;
+        }
+        const hit = findBackgroundItemAt(ev);
+        if (hit) {
+            vscode.postMessage({ type: 'switchToRecord', recordName: hit.sourceRecord });
+        }
+    });
+
     document.addEventListener('mouseleave', () => {
         // The mouse left the whole webview, so no more mousemove events will arrive to notice it —
         // hide the icons explicitly instead of leaving them stuck showing.
@@ -4027,6 +4183,14 @@ export class RecordPreviewPanel {
                 return;
             }
             const hit = findItemAt(ev);
+            if (!hit) {
+                const backgroundHit = findBackgroundItemAt(ev);
+                if (backgroundHit) {
+                    canvas.style.cursor = 'pointer';
+                    canvas.title = 'Double-click to switch to ' + backgroundHit.sourceRecord;
+                    return;
+                }
+            }
             canvas.style.cursor = (!hit && isOverWindowFrame(ev)) ? 'move' : 'default';
             canvas.title = hit ? hit.name : '';
             return;

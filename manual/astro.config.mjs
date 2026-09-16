@@ -9,7 +9,7 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: 'DSPF-edit',
-			description: 'A live schema view, drag-and-drop screen preview, and deep DDS keyword coverage for editing IBM i display files in VS Code and IBM Bob.',
+			description: 'Turn DDS display-file editing into a visual, live experience — see the screen you\'re building as you build it, right inside VS Code and IBM Bob.',
 			logo: {
 				src: './src/assets/dds-icon.svg',
 			},

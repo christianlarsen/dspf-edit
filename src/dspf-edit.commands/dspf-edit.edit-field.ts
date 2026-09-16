@@ -6,8 +6,8 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { fileSizeAttributes, fieldsPerRecords, getRecordSize, getSubfileMinDetailRow } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument, parseSize } from '../dspf-edit.utils/dspf-edit.helper';
+import { fileSizeAttributes, fieldsPerRecords, getRecordSize, getSubfileMinDetailRow, AttributeWithIndicators } from '../dspf-edit.model/dspf-edit.model';
+import { checkForEditorAndDocument, parseSize, removeKeywordTextFromLines } from '../dspf-edit.utils/dspf-edit.helper';
 
 /**
  * Interface defining the structure of a field's size properties
@@ -255,21 +255,52 @@ async function handleEditFieldCommand(node: DdsNode): Promise<void> {
             return; // User cancelled
         };
 
+        // Get the field's kind (alphanumeric/numeric) — keep as-is, or switch it
+        const currentIsNumeric = isNumericFieldForEdit(element);
+        const newIsNumeric = await promptForFieldKind(currentIsNumeric, newName);
+        if (newIsNumeric === undefined) {
+            return; // User cancelled
+        };
+        const kindChanged = newIsNumeric !== currentIsNumeric;
+
         // Get new field size from user
-        const newSize = await promptForFieldSize(element, newName);
+        const newSize = await promptForFieldSize(element, newName, newIsNumeric);
         if (!newSize) {
             return; // User cancelled
         };
 
+        // Switching kind can leave keywords that no longer apply (EDTCDE/EDTWRD/EDTMSK need a
+        // numeric field; CHECK(LC)/LOWER need a character one) — confirm removing them before
+        // touching anything, so the field never ends up in an uncompilable in-between state.
+        let removedKeywords: string[] = [];
+        if (kindChanged) {
+            const incompatible = findIncompatibleKeywords(element, newIsNumeric);
+            if (incompatible.length > 0) {
+                removedKeywords = incompatible.map(attr => attr.value);
+                const confirmation = await vscode.window.showWarningMessage(
+                    `Changing '${(element as any).name}' to ${newIsNumeric ? 'numeric' : 'alphanumeric'} requires removing: ${removedKeywords.join(', ')}. Remove them and continue?`,
+                    { modal: true },
+                    'Remove and Continue'
+                );
+                if (confirmation !== 'Remove and Continue') {
+                    return;
+                };
+                if (!(await removeIncompatibleKeywords(editor, element, incompatible))) {
+                    return;
+                };
+            };
+        };
+
         // Apply the changes to the document
-        await applyFieldChanges(editor, element, newName, newSize);
+        await applyFieldChanges(editor, element, newName, newSize, kindChanged ? newIsNumeric : undefined);
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
-        
+
         if ('name' in element) {
+            const sizeSummary = (newSize.decimals) ? `${newSize.length},${newSize.decimals}` : `${newSize.length}`;
+            const removalSummary = removedKeywords.length > 0 ? ` (removed ${removedKeywords.join(', ')})` : '';
             vscode.window.showInformationMessage(
-                (newSize.decimals) ? `Field '${element.name}' successfully updated to '${newName}' with size ${newSize.length}${newSize.decimals > 0 ? `,${newSize.decimals}` : ''}` :
-                `Field '${element.name}' successfully updated to '${newName}' with size ${newSize.length}`
+                `Field '${element.name}' successfully updated to '${newName}' with size ${sizeSummary}${removalSummary}`
             );
         };
 
@@ -1450,9 +1481,11 @@ function validateFieldName(value: string, element: any): string | null {
 };
 
 /**
- * Prompts the user for field size specification
+ * Prompts the user for field size specification. Decimal places only make sense for a numeric
+ * field — for an alphanumeric one they're dropped from whatever's parsed, even if typed anyway.
+ * @param isNumeric - The field's kind as just chosen in promptForFieldKind
  */
-async function promptForFieldSize(element: any, fieldName: string): Promise<FieldSize | undefined> {
+async function promptForFieldSize(element: any, fieldName: string, isNumeric: boolean): Promise<FieldSize | undefined> {
     const currentSizeDisplay = element.decimals && element.decimals > 0
         ? `${element.length},${element.decimals}`
         : `${element.length}`;
@@ -1460,7 +1493,9 @@ async function promptForFieldSize(element: any, fieldName: string): Promise<Fiel
     const newSizeInput = await vscode.window.showInputBox({
         title: `Set size for field '${fieldName}'`,
         value: currentSizeDisplay,
-        prompt: "Enter size as: N (for integer) or N,D (for decimal where N=total digits, D=decimal places)",
+        prompt: isNumeric
+            ? "Enter size as: N (for integer) or N,D (for decimal where N=total digits, D=decimal places)"
+            : "Enter the field's length",
         validateInput: validateFieldSize
     });
 
@@ -1468,7 +1503,29 @@ async function promptForFieldSize(element: any, fieldName: string): Promise<Fiel
         return undefined;
     };
 
-    return parseSize(newSizeInput);
+    const size = parseSize(newSizeInput);
+    return isNumeric ? size : { length: size.length, decimals: undefined };
+};
+
+/**
+ * Prompts the user to keep the field's current kind (alphanumeric/numeric) or switch it — the
+ * "Edit Field" flow's own type step; previously this flow could only rename/resize a field, never
+ * change what kind it is. Returns undefined when cancelled.
+ * @param currentIsNumeric - The field's current kind, from isNumericFieldForEdit
+ * @param fieldName - The field's (possibly just-renamed) name, for the picker's title
+ */
+async function promptForFieldKind(currentIsNumeric: boolean, fieldName: string): Promise<boolean | undefined> {
+    const options: (vscode.QuickPickItem & { isNumeric: boolean })[] = [
+        { label: 'Alphanumeric', description: !currentIsNumeric ? '(current)' : undefined, isNumeric: false },
+        { label: 'Numeric', description: currentIsNumeric ? '(current)' : undefined, isNumeric: true }
+    ];
+
+    const selection = await vscode.window.showQuickPick(options, {
+        title: `Set kind for field '${fieldName}'`,
+        placeHolder: "Choose the field's kind — switching removes any keyword that no longer applies"
+    });
+
+    return selection?.isNumeric;
 };
 
 /**
@@ -1509,18 +1566,82 @@ function validateFieldSize(value: string): string | null {
 };
 
 /**
+ * Field-level keywords that only make sense on a numeric field — offered for automatic removal
+ * (after confirmation) when a field switches from numeric to alphanumeric. EDTMSK always goes
+ * together with EDTCDE/EDTWRD since it requires one of them as its base.
+ */
+const NUMERIC_ONLY_KEYWORD_PATTERNS = [/^EDTCDE\(/i, /^EDTWRD\(/i, /^EDTMSK\(/i];
+
+/**
+ * Field-level keywords that only make sense on a character field — offered for automatic removal
+ * (after confirmation) when a field switches from alphanumeric to numeric.
+ */
+const ALPHA_ONLY_KEYWORD_PATTERNS = [/^CHECK\(.*\bLC\b.*\)$/i, /^LOWER\b/i];
+
+/**
+ * Whether a field currently reads as numeric, per the same DDS Type/decimal-positions default rule
+ * used throughout the extension (see isNumericFieldType in dspf-edit.record-preview-panel.ts):
+ * blank Type is numeric only when decimal positions are also given; any other non-blank, non-'A'
+ * Type is numeric.
+ * @param element - The DDS field element
+ */
+function isNumericFieldForEdit(element: any): boolean {
+    const trimmedType = (element.type || '').trim().toUpperCase();
+    return trimmedType !== '' ? trimmedType !== 'A' : element.decimals !== undefined;
+};
+
+/**
+ * Finds the field's own keywords that would no longer be valid once it switches to `becomingNumeric`.
+ * @param element - The DDS field element being edited
+ * @param becomingNumeric - The kind the field is switching to
+ */
+function findIncompatibleKeywords(element: any, becomingNumeric: boolean): AttributeWithIndicators[] {
+    const recordInfo = fieldsPerRecords.find(r => r.record === element.recordname);
+    const fieldInfo = recordInfo?.fields.find(f => f.name === element.name);
+    if (!fieldInfo?.attributes) {
+        return [];
+    };
+
+    const patterns = becomingNumeric ? ALPHA_ONLY_KEYWORD_PATTERNS : NUMERIC_ONLY_KEYWORD_PATTERNS;
+    return fieldInfo.attributes.filter(attr => patterns.some(pattern => pattern.test(attr.value.trim())));
+};
+
+/**
+ * Removes the given (already user-confirmed) incompatible keywords from the field, last line first
+ * so an earlier removal never shifts the line index of one still pending — same reasoning as
+ * removeEditingFromField in dspf-edit.add-editing-keywords.ts. A field's own attribute lines are
+ * always at or after its definition line, so this never touches (or shifts) `element.lineIndex`
+ * itself.
+ * @param editor - The active text editor
+ * @param element - The DDS field element the keywords belong to
+ * @param attributes - The keywords to remove, from findIncompatibleKeywords
+ */
+async function removeIncompatibleKeywords(editor: vscode.TextEditor, element: any, attributes: AttributeWithIndicators[]): Promise<boolean> {
+    const sorted = [...attributes].sort((a, b) => b.lineIndex - a.lineIndex);
+    for (const attr of sorted) {
+        const preserveFirstLine = attr.lineIndex === element.lineIndex;
+        const lastLineIndex = attr.lastLineIndex ?? attr.lineIndex;
+        if (!(await removeKeywordTextFromLines(editor, attr.lineIndex, lastLineIndex, attr.value, preserveFirstLine))) {
+            return false;
+        };
+    };
+    return true;
+};
+
+/**
  * Applies the field changes to the active document
  */
 async function applyFieldChanges(
-    editor: vscode.TextEditor, 
-    element: any, 
-    newName: string, 
-    newSize: FieldSize
+    editor: vscode.TextEditor,
+    element: any,
+    newName: string,
+    newSize: FieldSize,
+    newKindIsNumeric?: boolean
 ): Promise<void> {
     const lineIndex = element.lineIndex;
     const originalLine = editor.document.lineAt(lineIndex).text;
     
-    const updatedLine = buildUpdatedLine(originalLine, newName, newSize);
+    const updatedLine = buildUpdatedLine(originalLine, newName, newSize, newKindIsNumeric);
     
     const workspaceEdit = new vscode.WorkspaceEdit();
     const documentUri = editor.document.uri;
@@ -1535,31 +1656,54 @@ async function applyFieldChanges(
 };
 
 /**
- * Constructs the updated line with new field name and size
+ * Constructs the updated line with new field name, size and (when switching kind) type.
+ * @param newKindIsNumeric - Only set when the field's kind is actually changing: the new type
+ * column is written explicitly (blank for alphanumeric; 'S', or 'Y' when it has decimals, for
+ * numeric — the same S/Y pairing generateQuickFieldLines already uses for a brand-new field).
+ * Left undefined for a same-kind edit, which keeps the previous behavior of leaving the type
+ * column untouched and only refreshing decimal positions when it was already numeric.
  */
-function buildUpdatedLine(originalLine: string, newName: string, newSize: FieldSize): string {
+function buildUpdatedLine(originalLine: string, newName: string, newSize: FieldSize, newKindIsNumeric?: boolean): string {
     let line = originalLine.padEnd(50, ' ');
-    
+
     const paddedName = newName.padEnd(FIELD_CONSTANTS.MAX_NAME_LENGTH, ' ')
                              .substring(0, FIELD_CONSTANTS.MAX_NAME_LENGTH);
-    line = line.substring(0, FIELD_CONSTANTS.NAME_COLUMN_START) + 
-           paddedName + 
+    line = line.substring(0, FIELD_CONSTANTS.NAME_COLUMN_START) +
+           paddedName +
            line.substring(FIELD_CONSTANTS.NAME_COLUMN_END);
-    
+
     const sizeString = newSize.length.toString().padStart(5, ' ').substring(0, 5);
-    line = line.substring(0, FIELD_CONSTANTS.SIZE_COLUMN_START) + 
-           sizeString + 
+    line = line.substring(0, FIELD_CONSTANTS.SIZE_COLUMN_START) +
+           sizeString +
            line.substring(FIELD_CONSTANTS.SIZE_COLUMN_END);
-    
+
+    if (newKindIsNumeric !== undefined) {
+        if (newKindIsNumeric) {
+            const decimals = newSize.decimals ?? 0;
+            const typeChar = decimals > 0 ? 'Y' : 'S';
+            line = line.substring(0, FIELD_CONSTANTS.TYPE_COLUMN) + typeChar + line.substring(FIELD_CONSTANTS.TYPE_COLUMN + 1);
+            const decimalString = decimals.toString().padStart(2, ' ').substring(0, 2);
+            line = line.substring(0, FIELD_CONSTANTS.DECIMAL_COLUMN_START) +
+                   decimalString +
+                   line.substring(FIELD_CONSTANTS.DECIMAL_COLUMN_END);
+        } else {
+            line = line.substring(0, FIELD_CONSTANTS.TYPE_COLUMN) + ' ' + line.substring(FIELD_CONSTANTS.TYPE_COLUMN + 1);
+            line = line.substring(0, FIELD_CONSTANTS.DECIMAL_COLUMN_START) +
+                   '  ' +
+                   line.substring(FIELD_CONSTANTS.DECIMAL_COLUMN_END);
+        };
+        return line;
+    };
+
     const typeCharacter = line.substring(FIELD_CONSTANTS.TYPE_COLUMN, FIELD_CONSTANTS.TYPE_COLUMN + 1);
     const isNumericField = FIELD_CONSTANTS.NUMERIC_TYPES.includes(typeCharacter as any);
-    
+
     if (isNumericField && newSize.decimals !== undefined) {
         const decimalString = newSize.decimals.toString().padStart(2, ' ').substring(0, 2);
-        line = line.substring(0, FIELD_CONSTANTS.DECIMAL_COLUMN_START) + 
-               decimalString + 
+        line = line.substring(0, FIELD_CONSTANTS.DECIMAL_COLUMN_START) +
+               decimalString +
                line.substring(FIELD_CONSTANTS.DECIMAL_COLUMN_END);
     };
-    
+
     return line;
 };
