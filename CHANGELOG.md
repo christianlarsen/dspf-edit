@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Edit Field can now also change a field's kind — alphanumeric ↔ numeric — not just its name and size. Switching kind writes the type column the same way the quick "Add Field" flow does (blank for alphanumeric; `S`, or `Y` when it has decimals, for numeric). If the switch would leave keywords that no longer apply (`EDTCDE`/`EDTWRD`/`EDTMSK` need a numeric field; `CHECK(LC)`/`LOWER` need a character one), a confirmation lists exactly what will be removed before anything is changed.
 - Screen Preview: pressing `Delete`/`Backspace` with one or more fields/constants selected deletes them directly — same confirmation dialog as the "⋮ Actions" menu's Delete, without having to open it first.
 - Screen Preview: double-clicking a dimmed background record — an SFL/SFLCTL auto-paired header or detail, the manual overlay, or a shared window's owner — switches the preview to that record, the same as picking it in the tree. Works anywhere across the rows the background occupies, not just directly on one of its fields/constants.
+- Screen Preview: right-clicking a field or constant now opens the same "⋮ Actions" menu instead of the browser's native context menu (Cut/Copy/Paste), which was never useful there. Right-clicking an item that isn't already selected selects it first (replacing the current selection); right-clicking one already part of a multi-selection keeps the whole group.
 
 ## [1.6.0] - 2026-09-12
 ### Added

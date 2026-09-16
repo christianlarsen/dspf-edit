@@ -39,6 +39,8 @@ Select a field or constant — or several, with `Ctrl`/`Cmd`+click — to get a 
 
 With a selection active, pressing `Delete` or `Backspace` deletes it directly — same confirmation dialog as the menu's own **Delete**, without having to open the menu first.
 
+Right-clicking a field or constant opens this same **⋮ Actions** menu directly, instead of the browser's native context menu — selecting it first (replacing the current selection) if it wasn't already selected; right-clicking one that's already part of a multi-selection keeps the whole group.
+
 ## Simulating indicators
 
 Toggle **Indicators** in the toolbar to simulate indicators on/off and preview conditional fields, constants, and attributes without compiling or connecting to a 5250 session. See [Indicators and Conditions](/dspf-edit/guides/indicators/) for how conditions are built.

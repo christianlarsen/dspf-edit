@@ -4075,6 +4075,25 @@ export class RecordPreviewPanel {
         }
     });
 
+    canvas.addEventListener('contextmenu', (ev) => {
+        // Right-clicking a field/constant opens the same "⋮ Actions" menu instead of the browser's
+        // native context menu (Cut/Copy/Paste...), which was never useful here — it comes up whether
+        // or not something is selected first, matching how people naturally reach for a right-click
+        // before noticing the Actions button. Right-clicking an item already part of the current
+        // multi-selection keeps the whole group (same as a plain left-click there); right-clicking
+        // any other item — selected or not — replaces the selection with just that one first.
+        ev.preventDefault();
+        const hit = findItemAt(ev);
+        if (!hit) {
+            return;
+        }
+        if (!selectedLineIndices.has(hit.lineIndex)) {
+            selectedLineIndices = new Set([hit.lineIndex]);
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+        }
+        vscode.postMessage({ type: 'elementMenu', lineIndices: [...selectedLineIndices] });
+    });
+
     document.addEventListener('mouseleave', () => {
         // The mouse left the whole webview, so no more mousemove events will arrive to notice it —
         // hide the icons explicitly instead of leaving them stuck showing.

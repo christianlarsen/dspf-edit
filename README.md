@@ -52,6 +52,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
   - Select a field or constant (or several, with Ctrl/Cmd+click) to get a "⋮ Actions" menu: add color/attribute, copy, or delete — applied to every selected element at once for a multi-selection. A single selected field or constant also gets Rename.../Edit Text..., Indicators..., and — for fields — Validity Checks..., Editing Keywords..., and Error Messages..., the same commands the tree's context menu offers, so most of what you'd do from the tree is also reachable straight from the preview.
   - Press `Delete`/`Backspace` with one or more fields/constants selected to delete them directly — same confirmation as the "⋮ Actions" menu's Delete.
   - Double-click a dimmed background record (an SFL/SFLCTL auto-paired header/detail, the manual overlay, or a shared window's owner) to switch the preview to it, the same as picking it in the tree.
+  - Right-click a field or constant to open the "⋮ Actions" menu directly, instead of the browser's native Cut/Copy/Paste menu — selecting it first if it wasn't already selected.
   - The decimal point and thousands-separator convention used to preview `EDTCDE()`-edited numeric fields — US or European — is configurable from the "⚙ Configuration" panel, either picked manually or fetched with one click from the connected IBM i's `QDECFMT` system value.
 
 ### 🧭 Schema navigation
@@ -161,6 +162,7 @@ See the full changelog [here](./CHANGELOG.md).
 - Added: Edit Field can now also change a field's kind — alphanumeric ↔ numeric — not just its name and size, offering to remove any keyword that no longer applies (`EDTCDE`/`EDTWRD`/`EDTMSK`, `CHECK(LC)`/`LOWER`) before switching.
 - Added: Screen Preview — `Delete`/`Backspace` with a selection deletes it directly, same confirmation as the "⋮ Actions" menu's Delete.
 - Added: Screen Preview — double-clicking a dimmed background record (SFL/SFLCTL pairing, manual overlay, or a shared window's owner) switches the preview to it, the same as picking it in the tree.
+- Added: Screen Preview — right-clicking a field or constant opens the "⋮ Actions" menu directly instead of the browser's native Cut/Copy/Paste menu, selecting it first if needed.
 
 ---
 
