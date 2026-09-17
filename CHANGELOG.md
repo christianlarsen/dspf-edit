@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.8.0] - 2026-09-17
+### Added
+- Screen Preview: fields carrying `ERRMSGID()` are now recognized the same way as `ERRMSG()` — shown in reverse image while active, with the message line showing a placeholder naming the message ID and file (its real text lives in an external message file this extension can't read).
+- Screen Preview: `HELP()`, `PAGEDOWN()`, and `PAGEUP()` now show in the function-key legend, labeled **Help**, **Page Up**, and **Page Down** — they're dedicated keyboard keys rather than a numbered `Fnn` slot, so they're listed after the numbered keys instead of trying to fit an `Fnn` label that doesn't apply to them.
+- Screen Preview: a field with an active `DFTVAL('value')` now previews with that literal text instead of a generic placeholder, matching what IBM i itself displays on the first output operation.
+- Screen Preview: a `T` (time) field now previews with its digit positions and separator laid out per its `TIMFMT()`/`TIMSEP()` (`*HMS`, `*ISO`, `*USA`, `*EUR`, `*JIS`) instead of a plain run of digits with no separators.
+
+### Fixed
+- Screen Preview: a field too long to fit between its start column and the record's (or window's) right edge, with no `CNTFLD()` of its own, now auto-wraps across multiple rows matching real DDS/STRSDA — filling out the rest of the starting line, then continuing at column 1 using the full line width — instead of rendering as a single run past the edge.
+
 ## [1.7.0] - 2026-09-16
 ### Added
 - A **Change Input Default** command on records and at file level, managing the parameterless form of `CHGINPDFT` — removes the automatic underline input-capable fields otherwise get by default. If the file already has it at file level, the record-level command warns you before offering to add/remove its own. The Screen Preview already reads this keyword: an input-capable field no longer forces its underline on when `CHGINPDFT` is in effect for it, unless the field carries its own `DSPATR(UL)`, which always takes priority.
