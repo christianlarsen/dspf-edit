@@ -157,12 +157,12 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.7.0** - 2026-09-16
-- Added: a "Change Input Default" command on records and at file level, managing a parameterless `CHGINPDFT` — removes the automatic underline input-capable fields otherwise get by default. The Screen Preview already honors it (a field with its own `DSPATR(UL)` is unaffected).
-- Added: Edit Field can now also change a field's kind — alphanumeric ↔ numeric — not just its name and size, offering to remove any keyword that no longer applies (`EDTCDE`/`EDTWRD`/`EDTMSK`, `CHECK(LC)`/`LOWER`) before switching.
-- Added: Screen Preview — `Delete`/`Backspace` with a selection deletes it directly, same confirmation as the "⋮ Actions" menu's Delete.
-- Added: Screen Preview — double-clicking a dimmed background record (SFL/SFLCTL pairing, manual overlay, or a shared window's owner) switches the preview to it, the same as picking it in the tree.
-- Added: Screen Preview — right-clicking a field or constant opens the "⋮ Actions" menu directly instead of the browser's native Cut/Copy/Paste menu, selecting it first if needed.
+**1.8.0** - 2026-09-17
+- Added: Screen Preview — fields with `ERRMSGID()` now show in reverse image while active, same as `ERRMSG()`, with a message-line placeholder naming the message ID/file.
+- Added: Screen Preview — `HELP()`/`PAGEDOWN()`/`PAGEUP()` now show in the function-key legend.
+- Added: Screen Preview — a field with an active `DFTVAL()` now shows its real default text instead of a generic placeholder.
+- Added: Screen Preview — `T` (time) fields now preview with their `TIMFMT()`/`TIMSEP()` separators instead of a plain run of digits.
+- Fixed: Screen Preview — a field too long to fit between its start column and the record's (or window's) right edge, with no `CNTFLD()` of its own, now auto-wraps across multiple rows matching real DDS/STRSDA, instead of rendering as a single run past the edge.
 
 ---
 

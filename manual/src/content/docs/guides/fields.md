@@ -40,6 +40,8 @@ Right-click a record and choose **New Field**, or click **+ Field** in the [Scre
 
 **Add error messages** attaches a DDS error-message keyword (e.g. `ERRMSG()`) to the field, shown in the preview per the same message-line rules as window `ERRMSG()` — see [Screen Preview](/dspf-edit/guides/screen-preview/#windows). Unlike validity checks, a field can carry several `ERRMSG()`s at once, each gated by its own indicator — the menu lists them all, letting you change or remove one individually, add another, or clear them all.
 
+The preview also recognizes an existing `ERRMSGID()` on a field the same way it does `ERRMSG()`: while active, the field shows in reverse image, and the message line shows a placeholder naming the message ID and file (its real text lives in an external message file this extension can't read). This menu itself still only creates `ERRMSG()` with inline text.
+
 ## Indicators
 
 **Add / Remove / Change indicators** conditions the field's visibility, following the same AND/OR rules as constants and attributes — see [Indicators and Conditions](/dspf-edit/guides/indicators/).

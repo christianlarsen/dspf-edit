@@ -64,7 +64,7 @@ Overlay any other record (dimmed) behind the one being previewed, to see how the
 - Click a window's title to edit it.
 - Hovering a window reveals its "⋮" actions menu and a one-click "center horizontally" icon.
 
-An active `ERRMSG()` on a window shows on the window's own reserved message line (its last content row) when the window doesn't specify `*NOMSGLIN` — matching real DDS behavior — instead of always appearing at the bottom of the physical screen.
+An active `ERRMSG()` (or `ERRMSGID()` — see below) on a window shows on the window's own reserved message line (its last content row) when the window doesn't specify `*NOMSGLIN` — matching real DDS behavior — instead of always appearing at the bottom of the physical screen.
 
 See [Windows](/dspf-edit/guides/windows/) for the full reference.
 
@@ -72,13 +72,17 @@ See [Windows](/dspf-edit/guides/windows/) for the full reference.
 
 `SFL`/`SFLCTL` records show every `SFLPAG` row, and automatically preview their paired header/detail record. Detail rows can't be dragged up over the header's own content. A `SFLCTL` record's `SFLMSG()` shows on the message line the same way `ERRMSG()` does (which still takes priority over it, matching the DDS reference), while `SFLDSP` is in effect. See [Subfiles](/dspf-edit/guides/subfiles/).
 
-## Field wrapping (`CNTFLD`)
+## Field wrapping
 
 A field coded with `CNTFLD(n)` wraps across multiple lines in the preview, `n` characters each, all starting at its original column — matching how RDi previews it.
+
+A field with no `CNTFLD()` that's simply too long to fit between its start column and the record's (or window's) right edge wraps automatically too, matching real DDS/STRSDA: it fills out the rest of the starting line, then continues at column 1 using the full line width on each following line, until its whole length is placed.
 
 ## Function-key legend
 
 A function-key legend (`F3`, `F12`, ...) shows every command key available to the record being previewed — file-level, record-level, and (for a subfile) its `SFL`/`SFLCTL` pair's own `CAxx`/`CFxx` keys, since both preview together as one screen. A key still shows even when its indicator condition isn't currently met, so you can see it's defined; it switches to solid/inverted styling when it's actually active under the current simulated indicators.
+
+`HELP()`, `PAGEDOWN()`, and `PAGEUP()` show in the same legend, labeled **Help**, **Page Up**, and **Page Down** — they're dedicated keyboard keys rather than a numbered `Fnn` slot (`PAGEDOWN`/`PAGEUP` are DDS's own names for `ROLLUP`/`ROLLDOWN`), so they're listed after the numbered keys instead of trying to fit an `Fnn` label that doesn't apply to them.
 
 A subfile's `SFLDROP`/`SFLFOLD` fold/truncate key, if declared, shows apart from the rest after a `|` separator, in blue — see [Subfiles](/dspf-edit/guides/subfiles/).
 
@@ -89,6 +93,14 @@ For files with more than one `DSPSIZ` format (e.g. `*DS3`/`*DS4`), switch which 
 ## Numeric formatting
 
 The decimal point and thousands-separator convention used to preview `EDTCDE()`-edited numeric fields — US or European — is configurable from the **⚙ Configuration** panel, either picked manually or fetched with one click from the connected IBM i's `QDECFMT` system value. See [Configuration](/dspf-edit/guides/configuration/).
+
+## Time fields
+
+A `T` (time) field previews with its digit positions and separator laid out per its `TIMFMT()`/`TIMSEP()` — `*HMS`'s separator can be overridden by `TIMSEP()` (defaulting to `:`), while `*ISO` (the default when `TIMFMT()` isn't coded), `*USA`, `*EUR`, and `*JIS` each use their own fixed one. `*USA`'s trailing AM/PM half has no real value to preview, so it previews as ordinary placeholder digits rather than guessing which.
+
+## Default values
+
+An output-capable (`O`/`B`) field carrying an active `DFTVAL('value')` previews with that literal text — padded or truncated to the field's width — instead of a generic placeholder, matching what IBM i itself displays on the first output operation.
 
 ## Focus mode
 

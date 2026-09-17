@@ -200,6 +200,34 @@ function getEditWordMask(attributes: AttributeWithIndicators[] | undefined): str
 };
 
 /**
+ * Extracts a field's DFTVAL() default value text, if it carries one — confirmed against the manual:
+ * on an output-capable (O/B) field, this is what IBM i itself displays on the first output
+ * operation, before any program value overrides it, so the preview shows it instead of a guessed
+ * placeholder. Mutually exclusive with DFT/EDTCDE/EDTWRD (the manual says so directly), so there's
+ * never an editing mask to reconcile it with.
+ * @param attributes - The field's active DDS attributes
+ */
+function getDefaultValueText(attributes: AttributeWithIndicators[] | undefined): string | null {
+    const attr = attributes?.find(a => /^DFTVAL\(/i.test(a.value));
+    if (!attr) {
+        return null;
+    };
+
+    return attr.value.match(/^DFTVAL\(\s*'([^']*)'\s*\)$/i)?.[1] ?? null;
+};
+
+/**
+ * Fits a DFTVAL() value to a field's actual display width: DDS doesn't enforce the value to be
+ * exactly the field's length, so a shorter one is padded (matching how the field's own blank
+ * positions would show) and a longer one is truncated (all IBM i itself has room to store/display).
+ * @param value - The raw DFTVAL() text
+ * @param length - The field's display length
+ */
+function fitDefaultValueText(value: string, length: number): string {
+    return value.length >= length ? value.slice(0, length) : value.padEnd(length, ' ');
+};
+
+/**
  * The standard DDS numeric edit codes: whether each inserts a thousands separator, and what (if
  * any) sign indicator it reserves room for. The separator/decimal-point characters themselves come
  * from the user's configured decimal format (see dspf-edit.utils/dspf-edit.decimal-format.ts,
@@ -407,6 +435,58 @@ function getUneditedNumericMask(type: string | undefined, usage: string | undefi
 };
 
 /**
+ * Fixed separator for every TIMFMT() format except *HMS, which is the only one TIMSEP() can override
+ * — the manual is explicit that *ISO/*USA/*EUR/*JIS "have fixed separators" and reject TIMSEP.
+ * *USA's own "hh:mm AM/PM" doesn't fit the plain hh-sep-mm-sep-ss shape (see getTimeFormatMask), but
+ * still needs its fixed ':' between hours and minutes.
+ */
+const FIXED_TIME_FORMAT_SEPARATOR: Record<string, string> = { '*ISO': '.', '*USA': ':', '*EUR': '.', '*JIS': ':' };
+
+/**
+ * Resolves a Type-T field's TIMFMT() format name, defaulting to *ISO per the manual ("If you do not
+ * specify the TIMFMT keyword, the default is *ISO") — applies even with no TIMFMT() at all, matching
+ * how an unedited numeric field still gets a default mask (see getUneditedNumericMask).
+ * @param attributes - The field's active DDS attributes
+ */
+function getTimeFormat(attributes: AttributeWithIndicators[] | undefined): string {
+    const attr = attributes?.find(a => /^TIMFMT\(/i.test(a.value));
+    const format = attr?.value.match(/^TIMFMT\(\s*(\*\w+)\s*\)$/i)?.[1]?.toUpperCase();
+    return format ?? '*ISO';
+};
+
+/**
+ * Resolves the separator character for a Type-T field under the given TIMFMT() format: only *HMS
+ * allows TIMSEP() to override it (a custom character, or *JOB — which the manual says the HLL/
+ * application treat as a colon, there being no real job attribute to read here). Every other format
+ * uses its own fixed separator (see FIXED_TIME_FORMAT_SEPARATOR).
+ * @param attributes - The field's active DDS attributes
+ * @param format - This field's resolved TIMFMT() format (see getTimeFormat)
+ */
+function getTimeSeparator(attributes: AttributeWithIndicators[] | undefined, format: string): string {
+    if (format !== '*HMS') {
+        return FIXED_TIME_FORMAT_SEPARATOR[format] ?? ':';
+    };
+
+    const attr = attributes?.find(a => /^TIMSEP\(/i.test(a.value));
+    const sepMatch = attr?.value.match(/^TIMSEP\(\s*'(.)'\s*\)$/i);
+    return sepMatch?.[1] ?? ':';
+};
+
+/**
+ * Builds an EDTWRD-mask-shaped string (blanks mark digit positions, everything else is literal) for
+ * a Type-T (time) field, per its resolved TIMFMT()/TIMSEP() — e.g. "  :  :  " for *HMS with the
+ * default colon. *USA's "hh:mm AM/PM" has no real data to preview for the AM/PM half (this is a
+ * placeholder, not a live value), so those two positions are left as ordinary blanks like the digits
+ * around them — only the fixed ':' between hours and minutes is shown.
+ * @param attributes - The field's active DDS attributes
+ */
+function getTimeFormatMask(attributes: AttributeWithIndicators[] | undefined): string {
+    const format = getTimeFormat(attributes);
+    const separator = getTimeSeparator(attributes, format);
+    return format === '*USA' ? `  ${separator}     ` : `  ${separator}  ${separator}  `;
+};
+
+/**
  * Resolves the mask that determines a numeric field's placeholder text and extra display width
  * beyond its raw DDS length — an explicit EDTWRD (takes precedence, since DDS doesn't allow both on
  * the same field), a standard EDTCDE code, or — when neither is present — the extra sign/decimal-
@@ -419,6 +499,13 @@ function getUneditedNumericMask(type: string | undefined, usage: string | undefi
  * @param rawDecimals - The field's decimal positions as parsed, `undefined` when left blank
  */
 function getEditingMask(attributes: AttributeWithIndicators[] | undefined, type: string | undefined, usage: string | undefined, length: number, decimals: number, rawDecimals: number | undefined): string | null {
+    // A time field's separators show regardless of usage (unlike an unedited numeric's sign/decimal
+    // point, which is an input-only convention) — DDS itself never allows EDTWRD/EDTCDE on Type T, so
+    // this always wins outright rather than needing to fall through the checks below.
+    if ((type || '').trim().toUpperCase() === 'T') {
+        return getTimeFormatMask(attributes);
+    };
+
     const wordMask = getEditWordMask(attributes);
     if (wordMask) {
         return wordMask;
@@ -750,11 +837,19 @@ function combineWdwBorderLevel(values: string[]): { color?: string; dspatr?: str
     return { color, dspatr, chars };
 };
 
-/** A single function-key command (CAxx/CFxx), as relevant to the preview's legend. */
+/** A single function-key command: CAxx/CFxx (numbered), or HELP/PAGEDOWN/PAGEUP (a dedicated
+ * keyboard key rather than an Fnn slot — PAGEDOWN/PAGEUP are DDS's own names for ROLLUP/ROLLDOWN,
+ * which the manual says "function like CF keys"), as relevant to the preview's legend. */
 interface FunctionKeyCommand {
-    type: 'CA' | 'CF';
+    type: 'CA' | 'CF' | 'HELP' | 'PAGEDOWN' | 'PAGEUP';
+    /** For CA/CF, the 2-digit key number; for HELP/PAGEDOWN/PAGEUP, the type name itself, since
+     * there's at most one of each per record and it needs no numeric slot to stay unique. */
     keyNumber: string;
     description: string;
+    /** The response indicator IBM i turns on when the key is pressed at runtime (the first `nn` in
+     * `HELP(nn 'text')`/`PAGEDOWN(nn 'text')`/`PAGEUP(nn 'text')`) — only captured for these three,
+     * whose Fnn-less label has nowhere else to show it (see getVisibleFunctionKeys). */
+    responseIndicator?: string;
     indicators?: DdsIndicator[];
     displayFormat?: string;
 };
@@ -763,7 +858,10 @@ interface FunctionKeyCommand {
  * Parses CAxx()/CFxx() key command lines out of an arbitrary attribute list (a record's own, or the
  * file's) — same format `dspf-edit.add-keys.ts` generates/reads, kept independent since this also
  * needs each command's own indicators/display-format condition, which that command's own model
- * doesn't carry (it's only used there for a flat "current commands" summary).
+ * doesn't carry (it's only used there for a flat "current commands" summary). Also picks up
+ * HELP()/PAGEDOWN()/PAGEUP(), which the manual documents with the identical `(nn 'text')` form (e.g.
+ * "HELP(01 'HELP KEY PRESSED')") but no dedicated key-command tooling generates/reads elsewhere in
+ * this extension, so they're matched here directly instead of reusing the CA/CF regex.
  * @param attributes - Attribute lines to scan
  */
 function extractFunctionKeyCommands(attributes: DdsAttribute[] | undefined): FunctionKeyCommand[] {
@@ -776,12 +874,29 @@ function extractFunctionKeyCommands(attributes: DdsAttribute[] | undefined): Fun
         // that had to wrap (see dspf-edit.add-keys.ts's extractKeyCommandsFromAttributes for the
         // matching read-side fix, and validateKeyCommandDescription for where 25 legitimately still
         // applies: only when this tool itself creates a new one).
-        const match = attr.value.match(/^(CA|CF)(\d{2})\(\d{2}\s+'([^']*)'\)$/);
-        if (match) {
+        const caCfMatch = attr.value.match(/^(CA|CF)(\d{2})\(\d{2}\s+'([^']*)'\)$/);
+        if (caCfMatch) {
             commands.push({
-                type: match[1] as 'CA' | 'CF',
-                keyNumber: match[2],
-                description: match[3],
+                type: caCfMatch[1] as 'CA' | 'CF',
+                keyNumber: caCfMatch[2],
+                description: caCfMatch[3],
+                indicators: attr.indicators,
+                displayFormat: attr.displayFormat
+            });
+            return;
+        };
+
+        // Captures the response indicator (the first `nn`) too: unlike CA/CF, whose Fnn label
+        // already names their key number, HELP/PAGEDOWN/PAGEUP have no numbered slot to show it —
+        // it only surfaces in the preview's legend tooltip (see getVisibleFunctionKeys).
+        const namedMatch = attr.value.match(/^(HELP|PAGEDOWN|PAGEUP)\((\d{2})\s+'([^']*)'\)$/i);
+        if (namedMatch) {
+            const type = namedMatch[1].toUpperCase() as 'HELP' | 'PAGEDOWN' | 'PAGEUP';
+            commands.push({
+                type,
+                keyNumber: type,
+                description: namedMatch[3],
+                responseIndicator: namedMatch[2],
                 indicators: attr.indicators,
                 displayFormat: attr.displayFormat
             });
@@ -1307,7 +1422,7 @@ export class RecordPreviewPanel {
 
         const canvasSize = isWindow ? { rows: defaultSize.rows, cols: defaultSize.cols } : { rows: size.rows, cols: size.cols };
 
-        let items = this.buildItems(recordInfo, rowOffset, colOffset, false);
+        let items = this.buildItems(recordInfo, rowOffset, colOffset, false, size.cols);
         if (isSflRecordInfo(recordInfo)) {
             const { visibleBase, repeats } = this.buildSubfileDisplayItems(items, this.recordName);
             items = [...visibleBase, ...repeats];
@@ -1440,7 +1555,7 @@ export class RecordPreviewPanel {
         const rOffset = isWin && size ? size.originRow + (WINDOW_BORDER_TOP - 1) : 0;
         const cOffset = isWin && size ? size.originCol + (WINDOW_BORDER_LEFT - 1) : 0;
 
-        let items = this.buildItems(record, rOffset, cOffset, true);
+        let items = this.buildItems(record, rOffset, cOffset, true, size?.cols ?? getDefaultSize().cols);
         if (isSflRecordInfo(record)) {
             const { visibleBase, repeats } = this.buildSubfileDisplayItems(items, recordName);
             items = [...visibleBase, ...repeats];
@@ -1465,8 +1580,10 @@ export class RecordPreviewPanel {
      * @param rowOffset - Added to each field/constant's own row (0 unless this is a window's own content)
      * @param colOffset - Added to each field/constant's own col (0 unless this is a window's own content)
      * @param isBackground - Whether these items belong to the record overlaid behind a window
+     * @param rowWidth - The record's own display width (window content width, or full screen width otherwise),
+     * used to auto-wrap a field too long to fit on one line when it carries no CNTFLD() of its own
      */
-    private buildItems(recordInfo: FieldsPerRecord, rowOffset: number, colOffset: number, isBackground: boolean): PreviewItem[] {
+    private buildItems(recordInfo: FieldsPerRecord, rowOffset: number, colOffset: number, isBackground: boolean, rowWidth: number): PreviewItem[] {
         const items: PreviewItem[] = [];
 
         // Indicator toggling only applies to the record being actively previewed; an overlaid
@@ -1508,9 +1625,12 @@ export class RecordPreviewPanel {
                 const effectiveDecimals = rawDecimals ?? 0;
                 const effectiveType = resolvedRef?.type ?? field.type;
                 const editingMask = getEditingMask(activeAttrs, effectiveType, field.usage, effectiveLength, effectiveDecimals, rawDecimals);
-                const text = isReferenced
-                    ? getFieldPlaceholderText(field.name, field.type, field.usage, 1)
-                    : getFieldPlaceholderText(field.name, effectiveType, field.usage, effectiveLength, editingMask, rawDecimals);
+                const defaultValueText = !isReferenced ? getDefaultValueText(activeAttrs) : null;
+                const text = defaultValueText !== null
+                    ? fitDefaultValueText(defaultValueText, effectiveLength)
+                    : isReferenced
+                        ? getFieldPlaceholderText(field.name, field.type, field.usage, 1)
+                        : getFieldPlaceholderText(field.name, effectiveType, field.usage, effectiveLength, editingMask, rawDecimals);
                 const color = isReferenced || (field.referenced && activeAttrs.length === 0)
                     ? getReferencedFieldColor()
                     : getDisplayColor(activeAttrs, hasDisplayAttribute(activeAttrs, 'HI'));
@@ -1559,11 +1679,29 @@ export class RecordPreviewPanel {
                 // of a single run that overflows past the record's right edge. A wrapped line's own
                 // width isn't the field's real length, so it's never individually resizable.
                 const continuedWidth = getContinuedFieldWidth(activeAttrs);
+                // Without CNTFLD, DDS still auto-wraps a field whose length runs past the display's
+                // (or window's) right edge — confirmed against real STRSDA: unlike CNTFLD's fixed
+                // per-line width kept at the field's own column, this fills out the rest of the
+                // current line, then wraps to column 1 using the full line width for every following
+                // line, until the field's whole length is placed.
+                const remainingOnFirstLine = rowWidth - trueCol + 1;
                 if (continuedWidth && continuedWidth > 0 && text.length > continuedWidth) {
                     const chunkCount = Math.ceil(text.length / continuedWidth);
                     for (let chunk = 0; chunk < chunkCount; chunk++) {
                         const chunkText = text.substr(chunk * continuedWidth, continuedWidth);
                         items.push({ ...baseItem, text: chunkText, row: trueRow + rowOffset + chunk, length: chunkText.length, isResizable: false });
+                    };
+                } else if (remainingOnFirstLine > 0 && text.length > remainingOnFirstLine) {
+                    const firstChunkText = text.substr(0, remainingOnFirstLine);
+                    items.push({ ...baseItem, text: firstChunkText, row: trueRow + rowOffset, col: trueCol + colOffset, length: firstChunkText.length, isResizable: false });
+
+                    let consumed = remainingOnFirstLine;
+                    let chunk = 1;
+                    while (consumed < text.length) {
+                        const chunkText = text.substr(consumed, rowWidth);
+                        items.push({ ...baseItem, text: chunkText, row: trueRow + rowOffset + chunk, col: 1 + colOffset, length: chunkText.length, isResizable: false });
+                        consumed += chunkText.length;
+                        chunk++;
                     };
                 } else {
                     items.push({ ...baseItem, text, row: trueRow + rowOffset, length: text.length });
@@ -1770,7 +1908,7 @@ export class RecordPreviewPanel {
      * none currently apply).
      * @param recordName - Name of the record being previewed
      */
-    private getVisibleFunctionKeys(recordName: string): { key: string; description: string; active: boolean; isSflDrop: boolean }[] {
+    private getVisibleFunctionKeys(recordName: string): { key: string; description: string; active: boolean; isSflDrop: boolean; responseIndicator?: string }[] {
         const forFormat = filterForActiveFormat(getEffectiveFunctionKeyCommands(recordName), this.activeDisplayFormat);
         const sflDropKeyNumber = findSflFoldToggleKeyNumber(recordName);
 
@@ -1784,19 +1922,26 @@ export class RecordPreviewPanel {
             };
         };
 
-        const result: { key: string; description: string; active: boolean; isSflDrop: boolean }[] = [];
-        for (const [keyNumber, candidates] of byKeyNumber) {
+        // HELP/PAGEDOWN/PAGEUP map to a dedicated keyboard key, not an Fnn slot, so they get their
+        // own label instead of the `F${n}` numbered ones — sorted after all numbered keys, in the
+        // order a 5250 keyboard lays them out (Help, then the two Page/Roll keys).
+        const NAMED_KEY_LABELS: Record<string, string> = { HELP: 'Help', PAGEUP: 'Page Up', PAGEDOWN: 'Page Down' };
+        const NAMED_KEY_ORDER: Record<string, number> = { HELP: 1000, PAGEUP: 1001, PAGEDOWN: 1002 };
+        const sortValue = (keyNumber: string): number => NAMED_KEY_ORDER[keyNumber] ?? parseInt(keyNumber, 10);
+
+        const entries = [...byKeyNumber.entries()].sort((a, b) => sortValue(a[0]) - sortValue(b[0]));
+
+        return entries.map(([keyNumber, candidates]) => {
             const activeCandidate = candidates.find(cmd => this.isItemDisplayed(cmd.indicators, this.indicatorsEnabled));
             const chosen = activeCandidate ?? candidates[0];
-            result.push({
-                key: `F${parseInt(keyNumber, 10)}`,
+            return {
+                key: NAMED_KEY_LABELS[keyNumber] ?? `F${parseInt(keyNumber, 10)}`,
                 description: chosen.description,
                 active: Boolean(activeCandidate),
-                isSflDrop: keyNumber === sflDropKeyNumber
-            });
-        };
-
-        return result.sort((a, b) => parseInt(a.key.slice(1), 10) - parseInt(b.key.slice(1), 10));
+                isSflDrop: keyNumber === sflDropKeyNumber,
+                responseIndicator: chosen.responseIndicator
+            };
+        });
     };
 
     /**
@@ -1816,23 +1961,29 @@ export class RecordPreviewPanel {
     };
 
     /**
-     * Whether a field's own ERRMSG() is currently active (its conditioning indicator satisfied) —
-     * the field it's attached to is shown in reverse image while its error is in effect, same as a
-     * real 5250 highlights the field an error message refers to.
+     * Whether a field's own ERRMSG()/ERRMSGID() is currently active (its conditioning indicator
+     * satisfied) — the field it's attached to is shown in reverse image while its error is in
+     * effect, same as a real 5250 highlights the field an error message refers to. ERRMSGID behaves
+     * identically to ERRMSG here: the manual gives them equal standing as "the" error-message
+     * keywords for a field, differing only in where the message text comes from (inline literal vs.
+     * a message file this extension can't read).
      */
     private hasActiveErrorMessage(attributes: AttributeWithIndicators[], useLiveIndicators: boolean): boolean {
         const forFormat = filterForActiveFormat(attributes, this.activeDisplayFormat);
-        return forFormat.some(attr => /^ERRMSG\(/i.test(attr.value) && this.isItemDisplayed(attr.indicators, useLiveIndicators));
+        return forFormat.some(attr => /^ERRMSG(ID)?\(/i.test(attr.value) && this.isItemDisplayed(attr.indicators, useLiveIndicators));
     };
 
     /**
-     * Finds the record's currently-active ERRMSG() message, if any: an ERRMSG keyword (record-level,
-     * or on one of the record's own fields/constants) whose own conditioning indicator is satisfied
-     * by the indicator simulation — same gating already used for COLOR()/DSPATR() via isItemDisplayed.
-     * Falls back to the SFLCTL record's own SFLMSG() (a subfile message) when no ERRMSG is active,
-     * matching the DDS manual's stated priority (ERRMSG over SFLMSG) and its requirement that SFLDSP
-     * be in effect for SFLMSG to be processed. Shown on the display's message line (the bottom row)
-     * like a real 5250 error/subfile message, in white.
+     * Finds the record's currently-active ERRMSG()/ERRMSGID() message, if any: an ERRMSG/ERRMSGID
+     * keyword (record-level, or on one of the record's own fields/constants) whose own conditioning
+     * indicator is satisfied by the indicator simulation — same gating already used for
+     * COLOR()/DSPATR() via isItemDisplayed. ERRMSGID's own real message text lives in an external
+     * message file this extension has no access to, so it's shown as a placeholder naming the
+     * message ID and file instead of fabricating text. Falls back to the SFLCTL record's own
+     * SFLMSG() (a subfile message) when neither is active, matching the DDS manual's stated priority
+     * (ERRMSG, then ERRMSGID, then SFLMSG) and its requirement that SFLDSP be in effect for SFLMSG to
+     * be processed. Shown on the display's message line (the bottom row) like a real 5250
+     * error/subfile message, in white.
      */
     private resolveErrorMessage(recordInfo: FieldsPerRecord): { text: string } | null {
         const candidates: { value: string; indicators?: DdsIndicator[]; displayFormat?: string }[] = [
@@ -1848,6 +1999,13 @@ export class RecordPreviewPanel {
             const errmsgMatch = attr.value.match(/^ERRMSG\('([^']+)'\s*(\d{2})?\)$/);
             if (errmsgMatch) {
                 return { text: errmsgMatch[1] };
+            };
+        };
+
+        for (const attr of displayed) {
+            const errmsgidMatch = attr.value.match(/^ERRMSGID\(\s*(\S+)\s+(\S+)/i);
+            if (errmsgidMatch) {
+                return { text: `Message ${errmsgidMatch[1]} in ${errmsgidMatch[2]} (text not available in preview)` };
             };
         };
 
