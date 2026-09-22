@@ -7,7 +7,8 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fileSizeAttributes, fieldsPerRecords, getRecordSize, getSubfileMinDetailRow } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument, findEndLineIndex, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { extractMultiLineConstant, splitConstantValueAndKeywords } from '../dspf-edit.parser/dspf-edit.parser';
 
 // TYPE DEFINITIONS
 
@@ -571,16 +572,25 @@ export async function updateExistingConstant(
 ): Promise<boolean> {
     const newValue = `'${newText}'`;
     const uri = editor.document.uri;
+    const document = editor.document;
     const workspaceEdit = new vscode.WorkspaceEdit();
 
-    const endLineIndex = findEndLineIndex(editor.document, element.lineIndex);
-    const fitsInSingleLine = newValue.length <= 36;
-
-    if (fitsInSingleLine) {
-        await updateConstantSingleLine(workspaceEdit, uri, editor, element, newValue, endLineIndex);
-    } else {
-        await updateConstantMultiLine(workspaceEdit, uri, editor, element, newValue, endLineIndex);
+    const firstLineText = document.lineAt(element.lineIndex).text;
+    const rawLines = [firstLineText];
+    for (let i = element.lineIndex + 1; i < document.lineCount; i++) {
+        rawLines.push(document.lineAt(i).text);
     };
+
+    // Resolve the old value's own continuation and split off any keyword text sharing its line(s)
+    // (e.g. "DSPATR(UL) COLOR(RED)" right after the closing quote), exactly as the parser itself
+    // does — so replacing the constant's text doesn't silently discard keywords coded on the same
+    // physical line(s).
+    const { fullValue: oldRaw, lastLineIndex: relativeLastLine } = extractMultiLineConstant(rawLines, 0, firstLineText.substring(5));
+    const { keywordText } = splitConstantValueAndKeywords(oldRaw);
+    const endLineIndex = element.lineIndex + relativeLastLine;
+
+    const newLines = buildConstantLines(firstLineText.substring(0, 44), newValue, keywordText);
+    replaceLineRange(workspaceEdit, uri, document, element.lineIndex, endLineIndex, newLines);
 
     return applyWorkspaceEdit(workspaceEdit, 'update the constant');
 };
@@ -624,69 +634,61 @@ export async function insertNewConstant(editor: vscode.TextEditor, constantInfo:
 // LINE CREATION FUNCTIONS
 
 /**
- * Updates a constant that fits in a single line.
- * @param workspaceEdit - The workspace edit to apply changes to
- * @param uri - The document URI
- * @param element - The constant element
- * @param newValue - The new constant value
- * @param endLineIndex - The end line index of the current constant
+ * Builds the physical line(s) for a constant's value, re-attaching any keyword text that shares its
+ * line(s) (e.g. "DSPATR(UL) COLOR(RED)") after the value, and re-paginating across as many lines as
+ * the combined text now needs — independently of how many lines the old value happened to use.
+ * @param prefix - The first line's own columns 1-44 (name/row/col area), reused verbatim
+ * @param value - The new quoted constant value (already wrapped in single quotes)
+ * @param keywordText - Keyword text that followed the old value on its own line(s), or '' if none
  */
-async function updateConstantSingleLine(
-    workspaceEdit: vscode.WorkspaceEdit,
-    uri: vscode.Uri,
-    editor: vscode.TextEditor,
-    element: any,
-    newValue: string,
-    endLineIndex: number
-): Promise<void> {
-    const firstLine = editor.document.lineAt(element.lineIndex).text;
-    const updatedLine = firstLine.substring(0, 44) + newValue;
+function buildConstantLines(prefix: string, value: string, keywordText: string): string[] {
+    const joined = keywordText ? `${value} ${keywordText}` : value;
 
-    workspaceEdit.delete(uri, new vscode.Range(
-        element.lineIndex, 0, 
-        element.lineIndex + endLineIndex - element.lineIndex + 1, 0
-    ));
-
-    if (element.lineIndex >= editor.document.lineCount) {
-        workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), '\n');        
-    };
-    workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), updatedLine);
-    if (element.lineIndex < editor.document.lineCount - 1) {
-        workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), '\n');        
+    if (joined.length <= 36) {
+        return [prefix + joined];
     };
 
+    const contPrefix = '     A' + ' '.repeat(38);
+    const lines: string[] = [];
+    let rest = joined;
+    let isFirst = true;
+
+    while (rest.length > 36) {
+        lines.push((isFirst ? prefix : contPrefix) + rest.substring(0, 35) + '-');
+        rest = rest.substring(35);
+        isFirst = false;
+    };
+    lines.push((isFirst ? prefix : contPrefix) + rest);
+
+    return lines;
 };
 
 /**
- * Updates a constant that spans multiple lines.
- * @param workspaceEdit - The workspace edit to apply changes to
+ * Replaces a contiguous range of document lines with new content, handling the end-of-document edge
+ * cases (no trailing newline to delete/insert around when the range touches the last line).
+ * @param workspaceEdit - The workspace edit to append to
  * @param uri - The document URI
- * @param element - The constant element
- * @param newValue - The new constant value
- * @param endLineIndex - The end line index of the current constant
+ * @param document - The document being edited
+ * @param startLine - First line to replace
+ * @param endLine - Last line to replace (inclusive)
+ * @param newLines - Replacement lines
  */
-async function updateConstantMultiLine(
+function replaceLineRange(
     workspaceEdit: vscode.WorkspaceEdit,
     uri: vscode.Uri,
-    editor: vscode.TextEditor,
-    element: any,
-    newValue: string,
-    endLineIndex: number
-): Promise<void> {
-    const firstLine = editor.document.lineAt(element.lineIndex).text;
-    const updatedLines = createMultiLineConstantFromBase(firstLine, newValue);
+    document: vscode.TextDocument,
+    startLine: number,
+    endLine: number,
+    newLines: string[]
+): void {
+    workspaceEdit.delete(uri, new vscode.Range(startLine, 0, endLine + 1, 0));
 
-    workspaceEdit.delete(uri, new vscode.Range(
-        element.lineIndex, 0, 
-        element.lineIndex + endLineIndex - element.lineIndex + 1, 0
-    ));
-
-    if (element.lineIndex >= editor.document.lineCount) {
-        workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), '\n');        
+    if (startLine >= document.lineCount) {
+        workspaceEdit.insert(uri, new vscode.Position(startLine, 0), '\n');
     };
-    workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), updatedLines.join('\n'));
-    if (element.lineIndex < editor.document.lineCount - 1) {
-        workspaceEdit.insert(uri, new vscode.Position(element.lineIndex, 0), '\n');        
+    workspaceEdit.insert(uri, new vscode.Position(startLine, 0), newLines.join('\n'));
+    if (startLine < document.lineCount - 1) {
+        workspaceEdit.insert(uri, new vscode.Position(startLine, 0), '\n');
     };
 };
 

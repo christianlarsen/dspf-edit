@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.8.1] - 2026-09-22
+### Fixed
+- A constant with a color or display attribute (e.g. `COLOR(RED)`, `DSPATR(UL)`) written on the same source line as its own text could show incorrectly in the Screen Preview, and editing that constant's text could erase the color/attribute entirely. Fixed.
+- Add Attribute / Add Color: "Remove all" and "Replace all" could leave that same kind of color/attribute in place on a constant instead of clearing it. Now detected and removed correctly.
+
 ## [1.8.0] - 2026-09-17
 ### Added
 - Screen Preview: fields carrying `ERRMSGID()` are now recognized the same way as `ERRMSG()` — shown in reverse image while active, with the message line showing a placeholder naming the message ID and file (its real text lives in an external message file this extension can't read).

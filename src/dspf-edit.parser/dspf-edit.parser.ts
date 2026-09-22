@@ -608,7 +608,7 @@ function parseConstantElement(
  * @param trimmedLine - Initial line content
  * @returns Full constant value and last line index used
  */
-function extractMultiLineConstant(
+export function extractMultiLineConstant(
     lines: string[],
     startIndex: number,
     trimmedLine: string
@@ -643,7 +643,7 @@ function extractMultiLineConstant(
  * STRSDA, which renders such a line exactly as if the keyword were on its own line below).
  * @param raw - The constant's raw value text (post multi-line-continuation joining), already trimmed
  */
-function splitConstantValueAndKeywords(raw: string): { value: string; keywordText: string } {
+export function splitConstantValueAndKeywords(raw: string): { value: string; keywordText: string } {
     if (raw.startsWith("'")) {
         // Find the closing quote, treating '' as an escaped quote inside the literal.
         let i = 1;
