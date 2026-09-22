@@ -1,0 +1,18 @@
+     A*==============================================================
+     A* Customer master physical file
+     A* DDS Canvas sample
+     A*==============================================================
+     A                                      UNIQUE
+     A          R CUSREC                    TEXT('Customer master record')
+     A            CUSNO          7P 0       TEXT('Customer number')
+     A                                      COLHDG('Customer' 'Number')
+     A            CUSNAME       30A         TEXT('Customer name')
+     A                                      COLHDG('Customer' 'Name')
+     A            CUSADDR       30A         TEXT('Address line')
+     A            CUSCITY       20A         TEXT('City')
+     A            CUSZIP         5S 0       TEXT('Postal code')
+     A            CUSSTS         1A         TEXT('Status')
+     A                                      VALUES('A' 'I' 'D')
+     A            CUSCRT          L         DATFMT(*ISO)
+     A                                      TEXT('Created date')
+     A          K CUSNO

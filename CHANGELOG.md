@@ -4,9 +4,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+### Added
+- **DDS source editing assistance** — a new text-editor layer for the moments you write DDS by hand, alongside the existing visual tooling. Contributed from the [DDS Canvas](https://marketplace.visualstudio.com/items?itemName=rabbihossain.dds-canvas) extension (MIT, by Rabbi Hossain) and self-contained in `src/dspf-edit.assist/`:
+  - Status bar column assistant (`DDS | Col 27 | Name`), aligned right so it never competes with the schema-filter and referenced-fields items on the left. Click it for the column reference.
+  - **Show DDS Column Reference** command: a searchable list of every DDS region that moves the cursor to the chosen column on the current line, padding the line when it is too short.
+  - Hover documentation for every DDS column region, and for DDS keywords in the keyword area (`TEXT`, `COLHDG`, `SFLCTL`, `WINDOW`, `EDTCDE`, `REFFLD`, `CAnn`, ...) with signature, explanation and a working example.
+  - Diagnostics for the classic fixed-format mistakes: text past column 80, invalid data type / usage / name-type letters, non-numeric or misaligned length, decimals exceeding the length or set on a character field, packed/zoned over 63 digits, character over 32766, names too long or not left-justified, length or type on an `R`/`K` line, column 6 not `A`. Debounced, and comment lines are ignored.
+  - Keyword completion in the keyword area (column 45 onward), filtered by file type.
+  - Column guides at every DDS boundary, using native `editor.rulers` scoped to the DDS languages, with a **Toggle DDS Column Guides** command.
+  - An **Apply Recommended DDS Editor Settings** command: one-time, explicit setup of the editor settings fixed-format source needs (column guides, one space per `Tab`, no indentation guessing, no word wrap), written per DDS language so nothing else is affected. Nothing is written to user settings unless the command is run.
+  - A subtle cursor-section highlight (8% opacity, theme-aware, region only), with a **Toggle DDS Section Highlight** command.
+  - Outline and breadcrumb support for record formats, fields and keys.
+  - 17 column-perfect snippets (`dspf-record`, `dspf-subfile`, `dspf-window`, `pf-record`, `key-field`, ...), each verified by the test suite against the diagnostics above.
+  - 10 new settings under `dspf-edit.assist.*`, including `dspf-edit.assist.enabled` as a master switch that turns the whole layer off and leaves the graphical DSPF tooling untouched.
+- **The DDS languages are now registered by this extension.** `.dspf`, `.prtf`, `.pf`, `.lf` and `.dds` map to `dds.dspf`, `dds.prtf`, `dds.pf`, `dds.lf` and `dds`, with a fixed-format TextMate grammar and a language configuration. Previously the `dds.dspf` language ID had to come from another extension (IBM i Languages or Code for IBM i) for the schema tree and preview to activate at all; a clean install now works on its own, and those extensions remain fully compatible because the language IDs are identical.
+- 35 unit tests covering the column map, the line parser, every diagnostic rule, the snippets and the sample sources — including regressions asserting the new diagnostics stay silent on real display-file conditioning (AND/OR indicator continuation lines, positioned constants, `WINDOW` records).
 
-- More DDS features and improvements planned.
-- Bug fixes and stability enhancements.
+### Changed
+- The extension now also activates on `onLanguage:dds*`, so opening a DDS source is enough — the schema tree and preview no longer wait for the DSPF Structure view to be opened first.
+- Test output (`out/test/**`) is no longer shipped inside the published `.vsix`.
 
 ## [1.8.2] - 2026-09-26
 ### Fixed

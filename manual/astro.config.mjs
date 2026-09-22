@@ -57,6 +57,7 @@ export default defineConfig({
 					items: [
 						{ label: 'Schema Tree', link: '/guides/schema-tree/' },
 						{ label: 'Screen Preview', link: '/guides/screen-preview/' },
+						{ label: 'DDS Source Editing', link: '/guides/dds-source-editing/' },
 						{ label: 'Records', link: '/guides/records/' },
 						{ label: 'Fields', link: '/guides/fields/' },
 						{ label: 'Constants', link: '/guides/constants/' },

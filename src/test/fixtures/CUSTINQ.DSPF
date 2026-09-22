@@ -1,0 +1,25 @@
+     A*==============================================================
+     A* Customer inquiry display file
+     A* DDS Canvas sample
+     A*==============================================================
+     A                                      INDARA
+     A                                      CA03(03 'Exit')
+     A                                      CA12(12 'Cancel')
+     A          R HEADER
+     A                                  1 30'Customer Inquiry'
+     A                                      DSPATR(HI)
+     A                                  1  2DATE(*YY)
+     A                                  1 71TIME
+     A                                  3  2'Customer number:'
+     A            CUSNO          7Y 0B  3 20CHECK(RZ)
+     A  99                                  ERRMSG('Customer not found' 99)
+     A          R DETAIL                    OVERLAY
+     A                                  5  2'Name . . . . :'
+     A            CUSNAME       30A  O  5 18
+     A                                  6  2'Address  . . :'
+     A            CUSADDR       30A  O  6 18
+     A                                  7  2'City . . . . :'
+     A            CUSCITY       20A  O  7 18
+     A          R FOOTER                    OVERLAY
+     A                                 23  2'F3=Exit   F12=Cancel'
+     A                                      COLOR(BLU)

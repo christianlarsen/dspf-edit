@@ -2,7 +2,9 @@
 .vscode/**
 .vscode-test/**
 manual/**
+samples/**
 src/**
+out/test/**
 .gitignore
 .yarnrc
 vsc-extension-quickstart.md

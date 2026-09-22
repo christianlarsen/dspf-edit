@@ -24,6 +24,7 @@
 | Simulate indicators/colors without compiling | ❌ | ❌ | ✅ |
 | Multiple `DSPSIZ` formats (`*DS3`/`*DS4`) resolved side by side | ❌ | ⚠️ manual | ✅ |
 | AND/OR indicator conditions (up to DDS's 9-indicator limit) built visually | ❌ | ⚠️ manual | ✅ |
+| Column awareness while typing raw DDS (hovers, validation, snippets) | ⚠️ format line only | ✅ | ✅ |
 
 DSPF-edit doesn't replace your compiler — it closes the gap between writing DDS and seeing the screen it produces, matching real **STRSDA** behavior field by field, so what you preview is what you get.
 
@@ -120,6 +121,22 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
   - Add / Remove / Change indicators, with the same AND/OR support as fields and constants.
   - Remove attribute.
 
+### ✍️ DDS source editing — stop counting columns
+
+The visual tooling above works on the *structure* of a display file. This layer works on the *text*, for the moments you are typing DDS by hand — and it applies to every DDS source type: `.dspf`, `.prtf`, `.pf`, `.lf` and `.dds`.
+
+  - **Status bar column assistant** — always shows where the cursor is: `DDS | Col 27 | Name`. Purely textual, so it works for colorblind users too. Click it to open the column reference.
+  - **Column reference** — a searchable list of every DDS region with its columns and purpose. Picking one **moves the cursor to that column** on the current line, padding the line with spaces if it is too short.
+  - **Hover documentation** — hover any column to see the region's name, column range, purpose, valid values, examples and IBM notes. Hover a keyword in the keyword area (`TEXT`, `COLHDG`, `SFLCTL`, `WINDOW`, `EDTCDE`, `REFFLD`, `CAnn`, ...) to see its signature, an explanation and a working example.
+  - **Column guides** — thin vertical lines at every DDS boundary (after columns 5, 6, 16, 18, 28, 29, 34, 35, 37, 38, 41, 44 and 80), using VS Code's native editor rulers scoped to DDS files, so other file types are untouched and there is no rendering cost. Run **DSPF Edit: Apply Recommended DDS Editor Settings** once to switch them on, along with one space per `Tab` and word wrap off — the settings you want for fixed-format source. Nothing is written to your settings unless you run that command.
+  - **Section highlight** — the column region containing the cursor is shaded very subtly (8% opacity by default, never above 15%), following your theme. Only the region, never the whole line.
+  - **Diagnostics** — the classic DDS mistakes are flagged as you type, before the compiler sees them: text past column 80, invalid data type / usage / name-type letters, non-numeric or misaligned length, decimal positions exceeding the length or set on a character field, packed and zoned fields over 63 digits, character fields over 32766, names too long or not left-justified, length or type on an `R`/`K` line, and column 6 not being `A`. Comment lines are always ignored.
+  - **Keyword completion** — in the keyword area (column 45 onward), filtered by file type: a `.dspf` offers `SFL`, `SFLCTL`, `WINDOW`, `DSPATR`...; a `.pf` offers `COLHDG`, `UNIQUE`, `VARLEN`... Each completion carries documentation and inserts a fill-in-the-blanks template.
+  - **Snippets** — column-perfect templates: `dspf-record`, `dspf-subfile`, `dspf-window`, `dspf-input`, `dspf-output`, `dspf-constant`, `dspf-fkey`, `pf-record`, `lf-record`, `key-field`, `field-char`, `field-packed`, `field-zoned`, `field-date`, `field-time`, `field-timestamp`, `dds-header`. Every one is verified by the test suite against the diagnostics above.
+  - **Outline and breadcrumbs** — record formats, fields and keys appear in the Outline view and the breadcrumb bar, with fields showing their length/type (`7P,0`). `Ctrl+Shift+O` jumps between them.
+
+Every part of this layer can be turned off individually, or all at once — see [Settings](#%EF%B8%8F-settings).
+
 ---
 
 ## 🚀 How to Use
@@ -133,9 +150,81 @@ See the **[full manual](https://christianlarsen.github.io/dspf-edit/)** for a gu
 
 ---
 
+## 📄 File types
+
+These extensions are recognized automatically (case-insensitive):
+
+| File extension | Language | Graphical DSPF tooling | DDS source editing |
+|---|---|:---:|:---:|
+| `.dspf` | DDS Display File | ✅ | ✅ |
+| `.prtf` | DDS Printer File | — | ✅ |
+| `.pf` | DDS Physical File | — | ✅ |
+| `.lf` | DDS Logical File | — | ✅ |
+| `.dds` | DDS | — | ✅ |
+
+These are the same language IDs the IBM i ecosystem already uses (`dds.dspf`, `dds.prtf`, `dds.pf`, `dds.lf`), so extensions such as [IBM i Languages](https://marketplace.visualstudio.com/items?itemName=barrettotte.ibmi-languages) and display-file renderers recognize the very same files and keep working side by side.
+
+If your sources use different names — members downloaded as `.MBR`, or files with no extension — map them in your settings:
+
+```json
+"files.associations": {
+  "*.MBR": "dds",
+  "CUSTDSP*": "dds.dspf"
+}
+```
+
+You can also click the language indicator in the status bar (bottom right) and pick the DDS language for the current file.
+
+---
+
+## 🎛️ Commands
+
+Open the Command Palette (`Ctrl+Shift+P`) and type "DSPF":
+
+| Command | What it does |
+|---|---|
+| **DSPF Edit: Apply Recommended DDS Editor Settings** | One-time setup: column guides, one space per `Tab`, no word wrap, no indentation guessing — for DDS languages only |
+| **DSPF Edit: Show DDS Column Reference** | Searchable column cheat sheet; jumps the cursor to the chosen region |
+| **DSPF Edit: Toggle DDS Column Guides** | Show/hide the vertical column rulers |
+| **DSPF Edit: Toggle DDS Section Highlight** | Enable/disable the cursor section highlight |
+| **DSPF Edit: Configure Preview Colors...** | Customize the Screen Preview colors |
+| **DSPF Edit: Reset Preview Colors to Default** | Restore the built-in preview colors |
+
+Everything else is reached by right-clicking in the **DSPF Structure** tree or directly in the Screen Preview.
+
+---
+
+## ⚙️ Settings
+
+Open Settings (`Ctrl+,`) and search for "DDS":
+
+| Setting | Default | Description |
+|---|---|---|
+| `dspf-edit.assist.enabled` | `true` | Master switch for the DDS source-editing layer. Turn off to keep only the graphical DSPF tooling |
+| `dspf-edit.assist.statusBar.enabled` | `true` | Show the status bar column assistant |
+| `dspf-edit.assist.statusBar.format` | `DDS \| Col {column} \| {section}` | Status bar text; tokens `{column}`, `{section}`, `{fileType}` |
+| `dspf-edit.assist.statusBar.showIcon` | `true` | Icon before the status bar text |
+| `dspf-edit.assist.hover.enabled` | `true` | Column and keyword hovers |
+| `dspf-edit.assist.diagnostics.enabled` | `true` | DDS validation squiggles |
+| `dspf-edit.assist.completion.enabled` | `true` | Keyword completion in columns 45–80 |
+| `dspf-edit.assist.highlight.enabled` | `true` | Cursor section highlight |
+| `dspf-edit.assist.highlight.color` | *(theme)* | Custom highlight color as hex, e.g. `#61AFEF` |
+| `dspf-edit.assist.highlight.opacity` | `0.08` | Highlight opacity, capped at `0.15` |
+
+The column guides are not a setting of their own — they are VS Code's native `editor.rulers`, written per DDS language by **Apply Recommended DDS Editor Settings**. Adjust or remove them like any other setting:
+
+```json
+"[dds.dspf]": { "editor.rulers": [6, 44, 80] }
+```
+
+This extension never writes to your settings on its own; only that command and the two toggle commands do.
+
+---
+
 ## ⚙️ Requirements
 
 - Visual Studio Code **v1.75** or higher.
+- Nothing else. The DDS languages are registered by this extension, so `.dspf` files are recognized on a clean install — and if you already use IBM i Languages or Code for IBM i, they stay fully compatible.
 
 ---
 
