@@ -6,16 +6,17 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { isAttributeLine, findElementInsertionPoint, checkForEditorAndDocument, parseIndicatorsFromLine, applyWorkspaceEdit, removeKeywordTextFromLines, findKeywordContinuationEndLine } from '../dspf-edit.utils/dspf-edit.helper';
-import { fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
+import { findElementInsertionPoint, checkForEditorAndDocument, applyWorkspaceEdit, removeKeywordTextFromLines } from '../dspf-edit.utils/dspf-edit.helper';
+import { fieldsPerRecords, DdsIndicator } from '../dspf-edit.model/dspf-edit.model';
 
 // INTERFACES AND TYPES
 
 interface ColorWithIndicators {
     color: string;
     indicators: string[];
-    lineIndex?: number; 
-    isInlineColor?: boolean; 
+    lineIndex?: number;
+    lastLineIndex?: number;
+    isInlineColor?: boolean;
 };
 
 // COMMAND REGISTRATION
@@ -55,7 +56,7 @@ async function handleAddColorCommand(node: DdsNode): Promise<void> {
         };
 
         // Get current colors from the element (both inline and separate lines)
-        const currentColors = getCurrentColorsForElement(editor, node.ddsElement);
+        const currentColors = getCurrentColorsForElement(node.ddsElement);
         
         // Get available colors (excluding current ones)
         let availableColors = getAvailableColors(currentColors.map(c => c.color));
@@ -125,63 +126,39 @@ async function handleAddColorCommand(node: DdsNode): Promise<void> {
 // COLOR EXTRACTION FUNCTIONS
 
 /**
+ * Formats a parsed indicator back into the "50"/"N50" string form the rest of this file's UI uses.
+ * @param indicator - The indicator to format
+ */
+function formatIndicatorForDisplay(indicator: DdsIndicator): string {
+    return `${indicator.active ? '' : 'N'}${indicator.number}`;
+};
+
+/**
  * Extracts current color attributes from a DDS element, checking both inline and separate lines.
- * @param editor - The active text editor
+ * Reads from the element's own already-parsed `attributes` (populated by the parser for both
+ * fields and constants, whether the COLOR() keyword shares the element's own definition line —
+ * e.g. a constant's "'9. End' DSPATR(UL) COLOR(RED)" — or sits on a separate line below it) rather
+ * than re-scanning raw source text, which used to only ever check the element's own line for
+ * fields, silently missing an inline color coded on a constant's own line.
  * @param element - The DDS element (field or constant)
  * @returns Array of current colors with their location info
  */
-function getCurrentColorsForElement(editor: vscode.TextEditor, element: any): ColorWithIndicators[] {
-    const colors: ColorWithIndicators[] = [];
-    const isConstant = element.kind === 'constant';
+function getCurrentColorsForElement(element: any): ColorWithIndicators[] {
+    const attributes = (element.attributes || []) as { value: string; indicators?: DdsIndicator[]; lineIndex: number; lastLineIndex?: number }[];
 
-    // For fields, check if there's a color in the same line (position 44+)
-    if (!isConstant) {
-        const fieldLine = editor.document.lineAt(element.lineIndex);
-        const fieldLineText = fieldLine.text;
-        
-        if (fieldLineText.length > 44) {
-            const colorPart = fieldLineText.substring(44).trim();
-            if (colorPart.includes('COLOR(')) {
-                const colorMatch = colorPart.match(/COLOR\(([A-Z]{3})\)/);
-                if (colorMatch) {
-                    const indicators = parseIndicatorsFromLine(fieldLineText);
-                    colors.push({
-                        color: colorMatch[1],
-                        indicators: indicators,
-                        lineIndex: element.lineIndex,
-                        isInlineColor: true
-                    });
-                };
-            };
+    return attributes.reduce<ColorWithIndicators[]>((colors, attr) => {
+        const colorMatch = attr.value.match(/^COLOR\(([A-Z]{3})\)$/);
+        if (colorMatch) {
+            colors.push({
+                color: colorMatch[1],
+                indicators: (attr.indicators || []).map(formatIndicatorForDisplay),
+                lineIndex: attr.lineIndex,
+                lastLineIndex: attr.lastLineIndex ?? attr.lineIndex,
+                isInlineColor: attr.lineIndex === element.lineIndex
+            });
         };
-    };
-
-    // Check subsequent lines for additional colors
-    const startLine = element.lineIndex + 1;
-    for (let i = startLine; i < editor.document.lineCount; i++) {
-        const lineText = editor.document.lineAt(i).text;
-
-        // Stop if we hit a non-attribute line
-        if (!lineText.trim().startsWith('A ') || !isAttributeLine(lineText)) {
-            break;
-        };
-
-        // Check if this is a COLOR attribute
-        if (lineText.includes('COLOR(')) {
-            const colorMatch = lineText.match(/COLOR\(([A-Z]{3})\)/);
-            if (colorMatch) {
-                const indicators = parseIndicatorsFromLine(lineText);
-                colors.push({
-                    color: colorMatch[1],
-                    indicators: indicators,
-                    lineIndex: i,
-                    isInlineColor: false
-                });
-            };
-        };
-    };
-
-    return colors;
+        return colors;
+    }, []);
 };
 
 /**
@@ -488,46 +465,25 @@ function createColorLineWithIndicators(colorWithIndicators: ColorWithIndicators)
  * @param element - The DDS element to remove colors from
  */
 async function removeColorsFromElement(editor: vscode.TextEditor, element: any): Promise<boolean> {
-    const currentColors = getCurrentColorsForElement(editor, element);
+    const currentColors = getCurrentColorsForElement(element);
     if (currentColors.length === 0) return true;
 
-    const document = editor.document;
-    const isConstant = element.kind === 'constant';
-
-    // Separate inline colors from line colors
-    const inlineColors = currentColors.filter(color => color.isInlineColor);
-    const lineColors = currentColors.filter(color => !color.isInlineColor);
-
-    // Handle separate color lines removal first, from the last line to the first: DDS allows other
-    // keywords to share these lines (and their keyword area can itself continue onto further lines
-    // via a trailing hyphen), so removeKeywordTextFromLines strips just the color's own text and
-    // re-flows whatever remains back onto as few lines as it now fits in — which can itself delete
-    // or merge lines, shifting the line numbers of everything below it (but never above). Since the
-    // field's own line always comes before any of these, handling these first (latest to earliest)
-    // and the inline case last keeps every remaining entry's own line index valid when its turn comes.
-    for (const color of [...lineColors].sort((a, b) => b.lineIndex! - a.lineIndex!)) {
+    // Remove from the last line to the first: DDS allows other keywords (and, for a constant, its
+    // own quoted value) to share a color's line(s), so removeKeywordTextFromLines strips just this
+    // color's own text and re-flows whatever remains back onto as few lines as it now fits in —
+    // which can itself delete or merge lines, shifting the line numbers of everything below it (but
+    // never above). Working latest-to-earliest keeps every remaining color's own line index valid
+    // when its turn comes, regardless of whether it's inline on the element's own definition line
+    // or on a separate line below it.
+    for (const color of [...currentColors].sort((a, b) => b.lineIndex! - a.lineIndex!)) {
         const lineIndex = color.lineIndex!;
-        const lineText = document.lineAt(lineIndex).text;
-        const colorMatch = lineText.match(/COLOR\([A-Z]{3}\)/);
-        if (!colorMatch) {
-            continue;
-        };
+        const endLine = color.lastLineIndex ?? lineIndex;
+        // The element's own definition line (field or constant) must keep its columns 1-44 even if
+        // nothing else is left in its keyword area once this color is removed.
+        const preserveFirstLine = lineIndex === element.lineIndex;
 
-        const endLine = findKeywordContinuationEndLine(document, lineIndex);
-        if (!(await removeKeywordTextFromLines(editor, lineIndex, endLine, colorMatch[0], false))) {
+        if (!(await removeKeywordTextFromLines(editor, lineIndex, endLine, `COLOR(${color.color})`, preserveFirstLine))) {
             return false;
-        };
-    };
-
-    // Handle inline color removal (for fields) last — same reasoning as above.
-    if (!isConstant && inlineColors.length > 0) {
-        const fieldLineText = document.lineAt(element.lineIndex).text;
-        const colorMatch = fieldLineText.substring(44).match(/COLOR\([A-Z]{3}\)/);
-        if (colorMatch) {
-            const endLine = findKeywordContinuationEndLine(document, element.lineIndex);
-            if (!(await removeKeywordTextFromLines(editor, element.lineIndex, endLine, colorMatch[0], true))) {
-                return false;
-            };
         };
     };
 

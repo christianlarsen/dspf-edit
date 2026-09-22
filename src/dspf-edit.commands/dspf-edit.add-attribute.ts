@@ -6,16 +6,17 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from './../dspf-edit.providers/dspf-edit.providers';
-import { isAttributeLine, findElementInsertionPoint, checkForEditorAndDocument, parseIndicatorsFromLine, applyWorkspaceEdit, removeKeywordTextFromLines, findKeywordContinuationEndLine } from './../dspf-edit.utils/dspf-edit.helper';
-import { fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
- 
+import { findElementInsertionPoint, checkForEditorAndDocument, applyWorkspaceEdit, removeKeywordTextFromLines } from './../dspf-edit.utils/dspf-edit.helper';
+import { fieldsPerRecords, DdsIndicator } from '../dspf-edit.model/dspf-edit.model';
+
 // INTERFACES AND TYPES
 
 interface AttributeWithIndicators {
     attribute: string;
     indicators: string[];
-    lineIndex?: number; 
-    isInlineAttribute?: boolean; 
+    lineIndex?: number;
+    lastLineIndex?: number;
+    isInlineAttribute?: boolean;
 };
 
 // COMMAND REGISTRATION
@@ -55,7 +56,7 @@ async function handleAddAttributeCommand(node: DdsNode): Promise<void> {
         };
 
         // Get current attributes from the element (both inline and separate lines)
-        const currentAttributes = getCurrentAttributesForElement(editor, node.ddsElement);
+        const currentAttributes = getCurrentAttributesForElement(node.ddsElement);
 
         // Get available attributes (excluding current ones)
         let availableAttributes = getAvailableAttributes(currentAttributes.map(a => a.attribute));
@@ -123,63 +124,39 @@ async function handleAddAttributeCommand(node: DdsNode): Promise<void> {
 // ATTRIBUTES EXTRACTION FUNCTIONS
 
 /**
- * Extracts current attributes from a DDS element, checking both inline and separate lines.
- * @param editor - The active text editor
+ * Formats a parsed indicator back into the "50"/"N50" string form the rest of this file's UI uses.
+ * @param indicator - The indicator to format
+ */
+function formatIndicatorForDisplay(indicator: DdsIndicator): string {
+    return `${indicator.active ? '' : 'N'}${indicator.number}`;
+};
+
+/**
+ * Extracts current attributes from a DDS element, checking both inline and separate lines. Reads
+ * from the element's own already-parsed `attributes` (populated by the parser for both fields and
+ * constants, whether the DSPATR() keyword shares the element's own definition line — e.g. a
+ * constant's "'9. End' DSPATR(UL) COLOR(RED)" — or sits on a separate line below it) rather than
+ * re-scanning raw source text, which used to only ever check the element's own line for fields,
+ * silently missing an inline attribute coded on a constant's own line.
  * @param element - The DDS element (field or constant)
  * @returns Array of current attributes with their location info
  */
-function getCurrentAttributesForElement(editor: vscode.TextEditor, element: any): AttributeWithIndicators[] {
-    const attributes: AttributeWithIndicators[] = [];
-    const isConstant = element.kind === 'constant';
+function getCurrentAttributesForElement(element: any): AttributeWithIndicators[] {
+    const attributes = (element.attributes || []) as { value: string; indicators?: DdsIndicator[]; lineIndex: number; lastLineIndex?: number }[];
 
-    // For fields, check if there's an attribute in the same line (position 44+)
-    if (!isConstant) {
-        const fieldLine = editor.document.lineAt(element.lineIndex);
-        const fieldLineText = fieldLine.text;
-        
-        if (fieldLineText.length > 44) {
-            const attributePart = fieldLineText.substring(44).trim();
-            if (attributePart.includes('DSPATR(')) {
-                const attributeMatch = attributePart.match(/DSPATR\(([A-Z]{2})\)/);
-                if (attributeMatch) {
-                    const indicators = parseIndicatorsFromLine(fieldLineText);
-                    attributes.push({
-                        attribute: attributeMatch[1],
-                        indicators: indicators,
-                        lineIndex: element.lineIndex,
-                        isInlineAttribute: true
-                    });
-                };
-            };
+    return attributes.reduce<AttributeWithIndicators[]>((result, attr) => {
+        const attributeMatch = attr.value.match(/^DSPATR\(([A-Z]{2})\)$/);
+        if (attributeMatch) {
+            result.push({
+                attribute: attributeMatch[1],
+                indicators: (attr.indicators || []).map(formatIndicatorForDisplay),
+                lineIndex: attr.lineIndex,
+                lastLineIndex: attr.lastLineIndex ?? attr.lineIndex,
+                isInlineAttribute: attr.lineIndex === element.lineIndex
+            });
         };
-    };
-
-    // Check subsequent lines for additional attributes
-    const startLine = element.lineIndex + 1;
-    for (let i = startLine; i < editor.document.lineCount; i++) {
-        const lineText = editor.document.lineAt(i).text;
-
-        // Stop if we hit a non-attribute line
-        if (!lineText.trim().startsWith('A ') || !isAttributeLine(lineText)) {
-            break;
-        };
-
-        // Check if this is a DSPATR attribute
-        if (lineText.includes('DSPATR(')) {
-            const attributeMatch = lineText.match(/DSPATR\(([A-Z]{2})\)/);
-            if (attributeMatch) {
-                const indicators = parseIndicatorsFromLine(lineText);
-                attributes.push({
-                    attribute: attributeMatch[1],
-                    indicators: indicators,
-                    lineIndex: i,
-                    isInlineAttribute: false
-                });
-            };
-        };
-    };
-
-    return attributes;
+        return result;
+    }, []);
 };
 
 function getNumberOfAttributesForElement(element: any): number | undefined {
@@ -521,46 +498,25 @@ function createAttributeLineWithIndicators(attributeWithIndicators: AttributeWit
  * @param element - The DDS element to remove attributes from
  */
 async function removeAttributesFromElement(editor: vscode.TextEditor, element: any): Promise<boolean> {
-    const currentAttributes = getCurrentAttributesForElement(editor, element);
+    const currentAttributes = getCurrentAttributesForElement(element);
     if (currentAttributes.length === 0) return true;
 
-    const document = editor.document;
-    const isConstant = element.kind === 'constant';
-
-    // Separate inline attributes from line attributes
-    const inlineAttributes = currentAttributes.filter(attr => attr.isInlineAttribute);
-    const lineAttributes = currentAttributes.filter(attr => !attr.isInlineAttribute);
-
-    // Handle separate attribute lines removal first, from the last line to the first: DDS allows
-    // other keywords to share these lines (and their keyword area can itself continue onto further
-    // lines via a trailing hyphen), so removeKeywordTextFromLines strips just this DSPATR's own text
-    // and re-flows whatever remains back onto as few lines as it now fits in — which can itself
-    // delete or merge lines, shifting the line numbers of everything below it (but never above).
-    // Since the field's own line always comes before any of these, handling these first (latest to
-    // earliest) and the inline case last keeps every remaining entry's own line index valid.
-    for (const attr of [...lineAttributes].sort((a, b) => b.lineIndex! - a.lineIndex!)) {
+    // Remove from the last line to the first: DDS allows other keywords (and, for a constant, its
+    // own quoted value) to share a DSPATR's line(s), so removeKeywordTextFromLines strips just this
+    // attribute's own text and re-flows whatever remains back onto as few lines as it now fits in —
+    // which can itself delete or merge lines, shifting the line numbers of everything below it (but
+    // never above). Working latest-to-earliest keeps every remaining attribute's own line index
+    // valid when its turn comes, regardless of whether it's inline on the element's own definition
+    // line or on a separate line below it.
+    for (const attr of [...currentAttributes].sort((a, b) => b.lineIndex! - a.lineIndex!)) {
         const lineIndex = attr.lineIndex!;
-        const lineText = document.lineAt(lineIndex).text;
-        const attributeMatch = lineText.match(/DSPATR\([A-Z]{2}\)/);
-        if (!attributeMatch) {
-            continue;
-        };
+        const endLine = attr.lastLineIndex ?? lineIndex;
+        // The element's own definition line (field or constant) must keep its columns 1-44 even if
+        // nothing else is left in its keyword area once this attribute is removed.
+        const preserveFirstLine = lineIndex === element.lineIndex;
 
-        const endLine = findKeywordContinuationEndLine(document, lineIndex);
-        if (!(await removeKeywordTextFromLines(editor, lineIndex, endLine, attributeMatch[0], false))) {
+        if (!(await removeKeywordTextFromLines(editor, lineIndex, endLine, `DSPATR(${attr.attribute})`, preserveFirstLine))) {
             return false;
-        };
-    };
-
-    // Handle inline attribute removal (for fields) last — same reasoning as above.
-    if (!isConstant && inlineAttributes.length > 0) {
-        const fieldLineText = document.lineAt(element.lineIndex).text;
-        const attributeMatch = fieldLineText.substring(44).match(/DSPATR\([A-Z]{2}\)/);
-        if (attributeMatch) {
-            const endLine = findKeywordContinuationEndLine(document, element.lineIndex);
-            if (!(await removeKeywordTextFromLines(editor, element.lineIndex, endLine, attributeMatch[0], true))) {
-                return false;
-            };
         };
     };
 

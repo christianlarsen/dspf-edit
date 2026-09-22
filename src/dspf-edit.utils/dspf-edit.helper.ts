@@ -139,34 +139,6 @@ export function formatDdsAttributes(attributes?: DdsAttribute[]): string {
 // DOCUMENT ANALYSIS FUNCTIONS
 
 /**
- * Finds the end line index for a multi-line DDS constant that spans multiple lines.
- * @param document - The VS Code text document
- * @param startLineIndex - The starting line index to search from
- * @returns The index of the last line that belongs to the continued constant
- */
-export function findEndLineIndex(document: vscode.TextDocument, startLineIndex: number): number {
-    let endLineIndex = startLineIndex;
-
-    for (let i = startLineIndex; i < document.lineCount; i++) {
-        const line = document.lineAt(i).text;
-
-        // Check if this is a continued constant line
-        // DDS constants that continue have "     A" at the start and "-" at position 79
-        const isContinuedConstant =
-            line.startsWith("     A") &&
-            line.charAt(79) === "-";
-
-        if (isContinuedConstant) {
-            endLineIndex = i + 1;
-        } else {
-            break;
-        };
-    };
-
-    return endLineIndex;
-};
-
-/**
  * Determines if a document is a DDS file based on its extension.
  * @param document - The VS Code text document to check
  * @returns True if the document has a DDS file extension

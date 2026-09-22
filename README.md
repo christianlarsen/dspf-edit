@@ -157,12 +157,9 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.8.0** - 2026-09-17
-- Added: Screen Preview — fields with `ERRMSGID()` now show in reverse image while active, same as `ERRMSG()`, with a message-line placeholder naming the message ID/file.
-- Added: Screen Preview — `HELP()`/`PAGEDOWN()`/`PAGEUP()` now show in the function-key legend.
-- Added: Screen Preview — a field with an active `DFTVAL()` now shows its real default text instead of a generic placeholder.
-- Added: Screen Preview — `T` (time) fields now preview with their `TIMFMT()`/`TIMSEP()` separators instead of a plain run of digits.
-- Fixed: Screen Preview — a field too long to fit between its start column and the record's (or window's) right edge, with no `CNTFLD()` of its own, now auto-wraps across multiple rows matching real DDS/STRSDA, instead of rendering as a single run past the edge.
+**1.8.1** - 2026-09-22
+- Fixed: Edit Constant — changing a constant's text no longer drops a `DSPATR()`/`COLOR()`/other keyword coded inline on the same source line as the constant.
+- Fixed: Add Attribute / Add Color — "Remove all", "Replace all", and the menu's own "Current attributes/colors" summary now also find an inline `DSPATR()`/`COLOR()` on a constant's own definition line, not just on fields.
 
 ---
 
