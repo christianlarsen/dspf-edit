@@ -21,6 +21,20 @@ When a record declares more than one display size:
 - Adjusting a subfile's `SFLPAG`/`SFLSIZ` only affects the size currently being previewed.
 - **Change Window Title** from the tree targets the size currently being worked on.
 - **Change Window Size** resizes every declared display size together, keeping the record consistent across formats.
+- Commands run from the tree that depend on the size, such as **Add Buttons**, **Center** or **Change Window Title**, use the size selected in the Screen Preview when it's open. They only ask which size to use when the preview is closed.
+
+## How the source is written
+
+In DDS, a keyword with no display size condition applies only to the **primary** size, the first one in `DSPSIZ`. Conditioning a line on the primary size (e.g. `*DS3` in `DSPSIZ(*DS3 *DS4)`) is a compile error, so only the secondary size is ever written with a condition.
+
+For example, moving a window while previewing `*DS4` in a file with `DSPSIZ(24 80 *DS3 27 132 *DS4)` leaves one line for each size, the primary one first:
+
+```
+     A                                      WINDOW(13 16 9 50)
+     A  *DS4                                WINDOW(13 19 9 50)
+```
+
+The unconditioned line keeps the `*DS3` window unchanged, and the `*DS4` line holds the new position.
 
 ## What persists across formats
 

@@ -10,6 +10,7 @@ import { DdsAttribute, FieldsPerRecord, fieldsPerRecords, getAvailableDisplayFor
 import { checkForEditorAndDocument, applyWorkspaceEdit, writeDisplayFormatCondition } from '../dspf-edit.utils/dspf-edit.helper';
 import { pickForActiveFormat } from '../dspf-edit.parser/dspf-edit.parser';
 import { generateWindowTitleLines } from './dspf-edit.new-record';
+import { ExtensionState } from '../dspf-edit.states/state';
 
 type TitleAlign = 'LEFT' | 'CENTER' | 'RIGHT';
 type TitlePosition = 'TOP' | 'BOTTOM';
@@ -77,8 +78,10 @@ export async function editWindowTitleForRecord(recordName: string, activeFormat?
             return;
         };
 
-        // The tree has no "active format" of its own — if the record declares a separate window per
-        // display size (one WINDOW() line per format), ask which one this title edit targets.
+        // The tree has no "active format" of its own — use the one selected in the open Screen
+        // Preview, if any. Otherwise, if the record declares a separate window per display size (one
+        // WINDOW() line per format), ask which one this title edit targets.
+        activeFormat = activeFormat ?? ExtensionState.previewDisplayFormat;
         if (!activeFormat && windowCandidates.length > 1) {
             const picked = await pickTargetFormat(windowCandidates);
             if (!picked) {

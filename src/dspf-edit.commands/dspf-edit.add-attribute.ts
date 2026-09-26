@@ -17,6 +17,9 @@ interface AttributeWithIndicators {
     lineIndex?: number;
     lastLineIndex?: number;
     isInlineAttribute?: boolean;
+    /** The whole DSPATR() keyword text this attribute was read from — shared by every attribute
+     * of a multi-attribute keyword such as DSPATR(UL HI). */
+    keywordText?: string;
 };
 
 // COMMAND REGISTRATION
@@ -145,15 +148,20 @@ function getCurrentAttributesForElement(element: any): AttributeWithIndicators[]
     const attributes = (element.attributes || []) as { value: string; indicators?: DdsIndicator[]; lineIndex: number; lastLineIndex?: number }[];
 
     return attributes.reduce<AttributeWithIndicators[]>((result, attr) => {
-        const attributeMatch = attr.value.match(/^DSPATR\(([A-Z]{2})\)$/);
+        // DDS allows several attributes in one keyword, e.g. DSPATR(UL HI) — each one is listed
+        // on its own, all pointing back to the same keyword text.
+        const attributeMatch = attr.value.match(/^DSPATR\(\s*([A-Z]{2}(?:\s+[A-Z]{2})*)\s*\)$/);
         if (attributeMatch) {
-            result.push({
-                attribute: attributeMatch[1],
-                indicators: (attr.indicators || []).map(formatIndicatorForDisplay),
-                lineIndex: attr.lineIndex,
-                lastLineIndex: attr.lastLineIndex ?? attr.lineIndex,
-                isInlineAttribute: attr.lineIndex === element.lineIndex
-            });
+            for (const code of attributeMatch[1].split(/\s+/)) {
+                result.push({
+                    attribute: code,
+                    indicators: (attr.indicators || []).map(formatIndicatorForDisplay),
+                    lineIndex: attr.lineIndex,
+                    lastLineIndex: attr.lastLineIndex ?? attr.lineIndex,
+                    isInlineAttribute: attr.lineIndex === element.lineIndex,
+                    keywordText: attr.value
+                });
+            };
         };
         return result;
     }, []);
@@ -508,14 +516,19 @@ async function removeAttributesFromElement(editor: vscode.TextEditor, element: a
     // never above). Working latest-to-earliest keeps every remaining attribute's own line index
     // valid when its turn comes, regardless of whether it's inline on the element's own definition
     // line or on a separate line below it.
-    for (const attr of [...currentAttributes].sort((a, b) => b.lineIndex! - a.lineIndex!)) {
+    // A multi-attribute keyword such as DSPATR(UL HI) is listed once per attribute, but must only
+    // be removed once.
+    const keywords = currentAttributes.filter((attr, index) =>
+        currentAttributes.findIndex(other => other.lineIndex === attr.lineIndex && other.keywordText === attr.keywordText) === index);
+
+    for (const attr of keywords.sort((a, b) => b.lineIndex! - a.lineIndex!)) {
         const lineIndex = attr.lineIndex!;
         const endLine = attr.lastLineIndex ?? lineIndex;
         // The element's own definition line (field or constant) must keep its columns 1-44 even if
         // nothing else is left in its keyword area once this attribute is removed.
         const preserveFirstLine = lineIndex === element.lineIndex;
 
-        if (!(await removeKeywordTextFromLines(editor, lineIndex, endLine, `DSPATR(${attr.attribute})`, preserveFirstLine))) {
+        if (!(await removeKeywordTextFromLines(editor, lineIndex, endLine, attr.keywordText ?? `DSPATR(${attr.attribute})`, preserveFirstLine))) {
             return false;
         };
     };

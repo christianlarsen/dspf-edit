@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.8.2] - 2026-09-26
+### Fixed
+- Resolving referenced fields on IBM i ([#90](https://github.com/christianlarsen/dspf-edit/issues/90)): a field's `REFFLD()` was only read when coded on the field's own definition line. If it was on a separate line below, the reference fell back to the field's own name and could not be found. `REFFLD()` is now read wherever it appears among the field's keywords.
+- Resolving referenced fields on IBM i: a `REFFLD()` or `REF()` qualified with `*LIBL` (e.g. `REFFLD(ARTDESC *LIBL/ARTICLES)`) never found the field, because `*LIBL` was looked up as if it were a library name.
+- Resolving referenced fields on IBM i: when no library was given, the file was looked up in every library on the system, so with the same file in several libraries (e.g. development and production) any of them could be used. It is now looked up only in the active Code for i connection's current library and then its library list, in that order, and the first library that has it is used, as the real library list does. `*LIBL` behaves the same as no library, and `*CURLIB` uses only the current library.
+- Keywords continued onto the next source line with a plus sign (`+`) were not joined, only those using a minus sign (`-`) were. A `WDWBORDER((*COLOR WHT) (*DSPATR +` continued as `RI) ...` on the next line was split in two, so the Screen Preview showed the window border incorrectly. Both continuation characters are now handled as DDS defines them: `-` continues at position 45 of the next line, keeping its leading blanks, and `+` continues at its first non-blank character. This also applies to multi-line constants and to editing or removing keywords that span several lines.
+- A trailing `-` followed by blanks was not always removed when joining a continued keyword.
+- Screen Preview: a `DSPATR()` with more than one attribute, such as `DSPATR(UL HI)`, showed none of them. DDS allows it, and it is the same as coding `DSPATR(UL)` and `DSPATR(HI)` separately. Each attribute now shows.
+- Add Attribute: the current attributes list, "Remove all" and "Replace all" ignored a `DSPATR()` with more than one attribute. It is now listed once per attribute and removed as a whole.
+- Commands run from the tree that depend on the display size, such as Add Buttons, Center and Change Window Title, asked which size to use even when the Screen Preview was open with a size selected. They now use the preview's size and only ask when it's closed.
+- When editing a keyword per display size (e.g. moving a window while previewing `*DS4`) splits it into one line per size, the unconditioned primary-size line is now always written first, followed by the secondary size's conditioned line, instead of the other way round. A shared line that already had a condition no longer carries it over to the primary-size line, where DDS doesn't allow it.
+- Screen Preview: a window with two `WDWTITLE` keywords, for example a title centered on the top border and `*BOTTOM *RIGHT` for a function-key hint, showed only the first one. Both are now drawn, one per border. When more than one `WDWTITLE` targets the same border, their parameters are combined and the first one wins for a repeated parameter, as the DDS reference describes.
+
 ## [1.8.1] - 2026-09-22
 ### Fixed
 - A constant with a color or display attribute (e.g. `COLOR(RED)`, `DSPATR(UL)`) written on the same source line as its own text could show incorrectly in the Screen Preview, and editing that constant's text could erase the color/attribute entirely. Fixed.

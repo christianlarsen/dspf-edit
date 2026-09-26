@@ -14,8 +14,8 @@ description: WINDOW records with real positioning, resizing, titles, and shared 
 
 ## Title
 
-- If the window has a `WDWTITLE`, it's shown in the preview.
-- Click the title directly in the preview to edit it, or right-click the record in the tree and choose **Change Window Title**. When the record declares more than one display size, the command targets the size currently being worked on.
+- If the window has a `WDWTITLE`, it's shown in the preview. A window can have one title on the top border and another on the bottom border (`*BOTTOM`), and both are shown. When more than one `WDWTITLE` targets the same border, their parameters are combined, and the first one wins if a parameter is repeated.
+- Click a title directly in the preview to edit it, or right-click the record in the tree and choose **Change Window Title**. When the record declares more than one display size, the command targets the size currently being worked on. When the window has more than one title, the command edits the first `WDWTITLE` in the source.
 
 ## Centering
 

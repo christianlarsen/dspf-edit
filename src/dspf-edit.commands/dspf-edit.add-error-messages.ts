@@ -679,11 +679,11 @@ function findExistingErrorMessageLines(editor: vscode.TextEditor, field: any): n
         if (lineText.match(/\bERRMSG\s*\(/)) {
             errorMessageLines.push(i);
             
-            // Check for continuation lines (lines ending with '+')
+            // Check for continuation lines (lines ending with '-' or '+')
             let continuationLine = i + 1;
             let start = i;
             while (continuationLine < editor.document.lineCount && 
-                   editor.document.lineAt(start).text.trim().endsWith('-')) {
+                   /[-+]$/.test(editor.document.lineAt(start).text.trim())) {
                 const contLineText = editor.document.lineAt(continuationLine).text;
                 if (contLineText.trim().startsWith('A ')) {
                     errorMessageLines.push(continuationLine);

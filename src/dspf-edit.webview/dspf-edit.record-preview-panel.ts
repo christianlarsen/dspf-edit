@@ -646,12 +646,17 @@ function getDisplayColor(attributes: AttributeWithIndicators[] | undefined, high
 };
 
 /**
- * Checks whether a field/constant carries a given DSPATR() keyword (e.g. DSPATR(UL)).
+ * Checks whether a field/constant carries a given display attribute in any of its DSPATR()
+ * keywords. DDS allows several attributes in one keyword — DSPATR(RI HI) is the same as coding
+ * DSPATR(RI) and DSPATR(HI) separately (DDS reference, DSPATR keyword).
  * @param attributes - The element's DDS attributes
  * @param code - The two-letter DSPATR code to look for (HI, RI, BL, UL, ND, CS)
  */
 function hasDisplayAttribute(attributes: AttributeWithIndicators[] | undefined, code: string): boolean {
-    return Boolean(attributes?.some(attr => attr.value === `DSPATR(${code})`));
+    return Boolean(attributes?.some(attr => {
+        const codes = attr.value.match(/^DSPATR\(\s*([^)&]*?)\s*\)$/i)?.[1];
+        return codes !== undefined && codes.toUpperCase().split(/\s+/).includes(code);
+    }));
 };
 
 /**
@@ -711,47 +716,82 @@ interface WindowTitle {
 };
 
 /**
- * Finds and parses the record's WDWTITLE() keyword, if any. When the record shares its window
- * with another record (WINDOW(other-record-name), or an SFL/SFLCTL pair where only one side
- * declares the window), the title is commonly only present on that owner record — falls back
- * to it if the record itself has none. When conditioned by more than one display format (one
- * WDWTITLE() per format), picks the one matching activeFormat.
- * Handles the common form WDWTITLE((*TEXT 'title text') [*TOP|*BOTTOM] [*LEFT|*CENTER|*RIGHT]).
+ * Parses one WDWTITLE(...) keyword's raw value — whichever parameters it specifies (at least one is
+ * required, so any of these may be missing).
+ * Handles the form WDWTITLE([(*TEXT 'title text')] [(*COLOR c)] [(*DSPATR a...)]
+ * [*LEFT|*CENTER|*RIGHT] [*TOP|*BOTTOM]).
+ * @param value - The raw WDWTITLE(...) keyword text
+ */
+function parseWdwTitleParams(value: string): {
+    text?: string;
+    position: 'TOP' | 'BOTTOM';
+    align?: 'LEFT' | 'CENTER' | 'RIGHT';
+    color?: string;
+    dspatr?: string[];
+} {
+    const upperValue = value.toUpperCase();
+    const text = value.match(/\(\s*\*TEXT\s+'([^']*)'\s*\)/i)?.[1];
+    const position = upperValue.includes('*BOTTOM') ? 'BOTTOM' : 'TOP';
+    const align = upperValue.includes('*RIGHT') ? 'RIGHT'
+        : upperValue.includes('*LEFT') ? 'LEFT'
+        : upperValue.includes('*CENTER') ? 'CENTER'
+        : undefined;
+    const color = upperValue.match(/\(\s*\*COLOR\s+(\w+)\s*\)/)?.[1];
+    const dspatrList = upperValue.match(/\(\s*\*DSPATR((?:\s+\w+)+)\s*\)/)?.[1];
+    const dspatr = dspatrList ? dspatrList.trim().split(/\s+/) : undefined;
+
+    return { text, position, align, color, dspatr };
+};
+
+/**
+ * Finds and parses the record's WDWTITLE() keyword(s), if any — at most one title per border (top
+ * and bottom), since a window can carry e.g. its name centered on top and a function-key hint on
+ * the bottom border. DDS allows more than one WDWTITLE on a record, combining the parameters of
+ * those in effect; when two specify the *same* parameter, the first one wins — applied here per
+ * border. When the record shares its window with another record (WINDOW(other-record-name), or an
+ * SFL/SFLCTL pair where only one side declares the window), the titles are commonly only present
+ * on that owner record — falls back to it if the record itself has none. When a border's title is
+ * conditioned by more than one display format (one WDWTITLE() per format), keeps the one(s)
+ * matching activeFormat.
  * @param recordName - Name of the record to inspect
  * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
  */
-function findWindowTitle(recordName: string, activeFormat?: string): WindowTitle | undefined {
+function findWindowTitles(recordName: string, activeFormat?: string): WindowTitle[] {
     const ownerName = getEffectiveSize(recordName, activeFormat)?.sharedFromRecord;
 
     for (const name of ownerName ? [recordName, ownerName] : [recordName]) {
         const rec = fieldsPerRecords.find(r => r.record === name);
-        const candidates = rec?.attributes?.filter(a => a.value.toUpperCase().startsWith('WDWTITLE(')) ?? [];
-        const attr = pickForActiveFormat(candidates, activeFormat);
-        if (!attr) {
-            continue;
+        const candidates = (rec?.attributes?.filter(a => a.value.toUpperCase().startsWith('WDWTITLE(')) ?? [])
+            .map(attr => ({ displayFormat: attr.displayFormat, params: parseWdwTitleParams(attr.value) }));
+
+        const titles: WindowTitle[] = [];
+        for (const position of ['TOP', 'BOTTOM'] as const) {
+            const forPosition = candidates.filter(c => c.params.position === position);
+            // Same selection as pickForActiveFormat, but keeping every candidate of the chosen
+            // format rather than just the first, so they can be combined below.
+            const chosenFormat = pickForActiveFormat(forPosition, activeFormat)?.displayFormat;
+            const inEffect = forPosition.filter(c => c.displayFormat === chosenFormat).map(c => c.params);
+
+            const text = inEffect.find(p => p.text !== undefined)?.text;
+            if (text === undefined) {
+                continue;
+            };
+
+            // Per the DDS reference: centered by default when embedded in the top border, left-aligned
+            // by default in the bottom border — *LEFT/*RIGHT/*CENTER always overrides either default.
+            const align = inEffect.find(p => p.align)?.align ?? (position === 'BOTTOM' ? 'LEFT' : 'CENTER');
+            const color = inEffect.find(p => p.color)?.color;
+            const dspatr = inEffect.find(p => p.dspatr)?.dspatr;
+
+            titles.push({ text, position, align, color, dspatr });
         };
 
-        const textMatch = attr.value.match(/WDWTITLE\(\(\*\w+\s+'([^']*)'\)/i);
-        if (!textMatch) {
-            continue;
+        if (titles.length > 0) {
+            return titles;
         };
-
-        const upperValue = attr.value.toUpperCase();
-        const position = upperValue.includes('*BOTTOM') ? 'BOTTOM' : 'TOP';
-        // Per the DDS reference: centered by default when embedded in the top border, left-aligned
-        // by default in the bottom border — *LEFT/*RIGHT/*CENTER always overrides either default.
-        const align = upperValue.includes('*RIGHT') ? 'RIGHT'
-            : upperValue.includes('*LEFT') ? 'LEFT'
-            : (position === 'BOTTOM' ? 'LEFT' : 'CENTER');
-
-        const color = upperValue.match(/\(\s*\*COLOR\s+(\w+)\s*\)/)?.[1];
-        const dspatrList = upperValue.match(/\(\s*\*DSPATR((?:\s+\w+)+)\s*\)/)?.[1];
-        const dspatr = dspatrList ? dspatrList.trim().split(/\s+/) : undefined;
-
-        return { text: textMatch[1], position, align, color, dspatr };
     };
 
-    return undefined;
+    return [];
 };
 
 /**
@@ -1195,6 +1235,7 @@ export class RecordPreviewPanel {
             this.treeSubscription?.dispose();
             if (RecordPreviewPanel.current === this) {
                 RecordPreviewPanel.current = undefined;
+                ExtensionState.previewDisplayFormat = undefined;
             };
         });
     }
@@ -1366,6 +1407,7 @@ export class RecordPreviewPanel {
         if (availableFormats.length > 0 && !this.activeDisplayFormat) {
             this.activeDisplayFormat = availableFormats[0].name;
         };
+        ExtensionState.previewDisplayFormat = this.activeDisplayFormat;
 
         // With a format actively selected, re-resolve the record's size live (it may be
         // conditioned differently per format, e.g. a WINDOW() line per format); otherwise use the
@@ -1489,9 +1531,10 @@ export class RecordPreviewPanel {
             : null;
 
         const availableRecords = records.filter(name => name !== this.recordName);
-        const rawWindowTitle = isWindow ? (findWindowTitle(this.recordName, this.activeDisplayFormat) ?? null) : null;
         const windowBorder = isWindow ? this.resolveWindowBorder(this.resolveWindowRecordName()) : null;
-        const windowTitle = (rawWindowTitle && windowBorder) ? resolveTitleAppearance(rawWindowTitle, windowBorder) : rawWindowTitle;
+        const windowTitles = windowBorder
+            ? findWindowTitles(this.recordName, this.activeDisplayFormat).map(title => resolveTitleAppearance(title, windowBorder))
+            : [];
         const errorMessage = this.resolveErrorMessage(recordInfo);
 
         // A window reserves its own last content line as a message line unless *NOMSGLIN is coded
@@ -1516,7 +1559,7 @@ export class RecordPreviewPanel {
             isWindow,
             windowFrame,
             outerFrame,
-            windowTitle,
+            windowTitles,
             windowBorder,
             errorMessage,
             errorMessageFrame,
@@ -3311,11 +3354,11 @@ export class RecordPreviewPanel {
     let currentSize = null;
     let currentWindowFrame = null;
     let currentOuterFrame = null;
-    let currentWindowTitle = null;
+    let currentWindowTitles = [];
     let currentWindowBorder = null;
     let currentErrorMessage = null;
     let currentErrorMessageFrame = null;
-    let currentTitleRect = null;
+    let currentTitleRects = [];
     let currentMenuIconRect = null;
     let currentCenterIconRect = null;
     let windowHovered = false;
@@ -3500,13 +3543,13 @@ export class RecordPreviewPanel {
         ctx.restore();
     }
 
-    function draw(size, items, backgroundItems, windowFrame, windowTitle, outerFrame) {
+    function draw(size, items, backgroundItems, windowFrame, windowTitles, outerFrame) {
         currentItems = items;
         currentBackgroundItems = backgroundItems || [];
         currentSize = size;
         currentWindowFrame = windowFrame || null;
         currentOuterFrame = outerFrame || null;
-        currentWindowTitle = windowTitle || null;
+        currentWindowTitles = windowTitles || [];
         canvas.width = size.cols * CHAR_W;
         canvas.height = size.rows * CHAR_H;
 
@@ -3721,9 +3764,10 @@ export class RecordPreviewPanel {
             drawResizeHandleTriangle(hx - HANDLE_SIZE, hy - HANDLE_SIZE);
         }
 
-        currentTitleRect = null;
+        currentTitleRects = [];
 
-        if (currentOuterFrame && currentWindowTitle) {
+        // One title per border at most (WDWTITLE top and/or *BOTTOM) — see findWindowTitles.
+        for (const currentWindowTitle of (currentOuterFrame ? currentWindowTitles : [])) {
             const fx = (currentOuterFrame.col - 1) * CHAR_W;
             const fy = (currentOuterFrame.row - 1) * CHAR_H;
             const fw = currentOuterFrame.cols * CHAR_W;
@@ -3747,7 +3791,7 @@ export class RecordPreviewPanel {
                 textX = fx + (fw - textWidth) / 2;
             }
 
-            currentTitleRect = { x: textX, y: titleY, width: textWidth, height: CHAR_H };
+            currentTitleRects.push({ x: textX, y: titleY, width: textWidth, height: CHAR_H });
 
             // Defaults to the border's own color/attributes when the title doesn't specify its own
             // (see resolveTitleAppearance) — so a colored/reverse-image border carries through to
@@ -3872,7 +3916,7 @@ export class RecordPreviewPanel {
             return;
         }
         blinkOn = !blinkOn;
-        draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+        draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
     }, BLINK_INTERVAL_MS);
 
     function cellAt(ev) {
@@ -3968,14 +4012,12 @@ export class RecordPreviewPanel {
     }
 
     function isOverTitle(ev) {
-        if (!currentTitleRect) {
-            return false;
-        }
         const rect = canvas.getBoundingClientRect();
         const px = ev.clientX - rect.left;
         const py = ev.clientY - rect.top;
-        return px >= currentTitleRect.x && px < currentTitleRect.x + currentTitleRect.width &&
-               py >= currentTitleRect.y && py < currentTitleRect.y + currentTitleRect.height;
+        return currentTitleRects.some(titleRect =>
+            px >= titleRect.x && px < titleRect.x + titleRect.width &&
+            py >= titleRect.y && py < titleRect.y + titleRect.height);
     }
 
     function isOverMenuIcon(ev) {
@@ -4006,7 +4048,7 @@ export class RecordPreviewPanel {
         const hovering = isOverWindowFrame(ev);
         if (hovering !== windowHovered) {
             windowHovered = hovering;
-            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
         }
     }
 
@@ -4032,7 +4074,7 @@ export class RecordPreviewPanel {
         showGridDots = !showGridDots;
         gridDotsBtn.classList.toggle('active', showGridDots);
         if (currentSize) {
-            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
         }
     });
 
@@ -4175,7 +4217,7 @@ export class RecordPreviewPanel {
             } else {
                 selectedLineIndices.add(hit.lineIndex);
             }
-            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
             return;
         }
 
@@ -4186,7 +4228,7 @@ export class RecordPreviewPanel {
             // the selection immediately, same as before multi-select existed.
             if (!selectedLineIndices.has(hit.lineIndex)) {
                 selectedLineIndices = new Set([hit.lineIndex]);
-                draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+                draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
             }
 
             const { row, col } = cellAt(ev);
@@ -4204,7 +4246,7 @@ export class RecordPreviewPanel {
         }
 
         selectedLineIndices.clear();
-        draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+        draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
 
         // Clicked empty space inside the window's own frame (not on a field/constant): drag the window itself.
         if (isOverWindowFrame(ev)) {
@@ -4247,7 +4289,7 @@ export class RecordPreviewPanel {
         }
         if (!selectedLineIndices.has(hit.lineIndex)) {
             selectedLineIndices = new Set([hit.lineIndex]);
-            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
         }
         vscode.postMessage({ type: 'elementMenu', lineIndices: [...selectedLineIndices] });
     });
@@ -4257,7 +4299,7 @@ export class RecordPreviewPanel {
         // hide the icons explicitly instead of leaving them stuck showing.
         if (windowHovered) {
             windowHovered = false;
-            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
         }
     });
 
@@ -4283,7 +4325,7 @@ export class RecordPreviewPanel {
                     rows: newContentRows + WINDOW_BORDER_TOP + WINDOW_BORDER_BOTTOM,
                     cols: newContentCols + WINDOW_BORDER_LEFT + WINDOW_BORDER_RIGHT
                 });
-                draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+                draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
             }
             return;
         }
@@ -4300,7 +4342,7 @@ export class RecordPreviewPanel {
 
             if (newLength !== elementResizeState.newLength) {
                 elementResizeState.newLength = newLength;
-                draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+                draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
             }
             return;
         }
@@ -4324,7 +4366,7 @@ export class RecordPreviewPanel {
             if (newRow !== currentOuterFrame.row || newCol !== currentOuterFrame.col) {
                 currentOuterFrame = Object.assign({}, currentOuterFrame, { row: newRow, col: newCol });
                 moveWindowState.moved = true;
-                draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+                draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
             }
             return;
         }
@@ -4412,7 +4454,7 @@ export class RecordPreviewPanel {
             dragState.rowDelta = newRowDelta;
             dragState.colDelta = newColDelta;
             dragState.moved = true;
-            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
         }
     });
 
@@ -4424,7 +4466,7 @@ export class RecordPreviewPanel {
                 const messageType = side === 'left' ? 'resizeConstantLeft' : (item.kind === 'constant' ? 'resizeConstant' : 'resizeField');
                 vscode.postMessage({ type: messageType, lineIndex: item.lineIndex, newLength });
             } else {
-                draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+                draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
             }
             return;
         }
@@ -4484,7 +4526,7 @@ export class RecordPreviewPanel {
         }
 
         dragState = null;
-        draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+        draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
     });
 
     formatSelect.addEventListener('change', () => {
@@ -4647,13 +4689,13 @@ export class RecordPreviewPanel {
             currentErrorMessage = message.errorMessage || null;
             currentErrorMessageFrame = message.errorMessageFrame || null;
             currentWindowBorder = message.windowBorder || null;
-            draw(message.size, message.items, message.backgroundItems, message.windowFrame, message.windowTitle, message.outerFrame);
+            draw(message.size, message.items, message.backgroundItems, message.windowFrame, message.windowTitles, message.outerFrame);
         } else if (message.type === 'notFound') {
             info.textContent = 'Record no longer exists.';
             ctx.clearRect(0, 0, canvas.width, canvas.height);
         } else if (message.type === 'selectLine') {
             selectedLineIndices = new Set([message.lineIndex]);
-            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitle, currentOuterFrame);
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
         } else if (message.type === 'startCopyPlacement') {
             setPlacingKind(message.kind === 'field' ? 'copy-field' : 'copy-constant');
         } else if (message.type === 'focusModeChanged') {
