@@ -9,7 +9,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { DdsElement, DdsIndicator, DdsAttribute, records, FieldsPerRecord, ConstantInfo, FieldInfo, fieldsPerRecords, attributesFileLevel, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
-import { parseDocument, pickForActiveFormat } from '../dspf-edit.parser/dspf-edit.parser';
+import { parseDocument, pickForActiveFormat, getContinuationChar, joinContinuedKeywordParts } from '../dspf-edit.parser/dspf-edit.parser';
 import { ExtensionState } from '../dspf-edit.states/state';
 import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 
@@ -655,13 +655,19 @@ function findDspsizInsertionPoint(editor: vscode.TextEditor): number {
 };
 
 /**
- * Asks which declared display format (e.g. *DS3/*DS4) an operation should use, for a command with
- * no display format of its own to go by (i.e. invoked from the tree rather than the preview panel,
- * which always has one active). Only meant to be called once the caller has already confirmed the
- * file declares more than one format — with just one, there's nothing to ask.
+ * Resolves which declared display format (e.g. *DS3/*DS4) an operation should use, for a command with
+ * no display format of its own to go by (i.e. invoked from the tree rather than the preview panel).
+ * Uses the size currently selected in the open Screen Preview, when there is one; only asks when the
+ * preview is closed. Only meant to be called once the caller has already confirmed the file
+ * declares more than one format — with just one, there's nothing to ask.
  * @param declaredFormats - The file's declared DSPSIZ formats (from `getAvailableDisplayFormats`)
  */
 export async function pickDisplayFormat(declaredFormats: Array<{ name: string; rows: number; cols: number }>): Promise<string | undefined> {
+    const previewFormat = ExtensionState.previewDisplayFormat;
+    if (previewFormat && declaredFormats.some(f => f.name === previewFormat)) {
+        return previewFormat;
+    };
+
     const picked = await vscode.window.showQuickPick(
         declaredFormats.map(f => ({ label: f.name, description: `${f.rows}x${f.cols}` })),
         { placeHolder: 'This file declares more than one display size — which one should this use?' }
@@ -770,23 +776,21 @@ export function applyDisplayFormatSplitEdit<T extends DisplayFormatConditionable
 
     const primaryFormat = declaredFormats[0];
 
-    // Preserve the OLD value for every other declared format that would otherwise keep silently
-    // falling back to this same shared line once it's rewritten.
-    const otherFormats = declaredFormats.filter(f => f !== activeFormat);
-    for (const format of otherFormats) {
-        const oldLine = format === primaryFormat
-            ? effectiveLine.text
-            : writeDisplayFormatCondition(effectiveLine.text, format);
-        workspaceEdit.insert(uri, effectiveLine.range.end, '\n' + oldLine);
-    };
-
-    // Rewrite the original line in place: now conditioned for the active format (unconditioned
-    // instead, if it's the primary), with the new value.
+    // One line per declared format, in declared order — so the primary's unconditioned line always
+    // comes first, followed by the secondary's conditioned one, whichever format is being edited.
+    // The active format's line gets the NEW value; every other format keeps the OLD value it was
+    // falling back to until now.
+    // The shared line can itself carry a condition (e.g. only a *DS4 line exists) — blank that zone
+    // out for the primary's line, which must stay unconditioned.
+    const clearCondition = (text: string) => effective.displayFormat
+        ? (text.padEnd(16, ' ').substring(0, 7) + ' '.repeat(9) + text.substring(16)).trimEnd()
+        : text;
     const rewrittenText = generateLine(effectiveLine.text, activeFormat);
-    const newLine = activeFormat === primaryFormat
-        ? rewrittenText
-        : writeDisplayFormatCondition(rewrittenText, activeFormat);
-    workspaceEdit.replace(uri, effectiveLine.range, newLine);
+    const lines = declaredFormats.map(format => {
+        const text = format === activeFormat ? rewrittenText : effectiveLine.text;
+        return format === primaryFormat ? clearCondition(text) : writeDisplayFormatCondition(text, format);
+    });
+    workspaceEdit.replace(uri, effectiveLine.range, lines.join('\n'));
 };
 
 /**
@@ -953,8 +957,8 @@ export async function applyWorkspaceEdit(workspaceEdit: vscode.WorkspaceEdit, co
 
 /**
  * Finds the last physical line a keyword area starting at `startLine` continues onto, by following
- * its trailing continuation hyphen(s) — the same rule the parser itself uses (see extractAttributes
- * in dspf-edit.parser.ts). Pass the result as removeKeywordTextFromLines's `lastLineIndex` so it can
+ * its trailing continuation character(s), '-' or '+' — the same rule the parser itself uses (see
+ * extractAttributes in dspf-edit.parser.ts). Pass the result as removeKeywordTextFromLines's `lastLineIndex` so it can
  * see (and, once a keyword is removed, re-flow) the whole keyword area rather than just its own
  * first line.
  * @param document - The text document
@@ -964,7 +968,7 @@ export function findKeywordContinuationEndLine(document: vscode.TextDocument, st
     let endLine = startLine;
     while (endLine < document.lineCount - 1) {
         const part = document.lineAt(endLine).text.substring(44, 80);
-        if (!part.trim().endsWith('-')) {
+        if (!getContinuationChar(part)) {
             break;
         };
         endLine++;
@@ -1041,8 +1045,8 @@ export async function removeKeywordPatternsFromLines(
 
 /**
  * Shared plumbing for removeKeywordTextFromLines/removeKeywordPatternsFromLines: reconstructs the
- * joined logical keyword text across `[lineIndex, lastLineIndex]` (stripping each non-final line's
- * continuation hyphen, matching how the parser itself reconstructs a continued value), hands it to
+ * joined logical keyword text across `[lineIndex, lastLineIndex]` (stripping each line's continuation
+ * character, '-' or '+', matching how the parser itself reconstructs a continued value), hands it to
  * `computeRemaining`, and re-paginates whatever comes back across the same starting line(s) —
  * re-inserting a continuation hyphen only where content still doesn't fit on one line, and deleting
  * any line(s) left over once the remainder needs fewer lines than before.
@@ -1065,7 +1069,7 @@ async function rewriteKeywordArea(
         rawParts.push(document.lineAt(i).text.substring(44, 80));
     };
 
-    const joined = rawParts.map((part, i) => i === rawParts.length - 1 ? part : part.replace(/-$/, '')).join('');
+    const joined = joinContinuedKeywordParts(rawParts);
     const remaining = computeRemaining(joined);
     if (remaining === null) {
         return false;

@@ -24,6 +24,8 @@ const CODE_FOR_IBMI_EXTENSION_ID = 'halcyontechltd.code-for-ibmi';
 /** The slice of Code for i's `IBMi` connection this module actually calls. */
 interface MinimalIBMiConnection {
     runSQL(statements: string | string[], options?: { bindings?: (string | number | null)[] }): Promise<Record<string, string | number | null>[]>;
+    /** The connection's own settings — only its library list is read here. */
+    getConfig?(): { currentLibrary?: string; libraryList?: string[] } | undefined;
 };
 
 /** The slice of Code for i's exported API this module actually calls. */
@@ -69,6 +71,40 @@ function findRefKeyword(attributes: DdsAttribute[] | undefined): { file: string;
     const qualifiedFile = match[1];
     const [library, file] = qualifiedFile.includes('/') ? qualifiedFile.split('/') : [undefined, qualifiedFile];
     return { file, library };
+};
+
+/**
+ * The libraries to look for a referenced file in, in search order, for the library it was qualified
+ * with in REFFLD()/REF():
+ * - A real library name: just that one.
+ * - None, or *LIBL (the same thing — DDS reference, REF keyword): the current library, then the
+ *   user portion of the library list, both as configured for the active Code for i connection —
+ *   the same order they take in the job's real *LIBL. The system portion (QSYS, QSYS2, ...) isn't
+ *   included, since it doesn't hold application files.
+ * - *CURLIB: just the connection's current library.
+ * An empty result means no library could be determined (e.g. an empty library list), and the
+ * caller searches every library instead.
+ * @param connection - The active Code for i connection
+ * @param library - The library qualifier as coded in the source, if any
+ */
+function resolveSearchLibraries(connection: MinimalIBMiConnection, library: string | undefined): string[] {
+    const qualifier = library?.trim().toUpperCase();
+    if (qualifier && !qualifier.startsWith('*')) {
+        return [qualifier];
+    };
+
+    const config = connection.getConfig?.();
+    // Code for i uses *CRTDFT (or an empty value) for "no current library".
+    const isRealLibrary = (name: string | undefined): name is string => Boolean(name) && !name!.startsWith('*');
+    const currentLibrary = config?.currentLibrary?.trim().toUpperCase();
+    const current = isRealLibrary(currentLibrary) ? [currentLibrary] : [];
+
+    if (qualifier === '*CURLIB') {
+        return current;
+    };
+
+    const userLibraries = (config?.libraryList ?? []).map(name => name.trim().toUpperCase()).filter(isRealLibrary);
+    return [...new Set([...current, ...userLibraries])];
 };
 
 /**
@@ -180,18 +216,26 @@ export async function resolveReferencedField(documentUri: string, field: DdsFiel
     // physical/logical file these match the SQL long name, but for an SQL-created table they can
     // differ (e.g. long name CUSTOMER_MASTER, system name CUSTMAST). Filtering on QSYS2.SYSCOLUMNS'
     // own SYSTEM_* columns instead of its long-name ones handles both.
-    const bindings = [fileRef.file.toUpperCase(), target.fieldName.toUpperCase()];
-    let sql = `SELECT DATA_TYPE, LENGTH, NUMERIC_SCALE FROM QSYS2.SYSCOLUMNS WHERE SYSTEM_TABLE_NAME = ? AND SYSTEM_COLUMN_NAME = ?`;
-    if (fileRef.library) {
-        sql += ' AND SYSTEM_TABLE_SCHEMA = ?';
-        bindings.push(fileRef.library.toUpperCase());
+    const searchLibraries = resolveSearchLibraries(connection, fileRef.library);
+
+    const bindings: string[] = [fileRef.file.toUpperCase(), target.fieldName.toUpperCase()];
+    let sql = `SELECT SYSTEM_TABLE_SCHEMA, DATA_TYPE, LENGTH, NUMERIC_SCALE FROM QSYS2.SYSCOLUMNS WHERE SYSTEM_TABLE_NAME = ? AND SYSTEM_COLUMN_NAME = ?`;
+    if (searchLibraries.length > 0) {
+        sql += ` AND SYSTEM_TABLE_SCHEMA IN (${searchLibraries.map(() => '?').join(', ')})`;
+        bindings.push(...searchLibraries);
     };
 
+    // The file may exist in more than one of the libraries searched — like the library list itself,
+    // the first library (in search order) that has it wins.
     const rows = await connection.runSQL(sql, { bindings });
-    const row = rows[0];
+    const libraryOrder = (row: Record<string, string | number | null>) =>
+        searchLibraries.indexOf(String(row.SYSTEM_TABLE_SCHEMA ?? '').trim().toUpperCase());
+    const row = [...rows].sort((a, b) => libraryOrder(a) - libraryOrder(b))[0];
     if (!row) {
-        const qualifiedFile = fileRef.library ? `${fileRef.library}/${fileRef.file}` : fileRef.file;
-        throw new Error(`Field '${target.fieldName}' not found in ${qualifiedFile}.`);
+        const where = searchLibraries.length === 1 ? `${searchLibraries[0]}/${fileRef.file}`
+            : searchLibraries.length > 1 ? `${fileRef.file} (library list: ${searchLibraries.join(', ')})`
+            : fileRef.file;
+        throw new Error(`Field '${target.fieldName}' not found in ${where}.`);
     };
 
     const resolved = mapSqlTypeToDds(String(row.DATA_TYPE), Number(row.LENGTH), Number(row.NUMERIC_SCALE ?? 0));

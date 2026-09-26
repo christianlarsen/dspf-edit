@@ -157,9 +157,13 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.8.1** - 2026-09-22
-- Fixed: Edit Constant — changing a constant's text no longer drops a `DSPATR()`/`COLOR()`/other keyword coded inline on the same source line as the constant.
-- Fixed: Add Attribute / Add Color — "Remove all", "Replace all", and the menu's own "Current attributes/colors" summary now also find an inline `DSPATR()`/`COLOR()` on a constant's own definition line, not just on fields.
+**1.8.2** - 2026-09-26
+- Fixed: resolving referenced fields — `REFFLD()` is now found when coded on its own line below the field, not only on the field's definition line ([#90](https://github.com/christianlarsen/dspf-edit/issues/90)).
+- Fixed: resolving referenced fields — with no library (or `*LIBL`/`*CURLIB`), the file is now looked up in the Code for i connection's current library and library list, in order, instead of in any library on the system.
+- Fixed: keywords continued onto the next line with `+` (not just `-`) are now joined correctly, so e.g. a wrapped `WDWBORDER()` shows properly in the Screen Preview.
+- Fixed: Screen Preview and Add Attribute — `DSPATR()` with several attributes (e.g. `DSPATR(UL HI)`) is now recognized.
+- Fixed: Add Buttons, Center and Change Window Title use the display size selected in the Screen Preview instead of asking for it.
+- Fixed: Screen Preview — a window with a top and a bottom `WDWTITLE` (e.g. `*BOTTOM *RIGHT`) now shows both titles, not just the first one.
 
 ---
 

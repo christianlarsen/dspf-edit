@@ -59,7 +59,7 @@ Overlay any other record (dimmed) behind the one being previewed, to see how the
 
 ## Windows
 
-`WINDOW` records are drawn at their real screen position and can be resized/moved directly with the mouse. The window's `WDWTITLE`, if present, is shown. Windows shared via `WINDOW(record-name)` are supported.
+`WINDOW` records are drawn at their real screen position and can be resized/moved directly with the mouse. The window's `WDWTITLE` is shown if present, including a second title on the bottom border (`*BOTTOM`). Windows shared via `WINDOW(record-name)` are supported.
 
 - Click a window's title to edit it.
 - Hovering a window reveals its "⋮" actions menu and a one-click "center horizontally" icon.

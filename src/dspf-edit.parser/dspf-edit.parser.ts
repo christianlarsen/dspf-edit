@@ -614,23 +614,57 @@ export function extractMultiLineConstant(
     trimmedLine: string
 ): { fullValue: string; lastLineIndex: number } {
 
-    let fullValue = trimmedLine.substring(39, 75);
+    const parts = [trimmedLine.substring(39, 75)];
     let continuationIndex = startIndex;
 
-    // Follow continuation lines (marked with a trailing '-', wherever it falls before column 80)
-    while (fullValue.trimEnd().endsWith('-')) {
-        const trimmedEnd = fullValue.trimEnd();
-        fullValue = trimmedEnd.substring(0, trimmedEnd.length - 1); // Drop the dash and any padding after it
+    // Follow continuation lines (marked with a trailing '-' or '+', wherever it falls before column 80)
+    while (getContinuationChar(parts[parts.length - 1])) {
+        const nextLine = lines[continuationIndex + 1];
+        if (nextLine === undefined) break;
 
         continuationIndex++;
-        const nextLine = lines[continuationIndex];
-        if (!nextLine) break;
-
-        const nextTrimmed = nextLine.substring(5);
-        fullValue += nextTrimmed.substring(39, 75);
+        parts.push(nextLine.substring(5).substring(39, 75));
     };
 
-    return { fullValue: fullValue.trim(), lastLineIndex: continuationIndex };
+    return { fullValue: joinContinuedKeywordParts(parts).trim(), lastLineIndex: continuationIndex };
+};
+
+/**
+ * Returns the continuation character a keyword-area segment (columns 45-80) ends with, if any —
+ * its last non-blank character. DDS accepts two (Rules for DDS keyword continuation):
+ * - '-' continues with position 45 of the next line, keeping that line's leading blanks.
+ * - '+' continues with the first non-blank character of the next line's keyword area.
+ * In both cases the blanks *before* the continuation character on the current line are kept.
+ * @param part - One physical line's keyword area text
+ */
+export function getContinuationChar(part: string): '-' | '+' | undefined {
+    const last = part.trimEnd().slice(-1);
+    return last === '-' || last === '+' ? last : undefined;
+};
+
+/**
+ * Joins the keyword-area segments (columns 45-80) of consecutive physical lines into one logical
+ * text, applying each segment's continuation character per `getContinuationChar`: the character
+ * itself (and any padding after it) is dropped, and after a '+' the next segment's leading blanks
+ * are skipped. The final segment's own trailing continuation character, if any (a source that ran
+ * out of lines), is dropped too.
+ * @param parts - Each physical line's keyword area text, in order
+ */
+export function joinContinuedKeywordParts(parts: string[]): string {
+    let joined = '';
+    let skipLeadingBlanks = false;
+
+    for (const part of parts) {
+        let text = skipLeadingBlanks ? part.trimStart() : part;
+        const continuation = getContinuationChar(text);
+        if (continuation) {
+            text = text.trimEnd().slice(0, -1);
+        };
+        skipLeadingBlanks = continuation === '+';
+        joined += text;
+    };
+
+    return joined;
 };
 
 /**
@@ -832,24 +866,20 @@ function extractAttributes(
     displayFormat?: string
 ): { attributes: DdsAttribute[]; nextIndex: number } {
 
-    let rawAttributeText = '';
+    const attributeParts: string[] = [];
     let currentIndex = startIndex;
 
-    // Collect attribute text across potentially multiple lines
+    // Collect attribute text across potentially multiple lines ('-' or '+' continuation)
     while (currentIndex < lines.length) {
-        const line = lines[currentIndex];
-        const trimmed = line.substring(5);
-        const attributePart = trimmed.substring(39, 75);
-
-        // Remove continuation character and append
-        rawAttributeText += attributePart.replace(/-$/, '');
+        const attributePart = lines[currentIndex].substring(5).substring(39, 75);
+        attributeParts.push(attributePart);
 
         // Stop if no continuation character found
-        if (!attributePart.trim().endsWith('-')) break;
+        if (!getContinuationChar(attributePart)) break;
         currentIndex++;
     };
 
-    rawAttributeText = rawAttributeText.trim();
+    const rawAttributeText = joinContinuedKeywordParts(attributeParts).trim();
 
     // Return empty attributes if no content found
     if (!rawAttributeText) {
@@ -921,6 +951,13 @@ function linkAttributesToParents(ddsElements: DdsElement[]): void {
                         ...(lastField.attributes || []),
                         ...(element.attributes || [])
                     ];
+                    // A referenced field's REFFLD() is often coded on its own line below the
+                    // field's definition line rather than on that line itself — parseFieldElement
+                    // only saw the field's own line's keywords, so re-read its target now that
+                    // every keyword belonging to the field has been linked to it.
+                    if (lastField.kind === 'field' && lastField.referenced) {
+                        lastField.refTarget = parseReffldTarget(lastField.attributes, lastField.name);
+                    };
                 } else if (currentRecord) {
                     currentRecord.attributes = [
                         ...(currentRecord.attributes || []),
