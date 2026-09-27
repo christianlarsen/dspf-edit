@@ -6,7 +6,8 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { fileSizeAttributes, fieldsPerRecords, getRecordSize, getSubfileMinDetailRow, AttributeWithIndicators } from '../dspf-edit.model/dspf-edit.model';
+import { fileSizeAttributes, fieldsPerRecords, getRecordSize, getSubfileMinDetailRow, AttributeWithIndicators, attributesFileLevel } from '../dspf-edit.model/dspf-edit.model';
+import { RefKeywordTarget, parseRefKeyword } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 import { checkForEditorAndDocument, parseSize, removeKeywordTextFromLines } from '../dspf-edit.utils/dspf-edit.helper';
 
 /**
@@ -58,7 +59,8 @@ const FIELD_USAGE_TYPES = {
  */
 interface FieldReference {
     library: string;
-    file: string;
+    /** Undefined when the field takes its definition from the file-level REF() instead. */
+    file?: string;
     field: string;
     /** Record format the field is qualified with (record-format-name/field-name), disambiguating
      * a field name that exists in more than one format of the referenced file. */
@@ -661,10 +663,12 @@ async function promptForFieldReference(): Promise<boolean | null> {
             detail: "Will prompt for field type, length, and decimals",
             value: false
         },
-        { 
-            label: "Referenced Field", 
+        {
+            label: "Referenced Field",
             description: "Field references another file's field",
-            detail: "Will prompt for library, file, and field names",
+            detail: getFileLevelRef()
+                ? "Will prompt for the referenced field, from the file-level REF file or another file"
+                : "Will prompt for library, file, and field names",
             value: true
         }
     ], {
@@ -703,7 +707,69 @@ async function collectFieldUsage(fieldName: string): Promise<FieldUsage | null> 
     };
 };
 
+/** The file-level REF() keyword's target, if the file has one. */
+function getFileLevelRef(): RefKeywordTarget | undefined {
+    const attr = attributesFileLevel.find(a => /^REF\(/i.test(a.value.trim()));
+    return attr ? parseRefKeyword(attr.value) : undefined;
+};
+
+/**
+ * Collects a field's reference. When the file has a file-level REF(), first offers taking the
+ * definition from that file — then only the referenced field's name is asked for, since DDS takes
+ * the file (and library/record format) from REF() — or from another file, via the full flow.
+ * @param fieldName - The new field's name, the default referenced field name
+ */
 async function collectFieldReference(fieldName: string): Promise<FieldReference | null> {
+    const fileLevelRef = getFileLevelRef();
+    if (!fileLevelRef) {
+        return collectFieldReferenceFromFile(fieldName);
+    };
+
+    const refFile = fileLevelRef.library ? `${fileLevelRef.library}/${fileLevelRef.file}` : fileLevelRef.file;
+    const source = await vscode.window.showQuickPick([
+        {
+            label: `From the REF file (${refFile})`,
+            description: 'File-level REF keyword',
+            detail: 'Will prompt only for the referenced field name',
+            value: 'ref' as const
+        },
+        {
+            label: 'From another file',
+            description: 'REFFLD naming its own file',
+            detail: 'Will prompt for library, file, and field names',
+            value: 'other' as const
+        }
+    ], {
+        title: `Reference for field '${fieldName}'`,
+        placeHolder: 'Choose where the field takes its definition from',
+        ignoreFocusOut: true
+    });
+    if (!source) return null;
+
+    if (source.value === 'other') {
+        return collectFieldReferenceFromFile(fieldName);
+    };
+
+    const referencedField = await vscode.window.showInputBox({
+        title: `Reference for field '${fieldName}' in ${refFile}`,
+        prompt: "Enter referenced field name (max 10 characters) — if it's the same as the field's own name, no REFFLD is needed",
+        placeHolder: fieldName,
+        value: fieldName,
+        validateInput: (value) => validateFieldNameFormat(value)
+    });
+    if (!referencedField) return null;
+
+    return {
+        library: '',
+        field: referencedField.trim().toUpperCase()
+    };
+};
+
+/**
+ * Collects a field's reference to a file of its own, written as REFFLD(field [library/]file).
+ * @param fieldName - The new field's name, the default referenced field name
+ */
+async function collectFieldReferenceFromFile(fieldName: string): Promise<FieldReference | null> {
     // Get library name (optional — DDS uses the current library list, *LIBL, when omitted)
     const library = await vscode.window.showInputBox({
         title: `Reference for field '${fieldName}' - Step 1/4`,
@@ -1242,10 +1308,15 @@ function generateNewFieldLine(config: NewFieldConfig): string {
         line = replaceAt(line, 28, 'R');
         
         // Reference specification: REFFLD([record-format-name/]referenced-field-name [library-name/]database-file-name)
-        const qualifiedFile = config.reference.library ? `${config.reference.library}/${config.reference.file}` : config.reference.file;
+        // With no file, the definition comes from the file-level REF(): a field with the same
+        // name as the one it references needs no REFFLD at all, otherwise REFFLD(name) alone.
         const qualifiedField = config.reference.recordFormat ? `${config.reference.recordFormat}/${config.reference.field}` : config.reference.field;
-        const refSpec = `REFFLD(${qualifiedField} ${qualifiedFile})`;
-        line = replaceAt(line, 44, refSpec);
+        if (config.reference.file) {
+            const qualifiedFile = config.reference.library ? `${config.reference.library}/${config.reference.file}` : config.reference.file;
+            line = replaceAt(line, 44, `REFFLD(${qualifiedField} ${qualifiedFile})`);
+        } else if (qualifiedField !== config.name.trim().toUpperCase()) {
+            line = replaceAt(line, 44, `REFFLD(${qualifiedField})`);
+        };
     } else if (config.typeConfig) {
         // New field with type specification
         
