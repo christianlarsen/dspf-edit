@@ -753,7 +753,7 @@ async function collectFieldReference(fieldName: string): Promise<FieldReference 
 /**
  * Validates library and file names
  */
-function validateLibraryFileName(value: string, type: string, required: boolean = true): string | null {
+export function validateLibraryFileName(value: string, type: string, required: boolean = true): string | null {
     const trimmedValue = value.trim();
 
     if (trimmedValue === '') {

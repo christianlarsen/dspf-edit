@@ -137,6 +137,10 @@
         "title": "Change Input Default"
       },
       {
+        "command": "dspf-edit.set-reference-file",
+        "title": "Reference File (REF)"
+      },
+      {
         "command": "dspf-edit.add-validity-check",
         "title": "Validity Checks"
       },
@@ -395,6 +399,11 @@
           "command": "dspf-edit.add-chginpdft",
           "when": "view == dspf-edit.schema-view && viewItem == file",
           "group": "file_navigation2@3"
+        },
+        {
+          "command": "dspf-edit.set-reference-file",
+          "when": "view == dspf-edit.schema-view && viewItem == file",
+          "group": "file_navigation2@4"
         },
         {
           "command": "dspf-edit.fill-constant",
