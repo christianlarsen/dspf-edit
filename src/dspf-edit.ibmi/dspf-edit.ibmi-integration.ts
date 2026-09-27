@@ -51,26 +51,39 @@ export function getIBMiConnection(): MinimalIBMiConnection | undefined {
     return codeForIBMi?.exports?.instance?.getConnection();
 };
 
+/** The file (and optional library and record format) named by a REF() keyword. */
+export interface RefKeywordTarget {
+    file: string;
+    library?: string;
+    recordFormat?: string;
+};
+
+/**
+ * Parses a REF() keyword's value, per the DDS reference: REF([library-name/]database-file-name
+ * [record-format-name]). The record format is optional and only says which of the file's formats
+ * to take field definitions from.
+ * @param value - The keyword as coded, e.g. "REF(*LIBL/HTPFREF)" or "REF(LIB/FILE1 RECORD2)"
+ */
+export function parseRefKeyword(value: string): RefKeywordTarget | undefined {
+    const match = value.trim().match(/^REF\(\s*(\S+?)(?:\s+(\S+?))?\s*\)$/i);
+    if (!match) {
+        return undefined;
+    };
+
+    const [, qualifiedFile, recordFormat] = match;
+    const [library, file] = qualifiedFile.includes('/') ? qualifiedFile.split('/') : [undefined, qualifiedFile];
+    return { file, library, recordFormat };
+};
+
 /**
  * Extracts the file (and optional library) named by a REF() keyword — used as a fallback when a
  * referenced field's own REFFLD() doesn't name a file (or there's no REFFLD at all), so the file
  * comes from the record- or file-level REF() instead.
  * @param attributes - The record's or file's own DDS attributes
  */
-function findRefKeyword(attributes: DdsAttribute[] | undefined): { file: string; library?: string } | undefined {
-    const attr = attributes?.find(a => a.value.toUpperCase().startsWith('REF('));
-    if (!attr) {
-        return undefined;
-    };
-
-    const match = attr.value.match(/^REF\(\s*(\S+)\s*\)$/i);
-    if (!match) {
-        return undefined;
-    };
-
-    const qualifiedFile = match[1];
-    const [library, file] = qualifiedFile.includes('/') ? qualifiedFile.split('/') : [undefined, qualifiedFile];
-    return { file, library };
+function findRefKeyword(attributes: DdsAttribute[] | undefined): RefKeywordTarget | undefined {
+    const attr = attributes?.find(a => a.value.trim().toUpperCase().startsWith('REF('));
+    return attr ? parseRefKeyword(attr.value) : undefined;
 };
 
 /**
