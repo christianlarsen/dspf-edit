@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { fileSizeAttributes, fieldsPerRecords, getRecordSize, getSubfileMinDetailRow, AttributeWithIndicators, attributesFileLevel } from '../dspf-edit.model/dspf-edit.model';
+import { fileSizeAttributes, fieldsPerRecords, getRecordSize, getSubfileMinDetailRow, AttributeWithIndicators, attributesFileLevel, FieldInfo } from '../dspf-edit.model/dspf-edit.model';
 import { RefKeywordTarget, parseRefKeyword } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 import { checkForEditorAndDocument, parseSize, removeKeywordTextFromLines } from '../dspf-edit.utils/dspf-edit.helper';
 
@@ -66,6 +66,12 @@ interface FieldReference {
      * a field name that exists in more than one format of the referenced file. */
     recordFormat?: string;
 };
+
+/** Where a referenced field takes its definition from, as picked in the quick kind picker. */
+type ReferenceSource = 'ref' | 'file' | 'src';
+
+/** The quick kind picker's result: a common kind+usage combo, a referenced field, or the full flow. */
+type QuickFieldKind = { isNumeric: boolean; usage: FieldUsage } | { referenced: ReferenceSource } | 'advanced';
 
 /**
  * Interface for field type configuration
@@ -383,18 +389,20 @@ export async function addFieldAtPosition(recordName: string, position: FieldPosi
         const fieldName = await promptForNewFieldName(recordElement);
         if (!fieldName) return;
 
-        const quickKind = await collectQuickFieldKind(fieldName);
+        const quickKind = await collectQuickFieldKind(fieldName, recordName);
         if (quickKind === null) return;
 
         let newFieldLine: string;
 
-        if (quickKind !== 'advanced') {
+        if (quickKind !== 'advanced' && !('referenced' in quickKind)) {
             const size = await collectQuickFieldSize(fieldName, quickKind.isNumeric);
             if (!size) return;
 
             newFieldLine = generateQuickFieldLines(fieldName, quickKind.isNumeric, quickKind.usage, size, position);
         } else {
-            const advanced = await collectAdvancedFieldDefinition(fieldName);
+            const advanced = quickKind === 'advanced'
+                ? await collectAdvancedFieldDefinition(fieldName)
+                : await collectReferencedFieldDefinition(fieldName, quickKind.referenced, recordName);
             if (!advanced) return;
 
             // These usage types don't have screen positions, same as the tree command's own flow.
@@ -425,22 +433,46 @@ export async function addFieldAtPosition(recordName: string, position: FieldPosi
 
 /**
  * Shows the quick "Add Field" kind picker: the six common kind+usage combos (mirroring what
- * STRSDA's own +B/+O/+I/+9/+6/+3 shorthand generates), plus a "More options..." entry that opens
- * the full usage/referenced-field/type flow for anything outside that common case (Hidden/Message/
- * Program-to-system usage, a referenced field, or a data type other than plain alphanumeric/numeric).
+ * STRSDA's own +B/+O/+I/+9/+6/+3 shorthand generates), a referenced field (position 29 `R`) by
+ * where it takes its definition from — the file-level REF() file (only offered when the file has
+ * one), another database file, or a field earlier in this source (*SRC, only offered when there is
+ * one) — plus a "More options..." entry that opens the full usage/type flow for anything else
+ * (Hidden/Message/Program-to-system usage, or a data type other than plain alphanumeric/numeric).
  * @param fieldName - The field's name, shown in the picker's title
+ * @param recordName - The record the field is added to, for the *SRC entry
  */
-async function collectQuickFieldKind(fieldName: string): Promise<{ isNumeric: boolean; usage: FieldUsage } | 'advanced' | null> {
-    type KindPick = vscode.QuickPickItem & { index?: number; advanced?: boolean };
+async function collectQuickFieldKind(fieldName: string, recordName: string): Promise<QuickFieldKind | null> {
+    type KindPick = vscode.QuickPickItem & { index?: number; advanced?: boolean; referenced?: ReferenceSource };
+
+    const fileLevelRef = getFileLevelRef();
+    const referencedItems: KindPick[] = [
+        ...(fileLevelRef ? [{
+            label: '$(references) Referenced from REF file',
+            description: formatRefFile(fileLevelRef),
+            referenced: 'ref' as const
+        }] : []),
+        {
+            label: '$(references) Referenced from another file',
+            description: 'REFFLD(field library/file)',
+            referenced: 'file'
+        },
+        ...(getSourceFieldCandidates(recordName).length > 0 ? [{
+            label: '$(references) Referenced from this source',
+            description: 'REFFLD(field *SRC)',
+            referenced: 'src' as const
+        }] : [])
+    ];
 
     const items: KindPick[] = [
         ...QUICK_FIELD_KINDS.map((kind, index) => ({ label: kind.label, index })).slice(0, 3),
         { label: '', kind: vscode.QuickPickItemKind.Separator },
         ...QUICK_FIELD_KINDS.map((kind, index) => ({ label: kind.label, index })).slice(3),
+        { label: 'Referenced', kind: vscode.QuickPickItemKind.Separator },
+        ...referencedItems,
         { label: '', kind: vscode.QuickPickItemKind.Separator },
         {
             label: 'More options...',
-            description: 'Hidden/Message/Program-to-system usage, referenced field, or another data type',
+            description: 'Hidden/Message/Program-to-system usage, or another data type',
             advanced: true
         }
     ];
@@ -453,6 +485,7 @@ async function collectQuickFieldKind(fieldName: string): Promise<{ isNumeric: bo
 
     if (!selection) return null;
     if (selection.advanced) return 'advanced';
+    if (selection.referenced) return { referenced: selection.referenced };
     if (typeof selection.index !== 'number') return null;
 
     const kind = QUICK_FIELD_KINDS[selection.index];
@@ -539,8 +572,8 @@ function generateQuickFieldLines(name: string, isNumeric: boolean, usage: FieldU
 
 /**
  * Collects a field's full definition via the original, exhaustive flow — usage including Hidden/
- * Message/Program-to-system, the referenced-field option, and the complete list of DDS field
- * types — reached through the quick kind picker's "More options..." entry.
+ * Message/Program-to-system, and the complete list of DDS field types — reached through the quick
+ * kind picker's "More options..." entry. (A referenced field has entries of its own in that picker.)
  * @param fieldName - The field's name, shown in the various prompts' titles
  */
 async function collectAdvancedFieldDefinition(fieldName: string): Promise<{
@@ -552,23 +585,34 @@ async function collectAdvancedFieldDefinition(fieldName: string): Promise<{
     const usage = await collectFieldUsage(fieldName);
     if (!usage) return null;
 
-    const isReferenced = await promptForFieldReference();
-    if (isReferenced === null) return null;
+    const typeConfig = await collectFieldTypeConfiguration(fieldName);
+    if (!typeConfig) return null;
 
-    let reference: FieldReference | undefined;
-    let typeConfig: FieldTypeConfig | undefined;
+    return { usage, isReferenced: false, typeConfig };
+};
 
-    if (isReferenced) {
-        const collectedReference = await collectFieldReference(fieldName);
-        if (!collectedReference) return null;
-        reference = collectedReference;
-    } else {
-        const collectedTypeConfig = await collectFieldTypeConfiguration(fieldName);
-        if (!collectedTypeConfig) return null;
-        typeConfig = collectedTypeConfig;
-    };
+/**
+ * Collects a referenced field's definition: which field it references (from the source picked in
+ * the quick kind picker), then its usage.
+ * @param fieldName - The new field's name, the default referenced field name
+ * @param source - Where the definition comes from: the REF() file, another file, or this source
+ * @param recordName - The record the field is added to, for a *SRC reference
+ */
+async function collectReferencedFieldDefinition(fieldName: string, source: ReferenceSource, recordName: string): Promise<{
+    usage: FieldUsage;
+    isReferenced: boolean;
+    reference?: FieldReference;
+    typeConfig?: FieldTypeConfig;
+} | null> {
+    const reference = source === 'ref' ? await collectRefFileReference(fieldName)
+        : source === 'src' ? await collectSourceFieldReference(fieldName, recordName)
+        : await collectFieldReferenceFromFile(fieldName);
+    if (!reference) return null;
 
-    return { usage, isReferenced, reference, typeConfig };
+    const usage = await collectFieldUsage(fieldName);
+    if (!usage) return null;
+
+    return { usage, isReferenced: true, reference };
 };
 
 /**
@@ -582,10 +626,10 @@ async function collectNewFieldConfiguration(editor: vscode.TextEditor, recordEle
     const fieldName = await promptForNewFieldName(recordElement);
     if (!fieldName) return null;
 
-    const quickKind = await collectQuickFieldKind(fieldName);
+    const quickKind = await collectQuickFieldKind(fieldName, recordElement.name);
     if (quickKind === null) return null;
 
-    if (quickKind !== 'advanced') {
+    if (quickKind !== 'advanced' && !('referenced' in quickKind)) {
         const size = await collectQuickFieldSize(fieldName, quickKind.isNumeric);
         if (!size) return null;
 
@@ -595,7 +639,9 @@ async function collectNewFieldConfiguration(editor: vscode.TextEditor, recordEle
         return { name: fieldName, line: generateQuickFieldLines(fieldName, quickKind.isNumeric, quickKind.usage, size, position) };
     };
 
-    const advanced = await collectAdvancedFieldDefinition(fieldName);
+    const advanced = quickKind === 'advanced'
+        ? await collectAdvancedFieldDefinition(fieldName)
+        : await collectReferencedFieldDefinition(fieldName, quickKind.referenced, recordElement.name);
     if (!advanced) return null;
 
     // Hidden/Message/Program-to-system usage doesn't have a screen position.
@@ -653,35 +699,6 @@ function validateNewFieldName(value: string, recordElement: any): string | null 
 };
 
 /**
- * Prompts user to choose if field is referenced or not
- */
-async function promptForFieldReference(): Promise<boolean | null> {
-    const choice = await vscode.window.showQuickPick([
-        { 
-            label: "New Field", 
-            description: "Define new field with type and size",
-            detail: "Will prompt for field type, length, and decimals",
-            value: false
-        },
-        {
-            label: "Referenced Field",
-            description: "Field references another file's field",
-            detail: getFileLevelRef()
-                ? "Will prompt for the referenced field, from the file-level REF file or another file"
-                : "Will prompt for library, file, and field names",
-            value: true
-        }
-    ], {
-        title: 'Field Definition Type',
-        placeHolder: "Choose how to define the field",
-        canPickMany: false,
-        ignoreFocusOut: true
-    });
-
-    return choice ? choice.value : null;
-};
-
-/**
  * Collects field usage type (I/O/B/H/M/P)
  */
 async function collectFieldUsage(fieldName: string): Promise<FieldUsage | null> {
@@ -713,42 +730,19 @@ function getFileLevelRef(): RefKeywordTarget | undefined {
     return attr ? parseRefKeyword(attr.value) : undefined;
 };
 
+/** Formats a REF() target's file as [library/]file. */
+function formatRefFile(ref: RefKeywordTarget): string {
+    return ref.library ? `${ref.library}/${ref.file}` : ref.file;
+};
+
 /**
- * Collects a field's reference. When the file has a file-level REF(), first offers taking the
- * definition from that file — then only the referenced field's name is asked for, since DDS takes
- * the file (and library/record format) from REF() — or from another file, via the full flow.
+ * Collects a reference to a field of the file-level REF() file: only the referenced field's name
+ * is asked for, since DDS takes the file (and library/record format) from REF().
  * @param fieldName - The new field's name, the default referenced field name
  */
-async function collectFieldReference(fieldName: string): Promise<FieldReference | null> {
+async function collectRefFileReference(fieldName: string): Promise<FieldReference | null> {
     const fileLevelRef = getFileLevelRef();
-    if (!fileLevelRef) {
-        return collectFieldReferenceFromFile(fieldName);
-    };
-
-    const refFile = fileLevelRef.library ? `${fileLevelRef.library}/${fileLevelRef.file}` : fileLevelRef.file;
-    const source = await vscode.window.showQuickPick([
-        {
-            label: `From the REF file (${refFile})`,
-            description: 'File-level REF keyword',
-            detail: 'Will prompt only for the referenced field name',
-            value: 'ref' as const
-        },
-        {
-            label: 'From another file',
-            description: 'REFFLD naming its own file',
-            detail: 'Will prompt for library, file, and field names',
-            value: 'other' as const
-        }
-    ], {
-        title: `Reference for field '${fieldName}'`,
-        placeHolder: 'Choose where the field takes its definition from',
-        ignoreFocusOut: true
-    });
-    if (!source) return null;
-
-    if (source.value === 'other') {
-        return collectFieldReferenceFromFile(fieldName);
-    };
+    const refFile = fileLevelRef ? formatRefFile(fileLevelRef) : 'REF file';
 
     const referencedField = await vscode.window.showInputBox({
         title: `Reference for field '${fieldName}' in ${refFile}`,
@@ -762,6 +756,58 @@ async function collectFieldReference(fieldName: string): Promise<FieldReference 
     return {
         library: '',
         field: referencedField.trim().toUpperCase()
+    };
+};
+
+/**
+ * Fields a new field in the given record can reference with *SRC: per the DDS reference, the
+ * referenced field must precede it, and a new field goes at the end of its record — so every field
+ * of that record and of the records before it. Listed nearest first.
+ * @param recordName - The record the new field is added to
+ */
+function getSourceFieldCandidates(recordName: string): { record: string; field: FieldInfo }[] {
+    const recordIndex = fieldsPerRecords.findIndex(r => r.record === recordName);
+    if (recordIndex < 0) return [];
+
+    return fieldsPerRecords
+        .slice(0, recordIndex + 1)
+        .flatMap(record => record.fields.map(field => ({ record: record.record, field })))
+        .reverse();
+};
+
+/**
+ * Collects a reference to a field earlier in this same source (REFFLD(field *SRC)), picked from a
+ * list. One in another record is qualified with its record format, so it can't be mistaken for a
+ * field of the same name in the new field's own record.
+ * @param fieldName - The new field's name, shown in the picker's title
+ * @param recordName - The record the new field is added to
+ */
+async function collectSourceFieldReference(fieldName: string, recordName: string): Promise<FieldReference | null> {
+    const describe = (field: FieldInfo) => field.referenced
+        ? 'referenced'
+        : `(${field.decimals !== undefined ? `${field.length},${field.decimals}` : field.length})${(field.type ?? '').trim()}`;
+
+    const selection = await vscode.window.showQuickPick(
+        getSourceFieldCandidates(recordName).map(({ record, field }) => ({
+            label: field.name,
+            description: `${record} · ${describe(field)}`,
+            record,
+            field
+        })),
+        {
+            title: `Reference for field '${fieldName}' in this source (*SRC)`,
+            placeHolder: 'Select the field to take the definition from',
+            matchOnDescription: true,
+            ignoreFocusOut: true
+        }
+    );
+    if (!selection) return null;
+
+    return {
+        library: '',
+        file: '*SRC',
+        field: selection.field.name.toUpperCase(),
+        recordFormat: selection.record === recordName ? undefined : selection.record.toUpperCase()
     };
 };
 

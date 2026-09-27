@@ -117,6 +117,19 @@ export interface DdsRecord {
 };
 
 /** DDS Field element */
+/**
+ * What a referenced field (position 29 `R`) overrides of the field it references, per the DDS
+ * reference: a length or decimal positions given as a new value or as an increase/decrease (+n/-n),
+ * and a data type/keyboard shift (position 35). Anything left blank is copied from the referenced field.
+ */
+export interface RefOverrides {
+  length?: number;
+  lengthDelta?: number;
+  decimals?: number;
+  decimalsDelta?: number;
+  type?: string;
+};
+
 export interface DdsField {
   kind: 'field';
   name: string;
@@ -133,6 +146,8 @@ export interface DdsField {
    * `recordFormat` is set when the field name was qualified as record-format-name/field-name,
    * disambiguating a field name that exists in more than one format of the referenced file. */
   refTarget?: { fieldName: string; file?: string; library?: string; recordFormat?: string };
+  /** For a referenced field: what it overrides of the referenced field's type/length/decimals. */
+  refOverrides?: RefOverrides;
   lineIndex: number;
   recordname: string;
   attribute?: string;
@@ -251,6 +266,8 @@ export interface FieldInfo {
   decimals?: number;
   /** True for a referenced field (REFFLD/position-29 `R`): its type/length live in the external database field, not in this source. */
   referenced?: boolean;
+  /** For a referenced field: what it overrides of the referenced field's type/length/decimals. */
+  refOverrides?: RefOverrides;
   attributes: AttributeWithIndicators[];
   indicators?: DdsIndicator[];
   lineIndex: number;

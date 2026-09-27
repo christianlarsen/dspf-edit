@@ -37,7 +37,7 @@ export function describeDdsField(field: DdsElement): string {
 
     if (field.referenced) {
         const documentUri = ExtensionState.lastDdsDocument?.uri.toString();
-        const resolved = documentUri ? getResolvedRef(documentUri, field.recordname, field.name) : undefined;
+        const resolved = documentUri ? getResolvedRef(documentUri, field.recordname, field.name, field.refOverrides) : undefined;
 
         if (resolved) {
             return `${formatFieldSize(resolved.length, resolved.decimals)}${resolved.type} [${col},${row}] (Ref)`;
@@ -96,8 +96,8 @@ function formatRefTarget(ref: RefKeywordTarget): string {
 
 /**
  * Describes where a referenced field takes its definition from, in the same order the resolver
- * (resolveReferencedField) looks it up: the file named in its own REFFLD(), otherwise the REF()
- * file. With neither, DDS itself defaults to *SRC (a field earlier in this same source).
+ * (resolveReferencedField) looks it up: the file named in its own REFFLD() (or *SRC, this same
+ * source), otherwise the REF() file. With neither, DDS itself defaults to *SRC.
  * @param field - The DDS element to describe (should be a referenced field)
  * @returns e.g. "UPDUSR in *LIBL/HTPFREF (file-level REF)", or an empty string if not referenced
  */
@@ -106,6 +106,9 @@ export function describeReferenceSource(field: DdsElement): string {
 
     const target = field.refTarget ?? { fieldName: field.name };
     const qualifiedField = target.recordFormat ? `${target.recordFormat}/${target.fieldName}` : target.fieldName;
+    if (target.file?.toUpperCase() === '*SRC') {
+        return `${qualifiedField} earlier in this source (REFFLD *SRC)`;
+    };
     if (target.file) {
         const qualifiedFile = target.library ? `${target.library}/${target.file}` : target.file;
         return `${qualifiedField} in ${qualifiedFile} (REFFLD)`;
@@ -119,7 +122,7 @@ export function describeReferenceSource(field: DdsElement): string {
     if (fileRef) {
         return `${qualifiedField} in ${formatRefTarget(fileRef)} (file-level REF)`;
     };
-    return `${qualifiedField} — no file in REFFLD and no REF keyword`;
+    return `${qualifiedField} earlier in this source (no file in REFFLD and no REF keyword: *SRC)`;
 };
 
 // FORMATTING FUNCTIONS

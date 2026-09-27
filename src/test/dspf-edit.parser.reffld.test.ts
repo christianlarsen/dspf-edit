@@ -49,3 +49,34 @@ suite('Parser: referenced field targets', () => {
         });
     });
 });
+
+suite('Parser: referenced field overrides', () => {
+    const src = [
+        srcLine({ 17: 'R', 19: 'RECORD' }),
+        srcLine({ 19: 'PLUS', 29: 'R', 30: '   +4', 38: 'O', 39: '  2', 42: '  2' }),
+        srcLine({ 19: 'MINUS', 29: 'R', 30: '   -2', 36: '+1', 38: 'O', 39: '  3', 42: '  2' }),
+        srcLine({ 19: 'ABSOLUTE', 29: 'R', 30: '   12', 35: 'A', 38: 'O', 39: '  4', 42: '  2' }),
+        srcLine({ 19: 'PLAIN', 29: 'R', 38: 'O', 39: '  5', 42: '  2' }),
+    ].join('\n');
+    const elements = parseDocument(src);
+
+    test('+n length is a change, not a length of its own', () => {
+        const field = findField(elements, 'PLUS');
+        assert.deepStrictEqual(field?.refOverrides, { lengthDelta: 4 });
+        assert.strictEqual(field?.length, 0);
+    });
+
+    test('-n length and +n decimals', () => {
+        const field = findField(elements, 'MINUS');
+        assert.deepStrictEqual(field?.refOverrides, { lengthDelta: -2, decimalsDelta: 1 });
+        assert.strictEqual(field?.decimals, undefined);
+    });
+
+    test('absolute length and data type', () => {
+        assert.deepStrictEqual(findField(elements, 'ABSOLUTE')?.refOverrides, { length: 12, type: 'A' });
+    });
+
+    test('no overrides', () => {
+        assert.strictEqual(findField(elements, 'PLAIN')?.refOverrides, undefined);
+    });
+});
