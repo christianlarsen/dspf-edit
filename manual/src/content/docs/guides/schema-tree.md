@@ -9,7 +9,7 @@ The tree has two levels: **File** and **Records**, with **Constants**, **Fields*
 
 ## File level
 
-Shows the display file's own attributes — display size, command keys defined at file level, and (if present) more than one `DSPSIZ` format. When the file has a `REF` keyword, the file node shows it next to its name, e.g. `REF *LIBL/HTPFREF`.
+Shows the display file's own attributes — display size, command keys defined at file level, and (if present) more than one `DSPSIZ` format.
 
 Right-click the file node for:
 

@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 - File-level `REF` keyword support ([#91](https://github.com/christianlarsen/dspf-edit/issues/91)):
   - New **Reference File (REF)** option on the file node of the Schema Tree adds, changes or removes the file's `REF`. It asks for the library (optional, `*LIBL` or `*CURLIB` allowed), the file and the record format (optional), and writes the keyword right after `DSPSIZ`, where STRSDA puts it. Changing or removing it makes the document's referenced fields pending again, so they are resolved against the new file.
-  - The Schema Tree shows the file's `REF` next to the file node, and hovering a referenced field shows where its definition comes from: the file in its own `REFFLD()`, the file-level `REF`, or a field earlier in the same source.
+  - Hovering a referenced field in the Schema Tree shows where its definition comes from: the file in its own `REFFLD()`, the file-level `REF`, or a field earlier in the same source.
 - Add Field: referenced fields now have their own entries in the first field kind list, instead of being under "More options...":
   - **Referenced from REF file** (only when the file has a `REF`) asks only for the referenced field's name. With the same name as the new field, only the `R` in position 29 is written, with no `REFFLD()`, as DDS allows. With a different name, `REFFLD(name)` is written with no file.
   - **Referenced from another file** asks for library, file, field and record format, as before.

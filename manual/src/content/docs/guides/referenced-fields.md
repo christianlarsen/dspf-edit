@@ -32,8 +32,6 @@ The keyword is written right after `DSPSIZ`, where STRSDA puts it. DDS allows on
 
 Changing or removing it makes the document's referenced fields pending again, so they are resolved against the new file.
 
-The file node shows the current `REF` next to its name, e.g. `REF *LIBL/HTPFREF`.
-
 ## Add a referenced field
 
 Choose **New Field** on a record (or **+ Field** in the [Screen Preview](/dspf-edit/guides/screen-preview/)), enter the field name, and pick one of the **Referenced** entries:

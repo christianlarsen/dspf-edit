@@ -72,14 +72,13 @@ export function describeDdsRecord(field: DdsElement): string {
 };
 
 /**
- * Describes a DDS file element: its file-level REF() file, if any.
+ * Describes a DDS file element.
  * @param field - The DDS element to describe (should be a file)
- * @returns The REF() target (e.g. "REF *LIBL/HTPFREF"), or an empty string
+ * @returns Currently returns an empty string (placeholder for future implementation)
  */
 export function describeDdsFile(field: DdsElement): string {
     if (field.kind !== 'file') return 'Not a file.';
-    const ref = findRefTarget(attributesFileLevel);
-    return ref ? `REF ${formatRefTarget(ref)}` : '';
+    return '';
 };
 
 /** The REF() keyword's target among the given attributes, if any. */
