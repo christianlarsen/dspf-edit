@@ -1294,6 +1294,8 @@ function parseConstantFromLine(lineText: string, lineIndex: number): ExistingEle
 /**
  * Generates a DDS line for the new field
  * Updated to handle fixed-length fields correctly
+ * A REFFLD too long for positions 45-80 is continued on a second line, so the result may hold two
+ * source lines separated by a newline.
  */
 function generateNewFieldLine(config: NewFieldConfig): string {
     let line = ' '.repeat(80);
@@ -1302,6 +1304,9 @@ function generateNewFieldLine(config: NewFieldConfig): string {
     // Columns 19-28: Field name (padded to 10 characters)
     const paddedName = config.name.padEnd(10, ' ');
     line = replaceAt(line, 18, paddedName);
+
+    // A keyword line continuing the field's REFFLD, when it doesn't fit in positions 45-80.
+    let continuationLine: string | undefined;
 
     if (config.isReferenced && config.reference) {
         // Referenced field - use R and reference specification
@@ -1313,7 +1318,15 @@ function generateNewFieldLine(config: NewFieldConfig): string {
         const qualifiedField = config.reference.recordFormat ? `${config.reference.recordFormat}/${config.reference.field}` : config.reference.field;
         if (config.reference.file) {
             const qualifiedFile = config.reference.library ? `${config.reference.library}/${config.reference.file}` : config.reference.file;
-            line = replaceAt(line, 44, `REFFLD(${qualifiedField} ${qualifiedFile})`);
+            const refSpec = `REFFLD(${qualifiedField} ${qualifiedFile})`;
+            if (44 + refSpec.length <= 80) {
+                line = replaceAt(line, 44, refSpec);
+            } else {
+                // Fully qualified (record format, library, 10-character names) it can run up to
+                // 51 characters: the file goes on a "-" continuation line, resuming at position 45.
+                line = replaceAt(line, 44, `REFFLD(${qualifiedField} -`);
+                continuationLine = '     A'.padEnd(44, ' ') + `${qualifiedFile})`;
+            };
         } else if (qualifiedField !== config.name.trim().toUpperCase()) {
             line = replaceAt(line, 44, `REFFLD(${qualifiedField})`);
         };
@@ -1354,7 +1367,7 @@ function generateNewFieldLine(config: NewFieldConfig): string {
         line = replaceAt(line, 41, colStr);
     };
 
-    return line.trimEnd();
+    return continuationLine ? `${line.trimEnd()}\n${continuationLine}` : line.trimEnd();
 };
 
 /**

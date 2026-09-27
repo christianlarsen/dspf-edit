@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { DdsElement, DdsGroup, DdsIndicator, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
-import { describeDdsField, describeDdsConstant, describeDdsRecord, describeDdsFile, formatDdsIndicators, formatIndicatorCondition } from '../dspf-edit.utils/dspf-edit.helper';
+import { describeDdsField, describeDdsConstant, describeDdsRecord, describeDdsFile, describeReferenceSource, formatDdsIndicators, formatIndicatorCondition } from '../dspf-edit.utils/dspf-edit.helper';
 import { ExtensionState } from '../dspf-edit.states/state';
 import { getResolvedRef, getPendingReferencedFields } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 import { moveRecordInSource } from '../dspf-edit.commands/dspf-edit.move-record';
@@ -993,7 +993,15 @@ export class DdsNode extends vscode.TreeItem {
 			}
 		})();
 
+		const lines = [base];
+		const referenceSource = describeReferenceSource(ddsElement);
+		if (referenceSource) {
+			lines.push(`Referenced: ${referenceSource}`);
+		};
 		const condition = 'indicators' in ddsElement ? formatIndicatorCondition(ddsElement.indicators) : '';
-		return condition ? `${base}\nActive when: ${condition}` : base;
+		if (condition) {
+			lines.push(`Active when: ${condition}`);
+		};
+		return lines.join('\n');
 	}
 }

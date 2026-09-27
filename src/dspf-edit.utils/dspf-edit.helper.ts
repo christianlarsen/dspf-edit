@@ -11,7 +11,7 @@ import { DdsElement, DdsIndicator, DdsAttribute, records, FieldsPerRecord, Const
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
 import { parseDocument, pickForActiveFormat, getContinuationChar, joinContinuedKeywordParts } from '../dspf-edit.parser/dspf-edit.parser';
 import { ExtensionState } from '../dspf-edit.states/state';
-import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
+import { getResolvedRef, parseRefKeyword, RefKeywordTarget } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 
 
 // FIELD DESCRIPTION FUNCTIONS
@@ -72,13 +72,54 @@ export function describeDdsRecord(field: DdsElement): string {
 };
 
 /**
- * Describes a DDS file element.
+ * Describes a DDS file element: its file-level REF() file, if any.
  * @param field - The DDS element to describe (should be a file)
- * @returns Currently returns an empty string (placeholder for future implementation)
+ * @returns The REF() target (e.g. "REF *LIBL/HTPFREF"), or an empty string
  */
 export function describeDdsFile(field: DdsElement): string {
     if (field.kind !== 'file') return 'Not a file.';
-    return '';
+    const ref = findRefTarget(attributesFileLevel);
+    return ref ? `REF ${formatRefTarget(ref)}` : '';
+};
+
+/** The REF() keyword's target among the given attributes, if any. */
+function findRefTarget(attributes: DdsAttribute[] | undefined): RefKeywordTarget | undefined {
+    const attr = attributes?.find(a => /^REF\(/i.test(a.value.trim()));
+    return attr ? parseRefKeyword(attr.value) : undefined;
+};
+
+/** Formats a REF() target as [library/]file [record-format]. */
+function formatRefTarget(ref: RefKeywordTarget): string {
+    const qualifiedFile = ref.library ? `${ref.library}/${ref.file}` : ref.file;
+    return ref.recordFormat ? `${qualifiedFile} ${ref.recordFormat}` : qualifiedFile;
+};
+
+/**
+ * Describes where a referenced field takes its definition from, in the same order the resolver
+ * (resolveReferencedField) looks it up: the file named in its own REFFLD(), otherwise the REF()
+ * file. With neither, DDS itself defaults to *SRC (a field earlier in this same source).
+ * @param field - The DDS element to describe (should be a referenced field)
+ * @returns e.g. "UPDUSR in *LIBL/HTPFREF (file-level REF)", or an empty string if not referenced
+ */
+export function describeReferenceSource(field: DdsElement): string {
+    if (field.kind !== 'field' || !field.referenced) return '';
+
+    const target = field.refTarget ?? { fieldName: field.name };
+    const qualifiedField = target.recordFormat ? `${target.recordFormat}/${target.fieldName}` : target.fieldName;
+    if (target.file) {
+        const qualifiedFile = target.library ? `${target.library}/${target.file}` : target.file;
+        return `${qualifiedField} in ${qualifiedFile} (REFFLD)`;
+    };
+
+    const recordRef = findRefTarget(fieldsPerRecords.find(r => r.record === field.recordname)?.attributes);
+    if (recordRef) {
+        return `${qualifiedField} in ${formatRefTarget(recordRef)} (record-level REF)`;
+    };
+    const fileRef = findRefTarget(attributesFileLevel);
+    if (fileRef) {
+        return `${qualifiedField} in ${formatRefTarget(fileRef)} (file-level REF)`;
+    };
+    return `${qualifiedField} — no file in REFFLD and no REF keyword`;
 };
 
 // FORMATTING FUNCTIONS
