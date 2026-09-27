@@ -160,10 +160,13 @@ See the full changelog [here](./CHANGELOG.md).
 ### Latest
 **1.9.0** - 2026-09-27
 - Added: file-level `REF` support ([#91](https://github.com/christianlarsen/dspf-edit/issues/91)) — a new **Reference File (REF)** option on the file node adds, changes or removes it, and the Schema Tree shows where each referenced field takes its definition from.
+- Added: Add Field offers hidden alphanumeric and numeric fields directly, with no position asked.
 - Added: Add Field offers referenced fields directly — from the `REF` file (just an `R`, no `REFFLD()` needed), from another file, or from a field earlier in the same source (`*SRC`), picked from a list.
 - Added: referenced fields pointing to a field of the same source (`*SRC`) are resolved locally, without an IBM i connection.
 - Added: a referenced field's own length, decimals or data type (e.g. `+4`, `-2`, `12`) now override the referenced definition.
 - Fixed: `REF(LIB/FILE RECFMT)` with a record format is now recognized, and a long `REFFLD()` written by Add Field is continued onto a second line instead of running past position 80.
+- Fixed: Schema Tree no longer offers positioning, colors/attributes, validity checks, editing keywords or error messages on hidden, message and program-to-system fields, which are never displayed.
+- Fixed: Add Field's "More options..." now only offers the data types DDS allows for message and program-to-system fields, and cancelling the length no longer adds the field anyway.
 
 ---
 

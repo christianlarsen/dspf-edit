@@ -67,6 +67,8 @@ Right-click a field for:
 - **Add / Remove / Change indicators** — same AND/OR support as constants. See [Indicators and Conditions](/dspf-edit/guides/indicators/).
 - **Resolve Referenced Field** (referenced fields only) — see [Referenced Fields](/dspf-edit/guides/referenced-fields/).
 
+A hidden (`H`), message (`M`), or program-to-system (`P`) field is never displayed, so the options that only apply to a displayed field aren't offered for it: centering, change position, colors/attributes, validity checks, editing keywords, and error messages. Per the DDS reference, message and program-to-system fields only allow the `ALIAS`, `INDTXT`, `OVRDTA` (message only), `REFFLD`, and `TEXT` keywords. A hidden field has no position and is neither an input nor an output field.
+
 ## Attributes
 
 Right-click an attribute (a `DSPATR`-style flag on a field or constant) for:

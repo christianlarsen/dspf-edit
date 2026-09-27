@@ -908,6 +908,25 @@ function referencedFieldContextSuffix(ddsElement: DdsElement): string {
 };
 
 /**
+ * Extra contextValue word for a field that's never displayed — hidden (H), message (M) or
+ * program-to-system (P) usage — so package.json's "when" clauses can leave out the commands that
+ * don't apply to it: positioning, colors/attributes, validity checks, editing keywords and error
+ * messages. Per the DDS reference, M and P fields only allow ALIAS/INDTXT/OVRDTA/REFFLD/TEXT, and
+ * an H field has no location and is neither input- nor output-capable.
+ */
+function fieldUsageContextSuffix(ddsElement: DdsElement): string {
+	if (ddsElement.kind !== 'field') {
+		return '';
+	};
+	switch ((ddsElement.usage ?? '').trim().toUpperCase()) {
+		case 'H': return ' hidden';
+		case 'M': return ' message';
+		case 'P': return ' p2s';
+		default: return '';
+	};
+};
+
+/**
  * DDS NODE CLASS
  * Represents each node in the TreeView. Configures label, tooltip, description,
  * context menu value, and navigation command to go to the line in the editor.
@@ -920,7 +939,7 @@ export class DdsNode extends vscode.TreeItem {
 		this.iconPath = this.getIconPath(ddsElement, label);
 		this.contextValue = ddsElement.kind === 'group' && ddsElement.attribute === '' && label === 'Records'
 			? 'group:records'
-			: isSflCtlElement(ddsElement) ? 'record sflctl' : `${ddsElement.kind}${referencedFieldContextSuffix(ddsElement)}`;
+			: isSflCtlElement(ddsElement) ? 'record sflctl' : `${ddsElement.kind}${referencedFieldContextSuffix(ddsElement)}${fieldUsageContextSuffix(ddsElement)}`;
 
 		if (this.shouldHaveNavigationCommand(ddsElement)) {
 			this.command = { command: 'ddsEdit.goToLine', title: `Go to ${ddsElement.kind}`, arguments: [ddsElement.lineIndex + 1] };

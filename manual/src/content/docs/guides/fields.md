@@ -9,7 +9,16 @@ Fields are shown under their record in the [Schema Tree](/dspf-edit/guides/schem
 
 Right-click a record and choose **New Field**, or click **+ Field** in the [Screen Preview](/dspf-edit/guides/screen-preview/) toolbar and click a point on the screen to place it there. Both use the same prompts to collect name, type, length, and position.
 
-The field kind list offers the common output/input/both alphanumeric and numeric fields, a **Referenced** section for a field taking its definition from another one (see [Add a referenced field](/dspf-edit/guides/referenced-fields/#add-a-referenced-field)), and **More options...** for hidden, message, and program-to-system fields or any other data type.
+The field kind list offers:
+
+- The common alphanumeric and numeric fields: output, input/output, and input.
+- **Hidden** alphanumeric and numeric fields. They are never displayed, so no position is asked. They are written the way STRSDA writes them, e.g. `10A  H` or `4S 0H`.
+- A **Referenced** section, for a field taking its definition from another one. See [Add a referenced field](/dspf-edit/guides/referenced-fields/#add-a-referenced-field).
+- **More options...**, for any usage and data type. That includes message (`M`) and program-to-system (`P`) fields, and hidden date, time, or timestamp fields. Only the data types DDS allows for the usage are offered:
+  - A message field is always character, so only its length is asked. It isn't offered in a subfile record.
+  - A program-to-system field can't be a date, time, or timestamp.
+
+A numeric field can have up to 63 digits.
 
 ## Edit / Rename / Remove
 
