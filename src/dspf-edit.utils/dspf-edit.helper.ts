@@ -114,10 +114,6 @@ export function describeReferenceSource(field: DdsElement): string {
         return `${qualifiedField} in ${qualifiedFile} (REFFLD)`;
     };
 
-    const recordRef = findRefTarget(fieldsPerRecords.find(r => r.record === field.recordname)?.attributes);
-    if (recordRef) {
-        return `${qualifiedField} in ${formatRefTarget(recordRef)} (record-level REF)`;
-    };
     const fileRef = findRefTarget(attributesFileLevel);
     if (fileRef) {
         return `${qualifiedField} in ${formatRefTarget(fileRef)} (file-level REF)`;

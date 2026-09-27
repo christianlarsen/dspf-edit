@@ -8,6 +8,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.9.0] - 2026-09-27
+### Added
+- File-level `REF` keyword support ([#91](https://github.com/christianlarsen/dspf-edit/issues/91)):
+  - New **Reference File (REF)** option on the file node of the Schema Tree adds, changes or removes the file's `REF`. It asks for the library (optional, `*LIBL` or `*CURLIB` allowed), the file and the record format (optional), and writes the keyword right after `DSPSIZ`, where STRSDA puts it. Changing or removing it makes the document's referenced fields pending again, so they are resolved against the new file.
+  - The Schema Tree shows the file's `REF` next to the file node, and hovering a referenced field shows where its definition comes from: the file in its own `REFFLD()`, the file-level `REF`, or a field earlier in the same source.
+- Add Field: referenced fields now have their own entries in the first field kind list, instead of being under "More options...":
+  - **Referenced from REF file** (only when the file has a `REF`) asks only for the referenced field's name. With the same name as the new field, only the `R` in position 29 is written, with no `REFFLD()`, as DDS allows. With a different name, `REFFLD(name)` is written with no file.
+  - **Referenced from another file** asks for library, file, field and record format, as before.
+  - **Referenced from this source** lists the fields of the record and of the records before it to pick from, and writes `REFFLD(field *SRC)`, qualified with the record format when the field is in another record.
+- Resolving referenced fields: a field referencing another field of the same source is now resolved locally, without an IBM i connection. That's `REFFLD(field *SRC)`, and also `REFFLD(field)` with no file when the file has no `REF`, which DDS treats as `*SRC`. As DDS requires, the referenced field must come before the referencing one. If it is itself a referenced field, it must be resolved first; Resolve All handles them in source order.
+- Resolving referenced fields: a referenced field's own length, decimal positions or data type now override the referenced field's, as DDS defines. A value such as `12` replaces it, `+4` or `-2` increases or decreases it, and changing the data type to character drops the decimal positions. These are applied on top of the resolved definition, so changing them in the source doesn't require resolving the field again.
+
+### Fixed
+- Resolving referenced fields: a `REF` naming a record format, e.g. `REF(LIB/FILE1 RECORD2)`, was not recognized, so fields relying on it could not be resolved.
+- Referenced fields with a relative length, e.g. `+7` or `-2` in positions 30-34, were read as a length of 7 or -2.
+- Add Field: a fully qualified `REFFLD(format/field library/file)` too long for positions 45-80 was written past position 80. The file now goes on a continuation line.
+- Resolving referenced fields: a `REF` coded at record level was used for the fields of that record. DDS only allows `REF` at file level, so it is now ignored there, as the compiler would reject it.
+
 ## [1.8.2] - 2026-09-26
 ### Fixed
 - Resolving referenced fields on IBM i ([#90](https://github.com/christianlarsen/dspf-edit/issues/90)): a field's `REFFLD()` was only read when coded on the field's own definition line. If it was on a separate line below, the reference fell back to the field's own name and could not be found. `REFFLD()` is now read wherever it appears among the field's keywords.

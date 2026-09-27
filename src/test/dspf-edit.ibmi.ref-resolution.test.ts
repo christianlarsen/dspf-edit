@@ -58,12 +58,16 @@ suite('Referenced fields in the same source (*SRC)', () => {
         srcLine({ 19: 'LATER', 29: 'R', 38: 'O', 39: '  9', 42: '  2', 45: 'REFFLD(NEXT)' }),
         srcLine({ 19: 'NEXT', 30: '    3', 38: 'O', 39: ' 10', 42: '  2' }),
     ].join('\n');
-    const elements = parseDocument(src);
-    clearResolvedRef(uri);
+    // parseDocument fills the global model the resolver reads, so parse per suite, right before its tests.
+    let elements: DdsElement[] = [];
+    suiteSetup(() => {
+        elements = parseDocument(src);
+        clearResolvedRef(uri);
+    });
 
     const resolve = (name: string) => {
         const field = findField(elements, name);
-        return resolveReferencedField(uri, field, undefined)
+        return resolveReferencedField(uri, field)
             .then(() => getResolvedRef(uri, field.recordname, field.name, field.refOverrides));
     };
 
@@ -85,5 +89,27 @@ suite('Referenced fields in the same source (*SRC)', () => {
 
     test('the referenced field must precede the referencing one', async () => {
         await assert.rejects(resolve('LATER'), /not found before it/);
+    });
+});
+
+suite('REF is a file-level keyword only', () => {
+    const uri = 'test://record-level-ref';
+    const src = [
+        srcLine({ 17: 'R', 19: 'RECB' }),
+        srcLine({ 45: 'REF(OTHERFILE)' }),
+        srcLine({ 19: 'ITEM', 30: '    6', 38: 'O', 39: '  3', 42: '  2' }),
+        srcLine({ 19: 'ITEM1', 29: 'R', 38: 'O', 39: '  4', 42: '  2', 45: 'REFFLD(ITEM)' }),
+    ].join('\n');
+    // parseDocument fills the global model the resolver reads, so parse per suite, right before its tests.
+    let elements: DdsElement[] = [];
+    suiteSetup(() => {
+        elements = parseDocument(src);
+        clearResolvedRef(uri);
+    });
+
+    test('a REF coded at record level is ignored: with no file-level REF, the field is looked up in this source', async () => {
+        const field = findField(elements, 'ITEM1');
+        await resolveReferencedField(uri, field);
+        assert.deepStrictEqual(getResolvedRef(uri, field.recordname, field.name), { type: 'A', length: 6, decimals: 0 });
     });
 });

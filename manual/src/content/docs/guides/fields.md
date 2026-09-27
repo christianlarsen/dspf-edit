@@ -9,6 +9,8 @@ Fields are shown under their record in the [Schema Tree](/dspf-edit/guides/schem
 
 Right-click a record and choose **New Field**, or click **+ Field** in the [Screen Preview](/dspf-edit/guides/screen-preview/) toolbar and click a point on the screen to place it there. Both use the same prompts to collect name, type, length, and position.
 
+The field kind list offers the common output/input/both alphanumeric and numeric fields, a **Referenced** section for a field taking its definition from another one (see [Add a referenced field](/dspf-edit/guides/referenced-fields/#add-a-referenced-field)), and **More options...** for hidden, message, and program-to-system fields or any other data type.
+
 ## Edit / Rename / Remove
 
 - **Edit Field** — change a field's name, size, and kind (alphanumeric ↔ numeric). Switching kind writes the type column the same way the quick **New Field** flow does, and — if the switch would leave keywords that no longer apply (`EDTCDE`/`EDTWRD`/`EDTMSK` need a numeric field; `CHECK(LC)`/`LOWER` need a character one) — asks to confirm removing them first, listing exactly what will go.
@@ -48,4 +50,4 @@ The preview also recognizes an existing `ERRMSGID()` on a field the same way it 
 
 ## Referenced fields
 
-A field referencing another file's field definition (an `R` field with no explicit type/length) shows a *referenced* flag in the tree. See [Referenced Fields](/dspf-edit/guides/referenced-fields/) to resolve its real type, length, and decimals from a connected IBM i.
+A field referencing another field's definition (an `R` field) shows a *referenced* flag in the tree. See [Referenced Fields](/dspf-edit/guides/referenced-fields/) to add one, set the file-level `REF` keyword, and resolve its real type, length, and decimals.

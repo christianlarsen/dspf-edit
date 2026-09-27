@@ -78,8 +78,8 @@ export function parseRefKeyword(value: string): RefKeywordTarget | undefined {
 /**
  * Extracts the file (and optional library) named by a REF() keyword — used as a fallback when a
  * referenced field's own REFFLD() doesn't name a file (or there's no REFFLD at all), so the file
- * comes from the record- or file-level REF() instead.
- * @param attributes - The record's or file's own DDS attributes
+ * comes from the file-level REF() instead. REF() is a file-level keyword only, per the DDS reference.
+ * @param attributes - The file's own DDS attributes
  */
 function findRefKeyword(attributes: DdsAttribute[] | undefined): RefKeywordTarget | undefined {
     const attr = attributes?.find(a => a.value.trim().toUpperCase().startsWith('REF('));
@@ -237,13 +237,12 @@ export function getPendingReferencedFields(documentUri: string, elements: DdsEle
  * determined, field not found) rather than returning a sentinel — callers show it to the user.
  * @param documentUri - The DDS document's URI (as a string), used as the cache key
  * @param field - The referenced field to resolve
- * @param recordAttributes - The field's own record's attributes, for a record-level REF() fallback
  */
-export async function resolveReferencedField(documentUri: string, field: DdsField, recordAttributes: DdsAttribute[] | undefined): Promise<ResolvedRefInfo> {
+export async function resolveReferencedField(documentUri: string, field: DdsField): Promise<ResolvedRefInfo> {
     const target = field.refTarget ?? { fieldName: field.name };
     const fileRef = target.file
         ? { file: target.file, library: target.library }
-        : findRefKeyword(recordAttributes) ?? findRefKeyword(attributesFileLevel);
+        : findRefKeyword(attributesFileLevel);
 
     // REFFLD(field *SRC) — or no file in REFFLD() and no REF() either, where *SRC is DDS's own
     // default — references a field earlier in this same source: no IBM i connection needed.
