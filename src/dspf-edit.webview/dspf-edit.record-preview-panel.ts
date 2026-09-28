@@ -1655,7 +1655,7 @@ export class RecordPreviewPanel {
                 // placeholder, unless its real type/length has already been resolved (via the
                 // "Resolve Referenced Field" tree command), in which case it renders like any other
                 // field, just tinted the reference color when it carries no COLOR()/DSPATR() of its own.
-                const resolvedRef = field.referenced && documentUri ? getResolvedRef(documentUri, recordInfo.record, field.name) : undefined;
+                const resolvedRef = field.referenced && documentUri ? getResolvedRef(documentUri, recordInfo.record, field.name, field.refOverrides) : undefined;
                 const isReferenced = field.referenced === true && !resolvedRef;
                 // The displayed text's own length drives the item's width/hit-box (below), not the
                 // parsed field length: a system keyword field (DATE, USER...) always renders at a

@@ -9,6 +9,17 @@ Fields are shown under their record in the [Schema Tree](/dspf-edit/guides/schem
 
 Right-click a record and choose **New Field**, or click **+ Field** in the [Screen Preview](/dspf-edit/guides/screen-preview/) toolbar and click a point on the screen to place it there. Both use the same prompts to collect name, type, length, and position.
 
+The field kind list offers:
+
+- The common alphanumeric and numeric fields: output, input/output, and input.
+- **Hidden** alphanumeric and numeric fields. They are never displayed, so no position is asked. They are written the way STRSDA writes them, e.g. `10A  H` or `4S 0H`.
+- A **Referenced** section, for a field taking its definition from another one. See [Add a referenced field](/dspf-edit/guides/referenced-fields/#add-a-referenced-field).
+- **More options...**, for any usage and data type. That includes message (`M`) and program-to-system (`P`) fields, and hidden date, time, or timestamp fields. Only the data types DDS allows for the usage are offered:
+  - A message field is always character, so only its length is asked. It isn't offered in a subfile record.
+  - A program-to-system field can't be a date, time, or timestamp.
+
+A numeric field can have up to 63 digits.
+
 ## Edit / Rename / Remove
 
 - **Edit Field** — change a field's name, size, and kind (alphanumeric ↔ numeric). Switching kind writes the type column the same way the quick **New Field** flow does, and — if the switch would leave keywords that no longer apply (`EDTCDE`/`EDTWRD`/`EDTMSK` need a numeric field; `CHECK(LC)`/`LOWER` need a character one) — asks to confirm removing them first, listing exactly what will go.
@@ -48,4 +59,4 @@ The preview also recognizes an existing `ERRMSGID()` on a field the same way it 
 
 ## Referenced fields
 
-A field referencing another file's field definition (an `R` field with no explicit type/length) shows a *referenced* flag in the tree. See [Referenced Fields](/dspf-edit/guides/referenced-fields/) to resolve its real type, length, and decimals from a connected IBM i.
+A field referencing another field's definition (an `R` field) shows a *referenced* flag in the tree. See [Referenced Fields](/dspf-edit/guides/referenced-fields/) to add one, set the file-level `REF` keyword, and resolve its real type, length, and decimals.

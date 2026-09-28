@@ -67,6 +67,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
     - Assign command keys — a key number already used at the other level (file vs. record) is excluded, so you can't end up with the same key defined as both CA and CF.
     - Add Display Size: adds a second standard screen size (*DS3/*DS4) to a file that currently declares only one.
     - Change Input Default: manages a parameterless `CHGINPDFT` — removes the automatic underline input-capable fields otherwise get by default.
+    - Reference File: adds, changes or removes the file-level `REF`, the database file referenced fields take their definition from when their own `REFFLD()` names no file.
 
 ### Records level
   - Right-click options:
@@ -114,7 +115,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
     - Add editing keywords.
     - Add error messages.
     - Add / Remove / Change indicators, including more than 3 ANDed indicators (up to DDS's limit of 9, spilling onto continuation lines automatically) and OR'd conditions (add/remove whole OR'd groups, or edit indicators within one).
-    - Resolve Referenced Field (for referenced fields only): fetches the real type/length/decimals from the connected IBM i, via the [Code for i](https://marketplace.visualstudio.com/items?itemName=HalcyonTechLtd.code-for-ibmi) extension. Also available as "Resolve All Referenced Fields" from the status bar, for every pending referenced field in the document at once.
+    - Resolve Referenced Field (for referenced fields only): fetches the real type/length/decimals from the connected IBM i, via the [Code for i](https://marketplace.visualstudio.com/items?itemName=HalcyonTechLtd.code-for-ibmi) extension — or, for a field referencing another field of the same source (`*SRC`), straight from the source, with no connection. The field's own length/decimals/type overrides (e.g. `+4`) are applied on top. Also available as "Resolve All Referenced Fields" from the status bar, for every pending referenced field in the document at once.
 
 ### Attributes
   - Add / Remove / Change indicators, with the same AND/OR support as fields and constants.
@@ -157,13 +158,15 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.8.2** - 2026-09-26
-- Fixed: resolving referenced fields — `REFFLD()` is now found when coded on its own line below the field, not only on the field's definition line ([#90](https://github.com/christianlarsen/dspf-edit/issues/90)).
-- Fixed: resolving referenced fields — with no library (or `*LIBL`/`*CURLIB`), the file is now looked up in the Code for i connection's current library and library list, in order, instead of in any library on the system.
-- Fixed: keywords continued onto the next line with `+` (not just `-`) are now joined correctly, so e.g. a wrapped `WDWBORDER()` shows properly in the Screen Preview.
-- Fixed: Screen Preview and Add Attribute — `DSPATR()` with several attributes (e.g. `DSPATR(UL HI)`) is now recognized.
-- Fixed: Add Buttons, Center and Change Window Title use the display size selected in the Screen Preview instead of asking for it.
-- Fixed: Screen Preview — a window with a top and a bottom `WDWTITLE` (e.g. `*BOTTOM *RIGHT`) now shows both titles, not just the first one.
+**1.9.0** - 2026-09-28
+- Added: file-level `REF` support ([#91](https://github.com/christianlarsen/dspf-edit/issues/91)) — a new **Reference File** option on the file node adds, changes or removes it, and the Schema Tree shows where each referenced field takes its definition from.
+- Added: Add Field offers hidden alphanumeric and numeric fields directly, with no position asked.
+- Added: Add Field offers referenced fields directly — from the `REF` file (just an `R`, no `REFFLD()` needed), from another file, or from a field earlier in the same source (`*SRC`), picked from a list.
+- Added: referenced fields pointing to a field of the same source (`*SRC`) are resolved locally, without an IBM i connection.
+- Added: a referenced field's own length, decimals or data type (e.g. `+4`, `-2`, `12`) now override the referenced definition.
+- Fixed: `REF(LIB/FILE RECFMT)` with a record format is now recognized, and a long `REFFLD()` written by Add Field is continued onto a second line instead of running past position 80.
+- Fixed: Schema Tree no longer offers positioning, colors/attributes, validity checks, editing keywords or error messages on hidden, message and program-to-system fields, which are never displayed.
+- Fixed: Add Field's "More options..." now only offers the data types DDS allows for message and program-to-system fields, and cancelling the length no longer adds the field anyway.
 
 ---
 

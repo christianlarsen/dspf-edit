@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { DdsElement, DdsGroup, DdsIndicator, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
-import { describeDdsField, describeDdsConstant, describeDdsRecord, describeDdsFile, formatDdsIndicators, formatIndicatorCondition } from '../dspf-edit.utils/dspf-edit.helper';
+import { describeDdsField, describeDdsConstant, describeDdsRecord, describeDdsFile, describeReferenceSource, formatDdsIndicators, formatIndicatorCondition } from '../dspf-edit.utils/dspf-edit.helper';
 import { ExtensionState } from '../dspf-edit.states/state';
 import { getResolvedRef, getPendingReferencedFields } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 import { moveRecordInSource } from '../dspf-edit.commands/dspf-edit.move-record';
@@ -908,6 +908,25 @@ function referencedFieldContextSuffix(ddsElement: DdsElement): string {
 };
 
 /**
+ * Extra contextValue word for a field that's never displayed — hidden (H), message (M) or
+ * program-to-system (P) usage — so package.json's "when" clauses can leave out the commands that
+ * don't apply to it: positioning, colors/attributes, validity checks, editing keywords and error
+ * messages. Per the DDS reference, M and P fields only allow ALIAS/INDTXT/OVRDTA/REFFLD/TEXT, and
+ * an H field has no location and is neither input- nor output-capable.
+ */
+function fieldUsageContextSuffix(ddsElement: DdsElement): string {
+	if (ddsElement.kind !== 'field') {
+		return '';
+	};
+	switch ((ddsElement.usage ?? '').trim().toUpperCase()) {
+		case 'H': return ' hidden';
+		case 'M': return ' message';
+		case 'P': return ' p2s';
+		default: return '';
+	};
+};
+
+/**
  * DDS NODE CLASS
  * Represents each node in the TreeView. Configures label, tooltip, description,
  * context menu value, and navigation command to go to the line in the editor.
@@ -920,7 +939,7 @@ export class DdsNode extends vscode.TreeItem {
 		this.iconPath = this.getIconPath(ddsElement, label);
 		this.contextValue = ddsElement.kind === 'group' && ddsElement.attribute === '' && label === 'Records'
 			? 'group:records'
-			: isSflCtlElement(ddsElement) ? 'record sflctl' : `${ddsElement.kind}${referencedFieldContextSuffix(ddsElement)}`;
+			: isSflCtlElement(ddsElement) ? 'record sflctl' : `${ddsElement.kind}${referencedFieldContextSuffix(ddsElement)}${fieldUsageContextSuffix(ddsElement)}`;
 
 		if (this.shouldHaveNavigationCommand(ddsElement)) {
 			this.command = { command: 'ddsEdit.goToLine', title: `Go to ${ddsElement.kind}`, arguments: [ddsElement.lineIndex + 1] };
@@ -993,7 +1012,15 @@ export class DdsNode extends vscode.TreeItem {
 			}
 		})();
 
+		const lines = [base];
+		const referenceSource = describeReferenceSource(ddsElement);
+		if (referenceSource) {
+			lines.push(`Referenced: ${referenceSource}`);
+		};
 		const condition = 'indicators' in ddsElement ? formatIndicatorCondition(ddsElement.indicators) : '';
-		return condition ? `${base}\nActive when: ${condition}` : base;
+		if (condition) {
+			lines.push(`Active when: ${condition}`);
+		};
+		return lines.join('\n');
 	}
 }

@@ -8,7 +8,7 @@
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "1.8.2",
+  "version": "1.9.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
@@ -137,6 +137,10 @@
         "title": "Change Input Default"
       },
       {
+        "command": "dspf-edit.set-reference-file",
+        "title": "Reference File"
+      },
+      {
         "command": "dspf-edit.add-validity-check",
         "title": "Validity Checks"
       },
@@ -263,37 +267,37 @@
         },
         {
           "command": "dspf-edit.center",
-          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem =~ /\\bfield\\b/)",
+          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem =~ /^field\\b(?!.*\\b(hidden|message|p2s)\\b)/)",
           "group": "fields_constants_navigation2@2"
         },
         {
           "command": "dspf-edit.change-position",
-          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem =~ /\\bfield\\b/)",
+          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem =~ /^field\\b(?!.*\\b(hidden|message|p2s)\\b)/)",
           "group": "fields_constants_navigation2@3"
         },
         {
           "command": "dspf-edit.add-color",
-          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem =~ /\\bfield\\b/)",
+          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem =~ /^field\\b(?!.*\\b(hidden|message|p2s)\\b)/)",
           "group": "fields_constants_navigation3@1"
         },
         {
           "command": "dspf-edit.add-attribute",
-          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem =~ /\\bfield\\b/)",
+          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem =~ /^field\\b(?!.*\\b(hidden|message|p2s)\\b)/)",
           "group": "fields_constants_navigation3@2"
         },
         {
           "command": "dspf-edit.add-validity-check",
-          "when": "view == dspf-edit.schema-view && viewItem =~ /\\bfield\\b/",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /^field\\b(?!.*\\b(hidden|message|p2s)\\b)/",
           "group": "fields_constants_navigation3@3"
         },
         {
           "command": "dspf-edit.add-editing-keywords",
-          "when": "view == dspf-edit.schema-view && viewItem =~ /\\bfield\\b/",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /^field\\b(?!.*\\b(hidden|message|p2s)\\b)/",
           "group": "fields_constants_navigation3@4"
         },
         {
           "command": "dspf-edit.add-error-message",
-          "when": "view == dspf-edit.schema-view && viewItem =~ /\\bfield\\b/",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /^field\\b(?!.*\\b(hidden|message|p2s)\\b)/",
           "group": "fields_constants_navigation3@5"
         },
         {
@@ -395,6 +399,11 @@
           "command": "dspf-edit.add-chginpdft",
           "when": "view == dspf-edit.schema-view && viewItem == file",
           "group": "file_navigation2@3"
+        },
+        {
+          "command": "dspf-edit.set-reference-file",
+          "when": "view == dspf-edit.schema-view && viewItem == file",
+          "group": "file_navigation2@4"
         },
         {
           "command": "dspf-edit.fill-constant",

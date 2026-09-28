@@ -6,20 +6,19 @@
 
 import * as vscode from 'vscode';
 import { DdsNode, DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
-import { DdsField, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
+import { DdsField } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
 import { resolveReferencedField, getPendingReferencedFields } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 
 /**
- * Resolves one referenced field, looking up its record's attributes for the REF() fallback.
+ * Resolves one referenced field, reporting a failure as a message instead of throwing.
  * @param documentUri - The DDS document's URI (as a string), used as the cache key
  * @param field - The referenced field to resolve
  * @returns An error message on failure, or undefined on success
  */
 async function resolveOneField(documentUri: string, field: DdsField): Promise<string | undefined> {
-    const recordAttributes = fieldsPerRecords.find(r => r.record === field.recordname)?.attributes;
     try {
-        await resolveReferencedField(documentUri, field, recordAttributes);
+        await resolveReferencedField(documentUri, field);
         return undefined;
     } catch (error) {
         return error instanceof Error ? error.message : `Could not resolve field '${field.name}'.`;

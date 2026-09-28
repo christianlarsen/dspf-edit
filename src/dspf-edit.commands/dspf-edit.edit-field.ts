@@ -6,7 +6,8 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { fileSizeAttributes, fieldsPerRecords, getRecordSize, getSubfileMinDetailRow, AttributeWithIndicators } from '../dspf-edit.model/dspf-edit.model';
+import { fileSizeAttributes, fieldsPerRecords, getRecordSize, getSubfileMinDetailRow, AttributeWithIndicators, attributesFileLevel, FieldInfo } from '../dspf-edit.model/dspf-edit.model';
+import { RefKeywordTarget, parseRefKeyword } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 import { checkForEditorAndDocument, parseSize, removeKeywordTextFromLines } from '../dspf-edit.utils/dspf-edit.helper';
 
 /**
@@ -58,12 +59,19 @@ const FIELD_USAGE_TYPES = {
  */
 interface FieldReference {
     library: string;
-    file: string;
+    /** Undefined when the field takes its definition from the file-level REF() instead. */
+    file?: string;
     field: string;
     /** Record format the field is qualified with (record-format-name/field-name), disambiguating
      * a field name that exists in more than one format of the referenced file. */
     recordFormat?: string;
 };
+
+/** Where a referenced field takes its definition from, as picked in the quick kind picker. */
+type ReferenceSource = 'ref' | 'file' | 'src';
+
+/** The quick kind picker's result: a common kind+usage combo, a referenced field, or the full flow. */
+type QuickFieldKind = { isNumeric: boolean; usage: FieldUsage } | { referenced: ReferenceSource } | 'advanced';
 
 /**
  * Interface for field type configuration
@@ -128,16 +136,22 @@ const FIELD_TYPES = {
 /**
  * The quick "Add Field" flow's kind+usage combos — mirrors what STRSDA's own shorthand
  * (+B/+O/+I for alphanumeric, +9/+6/+3 for numeric) actually generates, as a single pick instead
- * of a typed code: blank type for alphanumeric, 'Y' keyboard shift for numeric.
+ * of a typed code: blank type for alphanumeric, 'Y' keyboard shift for numeric. Hidden fields
+ * follow as their own pair, written the way STRSDA writes them (e.g. "10A  H", "4S 0H").
  */
-const QUICK_FIELD_KINDS: { label: string; isNumeric: boolean; usage: 'O' | 'B' | 'I' }[] = [
+const QUICK_FIELD_KINDS: { label: string; isNumeric: boolean; usage: 'O' | 'B' | 'I' | 'H' }[] = [
     { label: 'Alphanumeric — Output', isNumeric: false, usage: 'O' },
     { label: 'Alphanumeric — Input/Output', isNumeric: false, usage: 'B' },
     { label: 'Alphanumeric — Input', isNumeric: false, usage: 'I' },
     { label: 'Numeric — Output', isNumeric: true, usage: 'O' },
     { label: 'Numeric — Input/Output', isNumeric: true, usage: 'B' },
-    { label: 'Numeric — Input', isNumeric: true, usage: 'I' }
+    { label: 'Numeric — Input', isNumeric: true, usage: 'I' },
+    { label: 'Alphanumeric — Hidden', isNumeric: false, usage: 'H' },
+    { label: 'Numeric — Hidden', isNumeric: true, usage: 'H' }
 ];
+
+/** Maximum length of a numeric (zoned decimal) field, per the DDS reference. */
+const MAX_NUMERIC_LENGTH = 63;
 
 /**
  * Constants for field editing operations
@@ -381,18 +395,20 @@ export async function addFieldAtPosition(recordName: string, position: FieldPosi
         const fieldName = await promptForNewFieldName(recordElement);
         if (!fieldName) return;
 
-        const quickKind = await collectQuickFieldKind(fieldName);
+        const quickKind = await collectQuickFieldKind(fieldName, recordName);
         if (quickKind === null) return;
 
         let newFieldLine: string;
 
-        if (quickKind !== 'advanced') {
+        if (quickKind !== 'advanced' && !('referenced' in quickKind)) {
             const size = await collectQuickFieldSize(fieldName, quickKind.isNumeric);
             if (!size) return;
 
             newFieldLine = generateQuickFieldLines(fieldName, quickKind.isNumeric, quickKind.usage, size, position);
         } else {
-            const advanced = await collectAdvancedFieldDefinition(fieldName);
+            const advanced = quickKind === 'advanced'
+                ? await collectAdvancedFieldDefinition(fieldName, recordName)
+                : await collectReferencedFieldDefinition(fieldName, quickKind.referenced, recordName);
             if (!advanced) return;
 
             // These usage types don't have screen positions, same as the tree command's own flow.
@@ -423,22 +439,53 @@ export async function addFieldAtPosition(recordName: string, position: FieldPosi
 
 /**
  * Shows the quick "Add Field" kind picker: the six common kind+usage combos (mirroring what
- * STRSDA's own +B/+O/+I/+9/+6/+3 shorthand generates), plus a "More options..." entry that opens
- * the full usage/referenced-field/type flow for anything outside that common case (Hidden/Message/
- * Program-to-system usage, a referenced field, or a data type other than plain alphanumeric/numeric).
+ * STRSDA's own +B/+O/+I/+9/+6/+3 shorthand generates), hidden alphanumeric/numeric, a referenced field (position 29 `R`) by
+ * where it takes its definition from — the file-level REF() file (only offered when the file has
+ * one), another database file, or a field earlier in this source (*SRC, only offered when there is
+ * one) — plus a "More options..." entry that opens the full usage/type flow for anything else
+ * (Message/Program-to-system usage, or a data type other than plain alphanumeric/numeric).
  * @param fieldName - The field's name, shown in the picker's title
+ * @param recordName - The record the field is added to, for the *SRC entry
  */
-async function collectQuickFieldKind(fieldName: string): Promise<{ isNumeric: boolean; usage: FieldUsage } | 'advanced' | null> {
-    type KindPick = vscode.QuickPickItem & { index?: number; advanced?: boolean };
+async function collectQuickFieldKind(fieldName: string, recordName: string): Promise<QuickFieldKind | null> {
+    type KindPick = vscode.QuickPickItem & { index?: number; advanced?: boolean; referenced?: ReferenceSource };
 
+    const fileLevelRef = getFileLevelRef();
+    const referencedItems: KindPick[] = [
+        ...(fileLevelRef ? [{
+            label: '$(references) Referenced from REF file',
+            description: formatRefFile(fileLevelRef),
+            referenced: 'ref' as const
+        }] : []),
+        {
+            label: '$(references) Referenced from another file',
+            description: 'REFFLD(field library/file)',
+            referenced: 'file'
+        },
+        ...(getSourceFieldCandidates(recordName).length > 0 ? [{
+            label: '$(references) Referenced from this source',
+            description: 'REFFLD(field *SRC)',
+            referenced: 'src' as const
+        }] : [])
+    ];
+
+    const quickItems: KindPick[] = QUICK_FIELD_KINDS.map((kind, index) => ({
+        label: kind.label,
+        description: kind.usage === 'H' ? 'Not displayed, no position' : undefined,
+        index
+    }));
     const items: KindPick[] = [
-        ...QUICK_FIELD_KINDS.map((kind, index) => ({ label: kind.label, index })).slice(0, 3),
+        ...quickItems.slice(0, 3),
         { label: '', kind: vscode.QuickPickItemKind.Separator },
-        ...QUICK_FIELD_KINDS.map((kind, index) => ({ label: kind.label, index })).slice(3),
+        ...quickItems.slice(3, 6),
+        { label: 'Hidden', kind: vscode.QuickPickItemKind.Separator },
+        ...quickItems.slice(6),
+        { label: 'Referenced', kind: vscode.QuickPickItemKind.Separator },
+        ...referencedItems,
         { label: '', kind: vscode.QuickPickItemKind.Separator },
         {
             label: 'More options...',
-            description: 'Hidden/Message/Program-to-system usage, referenced field, or another data type',
+            description: 'Message/Program-to-system usage, or another data type (date, time, ...)',
             advanced: true
         }
     ];
@@ -451,6 +498,7 @@ async function collectQuickFieldKind(fieldName: string): Promise<{ isNumeric: bo
 
     if (!selection) return null;
     if (selection.advanced) return 'advanced';
+    if (selection.referenced) return { referenced: selection.referenced };
     if (typeof selection.index !== 'number') return null;
 
     const kind = QUICK_FIELD_KINDS[selection.index];
@@ -473,7 +521,7 @@ async function collectQuickFieldSize(fieldName: string, isNumeric: boolean): Pro
             title: `Size for field '${fieldName}'`,
             prompt: "Enter size as: N (for integer) or N,D (for decimal where N=total digits, D=decimal places)",
             placeHolder: "10,2",
-            validateInput: validateFieldSize
+            validateInput: validateNumericFieldSize
         });
         if (!sizeInput) return null;
         return parseSize(sizeInput);
@@ -501,11 +549,23 @@ async function collectQuickFieldSize(fieldName: string, isNumeric: boolean): Pro
  * @param size - The field's length and (for numeric) decimal places
  * @param position - The field's screen row/column
  */
-function generateQuickFieldLines(name: string, isNumeric: boolean, usage: FieldUsage, size: FieldSize, position: FieldPosition): string {
+export function generateQuickFieldLines(name: string, isNumeric: boolean, usage: FieldUsage, size: FieldSize, position: FieldPosition): string {
     let line = ' '.repeat(80);
     line = replaceAt(line, 5, 'A');
     line = replaceAt(line, 18, name.padEnd(10, ' '));
     line = replaceAt(line, FIELD_CONSTANTS.SIZE_COLUMN_START, size.length.toString().padStart(5, ' '));
+
+    if (usage.type === 'H') {
+        // A hidden field has no keyboard shift to speak of: written the way STRSDA writes it,
+        // 'A' for alphanumeric and 'S' (zoned decimal, decimals always explicit) for numeric,
+        // with no position (not valid for a hidden field) and no edit word (never displayed).
+        line = replaceAt(line, 34, isNumeric ? 'S' : 'A');
+        if (isNumeric) {
+            line = replaceAt(line, 35, (size.decimals ?? 0).toString().padStart(2, ' '));
+        };
+        line = replaceAt(line, 37, 'H');
+        return line.trimEnd();
+    };
 
     if (isNumeric) {
         // Decimal positions (36-37) must always be written explicitly, even "0" — per the DDS
@@ -537,36 +597,55 @@ function generateQuickFieldLines(name: string, isNumeric: boolean, usage: FieldU
 
 /**
  * Collects a field's full definition via the original, exhaustive flow — usage including Hidden/
- * Message/Program-to-system, the referenced-field option, and the complete list of DDS field
- * types — reached through the quick kind picker's "More options..." entry.
+ * Message/Program-to-system, and the DDS field types valid for that usage — reached through the
+ * quick kind picker's "More options..." entry. (A referenced field has entries of its own in that picker.)
+ * Per the DDS reference, a message field (M) is always character, so only its length is asked.
  * @param fieldName - The field's name, shown in the various prompts' titles
+ * @param recordName - The record the field is added to (a message field isn't valid in a subfile record)
  */
-async function collectAdvancedFieldDefinition(fieldName: string): Promise<{
+async function collectAdvancedFieldDefinition(fieldName: string, recordName: string): Promise<{
     usage: FieldUsage;
     isReferenced: boolean;
     reference?: FieldReference;
     typeConfig?: FieldTypeConfig;
 } | null> {
+    const usage = await collectFieldUsage(fieldName, isSubfileRecord(recordName));
+    if (!usage) return null;
+
+    if (usage.type === 'M') {
+        const length = await promptForMessageFieldLength(fieldName);
+        if (!length) return null;
+        return { usage, isReferenced: false, typeConfig: { type: '', size: { length, decimals: 0 } } };
+    };
+
+    const typeConfig = await collectFieldTypeConfiguration(fieldName, usage.type);
+    if (!typeConfig) return null;
+
+    return { usage, isReferenced: false, typeConfig };
+};
+
+/**
+ * Collects a referenced field's definition: which field it references (from the source picked in
+ * the quick kind picker), then its usage.
+ * @param fieldName - The new field's name, the default referenced field name
+ * @param source - Where the definition comes from: the REF() file, another file, or this source
+ * @param recordName - The record the field is added to, for a *SRC reference
+ */
+async function collectReferencedFieldDefinition(fieldName: string, source: ReferenceSource, recordName: string): Promise<{
+    usage: FieldUsage;
+    isReferenced: boolean;
+    reference?: FieldReference;
+    typeConfig?: FieldTypeConfig;
+} | null> {
+    const reference = source === 'ref' ? await collectRefFileReference(fieldName)
+        : source === 'src' ? await collectSourceFieldReference(fieldName, recordName)
+        : await collectFieldReferenceFromFile(fieldName);
+    if (!reference) return null;
+
     const usage = await collectFieldUsage(fieldName);
     if (!usage) return null;
 
-    const isReferenced = await promptForFieldReference();
-    if (isReferenced === null) return null;
-
-    let reference: FieldReference | undefined;
-    let typeConfig: FieldTypeConfig | undefined;
-
-    if (isReferenced) {
-        const collectedReference = await collectFieldReference(fieldName);
-        if (!collectedReference) return null;
-        reference = collectedReference;
-    } else {
-        const collectedTypeConfig = await collectFieldTypeConfiguration(fieldName);
-        if (!collectedTypeConfig) return null;
-        typeConfig = collectedTypeConfig;
-    };
-
-    return { usage, isReferenced, reference, typeConfig };
+    return { usage, isReferenced: true, reference };
 };
 
 /**
@@ -580,20 +659,25 @@ async function collectNewFieldConfiguration(editor: vscode.TextEditor, recordEle
     const fieldName = await promptForNewFieldName(recordElement);
     if (!fieldName) return null;
 
-    const quickKind = await collectQuickFieldKind(fieldName);
+    const quickKind = await collectQuickFieldKind(fieldName, recordElement.name);
     if (quickKind === null) return null;
 
-    if (quickKind !== 'advanced') {
+    if (quickKind !== 'advanced' && !('referenced' in quickKind)) {
         const size = await collectQuickFieldSize(fieldName, quickKind.isNumeric);
         if (!size) return null;
 
-        const position = await collectFieldPosition(editor, fieldName, recordElement, size);
+        // A hidden field has no position.
+        const position = quickKind.usage.type === 'H'
+            ? { row: 0, column: 0 }
+            : await collectFieldPosition(editor, fieldName, recordElement, size);
         if (!position) return null;
 
         return { name: fieldName, line: generateQuickFieldLines(fieldName, quickKind.isNumeric, quickKind.usage, size, position) };
     };
 
-    const advanced = await collectAdvancedFieldDefinition(fieldName);
+    const advanced = quickKind === 'advanced'
+        ? await collectAdvancedFieldDefinition(fieldName, recordElement.name)
+        : await collectReferencedFieldDefinition(fieldName, quickKind.referenced, recordElement.name);
     if (!advanced) return null;
 
     // Hidden/Message/Program-to-system usage doesn't have a screen position.
@@ -651,37 +735,11 @@ function validateNewFieldName(value: string, recordElement: any): string | null 
 };
 
 /**
- * Prompts user to choose if field is referenced or not
- */
-async function promptForFieldReference(): Promise<boolean | null> {
-    const choice = await vscode.window.showQuickPick([
-        { 
-            label: "New Field", 
-            description: "Define new field with type and size",
-            detail: "Will prompt for field type, length, and decimals",
-            value: false
-        },
-        { 
-            label: "Referenced Field", 
-            description: "Field references another file's field",
-            detail: "Will prompt for library, file, and field names",
-            value: true
-        }
-    ], {
-        title: 'Field Definition Type',
-        placeHolder: "Choose how to define the field",
-        canPickMany: false,
-        ignoreFocusOut: true
-    });
-
-    return choice ? choice.value : null;
-};
-
-/**
  * Collects field usage type (I/O/B/H/M/P)
  */
-async function collectFieldUsage(fieldName: string): Promise<FieldUsage | null> {
-    const usageOptions = Object.entries(FIELD_USAGE_TYPES).map(([key, config]) => ({
+async function collectFieldUsage(fieldName: string, inSubfileRecord: boolean = false): Promise<FieldUsage | null> {
+    // A message field isn't valid in a subfile record, per the DDS reference.
+    const usageOptions = Object.entries(FIELD_USAGE_TYPES).filter(([key]) => !(key === 'M' && inSubfileRecord)).map(([key, config]) => ({
         label: `${key} - ${config.label}`,
         description: config.description,
         detail: key === 'O' ? 'Default if not specified' : '',
@@ -703,7 +761,98 @@ async function collectFieldUsage(fieldName: string): Promise<FieldUsage | null> 
     };
 };
 
-async function collectFieldReference(fieldName: string): Promise<FieldReference | null> {
+/** The file-level REF() keyword's target, if the file has one. */
+function getFileLevelRef(): RefKeywordTarget | undefined {
+    const attr = attributesFileLevel.find(a => /^REF\(/i.test(a.value.trim()));
+    return attr ? parseRefKeyword(attr.value) : undefined;
+};
+
+/** Formats a REF() target's file as [library/]file. */
+function formatRefFile(ref: RefKeywordTarget): string {
+    return ref.library ? `${ref.library}/${ref.file}` : ref.file;
+};
+
+/**
+ * Collects a reference to a field of the file-level REF() file: only the referenced field's name
+ * is asked for, since DDS takes the file (and library/record format) from REF().
+ * @param fieldName - The new field's name, the default referenced field name
+ */
+async function collectRefFileReference(fieldName: string): Promise<FieldReference | null> {
+    const fileLevelRef = getFileLevelRef();
+    const refFile = fileLevelRef ? formatRefFile(fileLevelRef) : 'REF file';
+
+    const referencedField = await vscode.window.showInputBox({
+        title: `Reference for field '${fieldName}' in ${refFile}`,
+        prompt: "Enter referenced field name (max 10 characters) — if it's the same as the field's own name, no REFFLD is needed",
+        placeHolder: fieldName,
+        value: fieldName,
+        validateInput: (value) => validateFieldNameFormat(value)
+    });
+    if (!referencedField) return null;
+
+    return {
+        library: '',
+        field: referencedField.trim().toUpperCase()
+    };
+};
+
+/**
+ * Fields a new field in the given record can reference with *SRC: per the DDS reference, the
+ * referenced field must precede it, and a new field goes at the end of its record — so every field
+ * of that record and of the records before it. Listed nearest first.
+ * @param recordName - The record the new field is added to
+ */
+function getSourceFieldCandidates(recordName: string): { record: string; field: FieldInfo }[] {
+    const recordIndex = fieldsPerRecords.findIndex(r => r.record === recordName);
+    if (recordIndex < 0) return [];
+
+    return fieldsPerRecords
+        .slice(0, recordIndex + 1)
+        .flatMap(record => record.fields.map(field => ({ record: record.record, field })))
+        .reverse();
+};
+
+/**
+ * Collects a reference to a field earlier in this same source (REFFLD(field *SRC)), picked from a
+ * list. One in another record is qualified with its record format, so it can't be mistaken for a
+ * field of the same name in the new field's own record.
+ * @param fieldName - The new field's name, shown in the picker's title
+ * @param recordName - The record the new field is added to
+ */
+async function collectSourceFieldReference(fieldName: string, recordName: string): Promise<FieldReference | null> {
+    const describe = (field: FieldInfo) => field.referenced
+        ? 'referenced'
+        : `(${field.decimals !== undefined ? `${field.length},${field.decimals}` : field.length})${(field.type ?? '').trim()}`;
+
+    const selection = await vscode.window.showQuickPick(
+        getSourceFieldCandidates(recordName).map(({ record, field }) => ({
+            label: field.name,
+            description: `${record} · ${describe(field)}`,
+            record,
+            field
+        })),
+        {
+            title: `Reference for field '${fieldName}' in this source (*SRC)`,
+            placeHolder: 'Select the field to take the definition from',
+            matchOnDescription: true,
+            ignoreFocusOut: true
+        }
+    );
+    if (!selection) return null;
+
+    return {
+        library: '',
+        file: '*SRC',
+        field: selection.field.name.toUpperCase(),
+        recordFormat: selection.record === recordName ? undefined : selection.record.toUpperCase()
+    };
+};
+
+/**
+ * Collects a field's reference to a file of its own, written as REFFLD(field [library/]file).
+ * @param fieldName - The new field's name, the default referenced field name
+ */
+async function collectFieldReferenceFromFile(fieldName: string): Promise<FieldReference | null> {
     // Get library name (optional — DDS uses the current library list, *LIBL, when omitted)
     const library = await vscode.window.showInputBox({
         title: `Reference for field '${fieldName}' - Step 1/4`,
@@ -753,7 +902,7 @@ async function collectFieldReference(fieldName: string): Promise<FieldReference 
 /**
  * Validates library and file names
  */
-function validateLibraryFileName(value: string, type: string, required: boolean = true): string | null {
+export function validateLibraryFileName(value: string, type: string, required: boolean = true): string | null {
     const trimmedValue = value.trim();
 
     if (trimmedValue === '') {
@@ -779,9 +928,9 @@ function validateLibraryFileName(value: string, type: string, required: boolean 
  * Collects field type configuration (type, size, decimals)
  * Updated to handle fixed-length fields correctly
  */
-async function collectFieldTypeConfiguration(fieldName: string): Promise<FieldTypeConfig | null> {
+async function collectFieldTypeConfiguration(fieldName: string, usage: string): Promise<FieldTypeConfig | null> {
     // Get field type
-    const fieldType = await promptForFieldType(fieldName);
+    const fieldType = await promptForFieldType(fieldName, usage);
     if (!fieldType) return null;
 
     const typeConfig = FIELD_TYPES[fieldType as keyof typeof FIELD_TYPES];
@@ -791,8 +940,9 @@ async function collectFieldTypeConfiguration(fieldName: string): Promise<FieldTy
     
     if (typeConfig.hasLength) {
         // Field requires user-specified length
-        fieldSize = await promptForNewFieldSize(fieldName, fieldType) || { length: 10, decimals: 0 };
-        if (!fieldSize) return null;
+        const promptedSize = await promptForNewFieldSize(fieldName, fieldType);
+        if (!promptedSize) return null;
+        fieldSize = promptedSize;
     } else {
         // Fixed-length field - system determines length
         fieldSize = getSystemDefinedLength(fieldType);
@@ -822,10 +972,41 @@ function getSystemDefinedLength(fieldType: string): FieldSize {
 };
 
 /**
- * Prompts user to select field type
+ * Asks for a message field's length. Per the DDS reference it should fit the message line: less than
+ * 79 positions on a 24 x 80 display, or 131 on 27 x 132 — longer text is truncated.
+ * @param fieldName - The field's name, shown in the prompt's title
  */
-async function promptForFieldType(fieldName: string): Promise<string | null> {
-    const typeOptions = Object.entries(FIELD_TYPES).map(([key, config]) => ({
+async function promptForMessageFieldLength(fieldName: string): Promise<number | null> {
+    const lengthInput = await vscode.window.showInputBox({
+        title: `Length for message field '${fieldName}'`,
+        prompt: "Enter field length — a message field is always character, and should be under 79 (24 x 80) or 131 (27 x 132) to fit the message line",
+        placeHolder: "78",
+        validateInput: (value) => validateFieldLength(value)
+    });
+    return lengthInput ? Number(lengthInput) : null;
+};
+
+/** Whether a record is a subfile record (SFL keyword). */
+function isSubfileRecord(recordName: string): boolean {
+    return fieldsPerRecords.find(r => r.record === recordName)?.attributes?.some(attr => attr.value.trim().toUpperCase() === 'SFL') ?? false;
+};
+
+/**
+ * Data types not valid for a usage, per the DDS reference: a program-to-system field (P) is
+ * numeric or alphanumeric only, so no date/time/timestamp.
+ */
+const TYPES_NOT_VALID_FOR_USAGE: Record<string, string[]> = {
+    P: ['L', 'T', 'Z']
+};
+
+/**
+ * Prompts user to select field type, among those valid for the field's usage
+ * @param fieldName - The field's name, shown in the picker's title
+ * @param usage - The field's usage (I/O/B/H/P)
+ */
+async function promptForFieldType(fieldName: string, usage: string): Promise<string | null> {
+    const notValid = TYPES_NOT_VALID_FOR_USAGE[usage] ?? [];
+    const typeOptions = Object.entries(FIELD_TYPES).filter(([key]) => !notValid.includes(key)).map(([key, config]) => ({
         label: key,
         description: config.label,
         detail: config.hasLength ? config.description : `${config.description} (Fixed length)`
@@ -854,7 +1035,7 @@ async function promptForNewFieldSize(fieldName: string, fieldType: string): Prom
             title: `Size for ${typeConfig.label} field '${fieldName}'`,
             prompt: "Enter size as: N (for integer) or N,D (for decimal where N=total digits, D=decimal places)",
             placeHolder: "10,2",
-            validateInput: validateFieldSize
+            validateInput: validateNumericFieldSize
         });
         
         if (!sizeInput) return null;
@@ -1228,8 +1409,10 @@ function parseConstantFromLine(lineText: string, lineIndex: number): ExistingEle
 /**
  * Generates a DDS line for the new field
  * Updated to handle fixed-length fields correctly
+ * A REFFLD too long for positions 45-80 is continued on a second line, so the result may hold two
+ * source lines separated by a newline.
  */
-function generateNewFieldLine(config: NewFieldConfig): string {
+export function generateNewFieldLine(config: NewFieldConfig): string {
     let line = ' '.repeat(80);
     line = replaceAt(line, 5, 'A');
 
@@ -1237,35 +1420,54 @@ function generateNewFieldLine(config: NewFieldConfig): string {
     const paddedName = config.name.padEnd(10, ' ');
     line = replaceAt(line, 18, paddedName);
 
+    // A keyword line continuing the field's REFFLD, when it doesn't fit in positions 45-80.
+    let continuationLine: string | undefined;
+
     if (config.isReferenced && config.reference) {
         // Referenced field - use R and reference specification
         line = replaceAt(line, 28, 'R');
         
         // Reference specification: REFFLD([record-format-name/]referenced-field-name [library-name/]database-file-name)
-        const qualifiedFile = config.reference.library ? `${config.reference.library}/${config.reference.file}` : config.reference.file;
+        // With no file, the definition comes from the file-level REF(): a field with the same
+        // name as the one it references needs no REFFLD at all, otherwise REFFLD(name) alone.
         const qualifiedField = config.reference.recordFormat ? `${config.reference.recordFormat}/${config.reference.field}` : config.reference.field;
-        const refSpec = `REFFLD(${qualifiedField} ${qualifiedFile})`;
-        line = replaceAt(line, 44, refSpec);
+        if (config.reference.file) {
+            const qualifiedFile = config.reference.library ? `${config.reference.library}/${config.reference.file}` : config.reference.file;
+            const refSpec = `REFFLD(${qualifiedField} ${qualifiedFile})`;
+            if (44 + refSpec.length <= 80) {
+                line = replaceAt(line, 44, refSpec);
+            } else {
+                // Fully qualified (record format, library, 10-character names) it can run up to
+                // 51 characters: the file goes on a "-" continuation line, resuming at position 45.
+                line = replaceAt(line, 44, `REFFLD(${qualifiedField} -`);
+                continuationLine = '     A'.padEnd(44, ' ') + `${qualifiedFile})`;
+            };
+        } else if (qualifiedField !== config.name.trim().toUpperCase()) {
+            line = replaceAt(line, 44, `REFFLD(${qualifiedField})`);
+        };
     } else if (config.typeConfig) {
         // New field with type specification
         
-        const fieldType = FIELD_TYPES[config.typeConfig.type as keyof typeof FIELD_TYPES];
-        
-        // Only specify length for fields that require it
-        if (fieldType.hasLength) {
+        const fieldType = FIELD_TYPES[config.typeConfig.type as keyof typeof FIELD_TYPES] as (typeof FIELD_TYPES)[keyof typeof FIELD_TYPES] | undefined;
+
+        // Only specify length for fields that require it. With no data type at all (a message
+        // field), just the length: blank type and decimal positions mean character.
+        if (!fieldType || fieldType.hasLength) {
             const sizeStr = config.typeConfig.size.length.toString().padStart(5, ' ');
             line = replaceAt(line, FIELD_CONSTANTS.SIZE_COLUMN_START, sizeStr);
-        }
-        
-        line = replaceAt(line, 34, fieldType.keyboardShift);
+        };
 
-        // Decimal positions (36-37) must always be written explicitly, even "0" — leaving them
-        // blank makes DDS treat the field as character type regardless of the keyboard shift
-        // above, producing CPD7408 ("decimal positions or field length not valid") for a
-        // numeric type (Y/S/N/F) with 0 decimal places.
-        if (fieldType.hasDecimals && config.typeConfig.size.decimals !== undefined) {
-            const decStr = config.typeConfig.size.decimals.toString().padStart(2, ' ');
-            line = replaceAt(line, 35, decStr);
+        if (fieldType) {
+            line = replaceAt(line, 34, fieldType.keyboardShift);
+
+            // Decimal positions (36-37) must always be written explicitly, even "0" — leaving them
+            // blank makes DDS treat the field as character type regardless of the keyboard shift
+            // above, producing CPD7408 ("decimal positions or field length not valid") for a
+            // numeric type (Y/S/N/F) with 0 decimal places.
+            if (fieldType.hasDecimals && config.typeConfig.size.decimals !== undefined) {
+                const decStr = config.typeConfig.size.decimals.toString().padStart(2, ' ');
+                line = replaceAt(line, 35, decStr);
+            };
         };
     };
 
@@ -1283,7 +1485,7 @@ function generateNewFieldLine(config: NewFieldConfig): string {
         line = replaceAt(line, 41, colStr);
     };
 
-    return line.trimEnd();
+    return continuationLine ? `${line.trimEnd()}\n${continuationLine}` : line.trimEnd();
 };
 
 /**
@@ -1496,7 +1698,7 @@ async function promptForFieldSize(element: any, fieldName: string, isNumeric: bo
         prompt: isNumeric
             ? "Enter size as: N (for integer) or N,D (for decimal where N=total digits, D=decimal places)"
             : "Enter the field's length",
-        validateInput: validateFieldSize
+        validateInput: isNumeric ? validateNumericFieldSize : validateFieldSize
     });
 
     if (!newSizeInput) {
@@ -1530,6 +1732,17 @@ async function promptForFieldKind(currentIsNumeric: boolean, fieldName: string):
 
 /**
  * Validates field size input format and constraints
+ */
+function validateNumericFieldSize(value: string): string | null {
+    const error = validateFieldSize(value);
+    if (error) return error;
+    return parseInt(value.trim(), 10) > MAX_NUMERIC_LENGTH
+        ? `A numeric field cannot exceed ${MAX_NUMERIC_LENGTH} digits.`
+        : null;
+};
+
+/**
+ * Validates a size given as N or N,D.
  */
 function validateFieldSize(value: string): string | null {
     const trimmedValue = value.trim();
