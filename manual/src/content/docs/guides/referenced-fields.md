@@ -22,7 +22,7 @@ A file-level `REF` keyword names the database file that referenced fields take t
 
 Here `UPDUSR` takes the definition of the `UPDUSR` field in `HTPFREF`.
 
-To add, change, or remove it, right-click the file node in the Schema Tree and choose **Reference File (REF)**. It asks for:
+To add, change, or remove it, right-click the file node in the Schema Tree and choose **Reference File**. It asks for:
 
 1. The library: optional. Leave it empty, or use `*LIBL` or `*CURLIB`.
 2. The database file.

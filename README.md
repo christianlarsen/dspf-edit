@@ -67,7 +67,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
     - Assign command keys — a key number already used at the other level (file vs. record) is excluded, so you can't end up with the same key defined as both CA and CF.
     - Add Display Size: adds a second standard screen size (*DS3/*DS4) to a file that currently declares only one.
     - Change Input Default: manages a parameterless `CHGINPDFT` — removes the automatic underline input-capable fields otherwise get by default.
-    - Reference File (REF): adds, changes or removes the file-level `REF`, the database file referenced fields take their definition from when their own `REFFLD()` names no file.
+    - Reference File: adds, changes or removes the file-level `REF`, the database file referenced fields take their definition from when their own `REFFLD()` names no file.
 
 ### Records level
   - Right-click options:
@@ -159,7 +159,7 @@ See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
 **1.9.0** - 2026-09-27
-- Added: file-level `REF` support ([#91](https://github.com/christianlarsen/dspf-edit/issues/91)) — a new **Reference File (REF)** option on the file node adds, changes or removes it, and the Schema Tree shows where each referenced field takes its definition from.
+- Added: file-level `REF` support ([#91](https://github.com/christianlarsen/dspf-edit/issues/91)) — a new **Reference File** option on the file node adds, changes or removes it, and the Schema Tree shows where each referenced field takes its definition from.
 - Added: Add Field offers hidden alphanumeric and numeric fields directly, with no position asked.
 - Added: Add Field offers referenced fields directly — from the `REF` file (just an `R`, no `REFFLD()` needed), from another file, or from a field earlier in the same source (`*SRC`), picked from a list.
 - Added: referenced fields pointing to a field of the same source (`*SRC`) are resolved locally, without an IBM i connection.

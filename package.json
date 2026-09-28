@@ -138,7 +138,7 @@
       },
       {
         "command": "dspf-edit.set-reference-file",
-        "title": "Reference File (REF)"
+        "title": "Reference File"
       },
       {
         "command": "dspf-edit.add-validity-check",

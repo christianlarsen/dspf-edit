@@ -23,7 +23,7 @@ const LAST_COLUMN = 80;
 // COMMAND REGISTRATION
 
 /**
- * Registers the "Reference File (REF)" command for the file node: adds, changes or removes the
+ * Registers the "Reference File" command for the file node: adds, changes or removes the
  * file-level REF keyword, which names the database file referenced fields (position 29 `R`) take
  * their definition from when their own REFFLD() doesn't name one. DDS allows it only once, and
  * only at file level.
@@ -40,7 +40,7 @@ export function setReferenceFile(context: vscode.ExtensionContext): void {
 // COMMAND HANDLER
 
 /**
- * Handles the "Reference File (REF)" command for the file node.
+ * Handles the "Reference File" command for the file node.
  * @param node - The DDS node the command was invoked from
  */
 async function handleSetReferenceFileCommand(node: DdsNode): Promise<void> {

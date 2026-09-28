@@ -16,7 +16,7 @@ Right-click the file node for:
 - **Create new records.**
 - **Assign command keys** — see [Command Keys](/dspf-edit/guides/command-keys/). A key number already used at the other level (file vs. record) is excluded, so you can't end up with the same key defined as both `CA` and `CF`.
 - **Add Display Size** — adds a second standard screen size (`*DS3`/`*DS4`) to a file that currently declares only one. See [Multiple Display Sizes](/dspf-edit/guides/display-sizes/).
-- **Reference File (REF)** — adds, changes, or removes the file-level `REF` keyword. See [Referenced Fields](/dspf-edit/guides/referenced-fields/#reference-file-ref).
+- **Reference File** — adds, changes, or removes the file-level `REF` keyword. See [Referenced Fields](/dspf-edit/guides/referenced-fields/#reference-file-ref).
 
 ## Records level
 
