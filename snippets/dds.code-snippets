@@ -1,22 +1,4 @@
 {
-  "PF Record Format": {
-    "prefix": "pf-record",
-    "description": "Physical file record format with a character field",
-    "body": [
-      "     A          R ${1:RECNAME}${2:   }                TEXT('${3:Record description}')",
-      "     A            ${4:FIELD1}${5:    }    ${6:10}A         TEXT('${7:Field description}')",
-      "$0"
-    ]
-  },
-  "LF Record Format": {
-    "prefix": "lf-record",
-    "description": "Logical file record format over a physical file",
-    "body": [
-      "     A          R ${1:RECNAME}${2:   }                PFILE(${3:LIBRARY}/${4:PHYSFILE})",
-      "     A          K ${5:KEYFLD}",
-      "$0"
-    ]
-  },
   "Display Record Format": {
     "prefix": "dspf-record",
     "description": "Display file record format with a title constant",
@@ -31,14 +13,6 @@
     "description": "Simple character field (type A)",
     "body": [
       "     A            ${1:FIELD1}${2:    }    ${3:30}A         TEXT('${4:Description}')",
-      "$0"
-    ]
-  },
-  "Packed Numeric Field": {
-    "prefix": "field-packed",
-    "description": "Packed decimal field (type P)",
-    "body": [
-      "     A            ${1:FIELD1}${2:    }     ${3:7}P ${4:0}       TEXT('${5:Description}')",
       "$0"
     ]
   },
@@ -71,14 +45,6 @@
     "description": "Timestamp field (type Z)",
     "body": [
       "     A            ${1:FIELD1}${2:    }      Z         TEXT('${3:Description}')",
-      "$0"
-    ]
-  },
-  "Key Field": {
-    "prefix": "key-field",
-    "description": "Key field entry (K in column 17)",
-    "body": [
-      "     A          K ${1:FIELD1}",
       "$0"
     ]
   },
@@ -140,7 +106,7 @@
     ]
   },
   "File Header Comment": {
-    "prefix": "dds-header",
+    "prefix": "dspf-header",
     "description": "Commented file header block",
     "body": [
       "     A*==============================================================",

@@ -40,11 +40,7 @@
     "Other"
   ],
   "activationEvents": [
-    "onLanguage:dds",
-    "onLanguage:dds.pf",
-    "onLanguage:dds.lf",
-    "onLanguage:dds.dspf",
-    "onLanguage:dds.prtf"
+    "onLanguage:dds.dspf"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -58,47 +54,6 @@
           ".dspf"
         ],
         "configuration": "./language-configuration.json"
-      },
-      {
-        "id": "dds.prtf",
-        "aliases": [
-          "DDS Printer File"
-        ],
-        "extensions": [
-          ".prtf"
-        ],
-        "configuration": "./language-configuration.json"
-      },
-      {
-        "id": "dds.pf",
-        "aliases": [
-          "DDS Physical File"
-        ],
-        "extensions": [
-          ".pf"
-        ],
-        "configuration": "./language-configuration.json"
-      },
-      {
-        "id": "dds.lf",
-        "aliases": [
-          "DDS Logical File"
-        ],
-        "extensions": [
-          ".lf"
-        ],
-        "configuration": "./language-configuration.json"
-      },
-      {
-        "id": "dds",
-        "aliases": [
-          "DDS",
-          "dds"
-        ],
-        "extensions": [
-          ".dds"
-        ],
-        "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
@@ -106,47 +61,11 @@
         "language": "dds.dspf",
         "scopeName": "source.dds",
         "path": "./syntaxes/dds.tmLanguage.json"
-      },
-      {
-        "language": "dds.prtf",
-        "scopeName": "source.dds",
-        "path": "./syntaxes/dds.tmLanguage.json"
-      },
-      {
-        "language": "dds.pf",
-        "scopeName": "source.dds",
-        "path": "./syntaxes/dds.tmLanguage.json"
-      },
-      {
-        "language": "dds.lf",
-        "scopeName": "source.dds",
-        "path": "./syntaxes/dds.tmLanguage.json"
-      },
-      {
-        "language": "dds",
-        "scopeName": "source.dds",
-        "path": "./syntaxes/dds.tmLanguage.json"
       }
     ],
     "snippets": [
       {
         "language": "dds.dspf",
-        "path": "./snippets/dds.code-snippets"
-      },
-      {
-        "language": "dds.prtf",
-        "path": "./snippets/dds.code-snippets"
-      },
-      {
-        "language": "dds.pf",
-        "path": "./snippets/dds.code-snippets"
-      },
-      {
-        "language": "dds.lf",
-        "path": "./snippets/dds.code-snippets"
-      },
-      {
-        "language": "dds",
         "path": "./snippets/dds.code-snippets"
       }
     ],
@@ -343,22 +262,22 @@
       },
       {
         "command": "dspf-edit.show-column-reference",
-        "title": "Show DDS Column Reference",
+        "title": "Show DSPF Column Reference",
         "category": "DSPF Edit"
       },
       {
         "command": "dspf-edit.toggle-column-guides",
-        "title": "Toggle DDS Column Guides",
+        "title": "Toggle DSPF Column Guides",
         "category": "DSPF Edit"
       },
       {
         "command": "dspf-edit.toggle-section-highlight",
-        "title": "Toggle DDS Section Highlight",
+        "title": "Toggle DSPF Section Highlight",
         "category": "DSPF Edit"
       },
       {
-        "command": "dspf-edit.apply-dds-editor-defaults",
-        "title": "Apply Recommended DDS Editor Settings",
+        "command": "dspf-edit.apply-dspf-editor-defaults",
+        "title": "Apply Recommended DSPF Editor Settings",
         "category": "DSPF Edit"
       }
     ],
@@ -366,15 +285,15 @@
       "commandPalette": [
         {
           "command": "dspf-edit.show-column-reference",
-          "when": "resourceLangId =~ /^dds(\\.(pf|lf|dspf|prtf))?$/"
+          "when": "resourceLangId == dds.dspf"
         },
         {
           "command": "dspf-edit.toggle-column-guides",
-          "when": "resourceLangId =~ /^dds(\\.(pf|lf|dspf|prtf))?$/"
+          "when": "resourceLangId == dds.dspf"
         },
         {
           "command": "dspf-edit.toggle-section-highlight",
-          "when": "resourceLangId =~ /^dds(\\.(pf|lf|dspf|prtf))?$/"
+          "when": "resourceLangId == dds.dspf"
         }
       ],
       "view/title": [
@@ -603,24 +522,24 @@
       ]
     },
     "configuration": {
-      "title": "DDS editing assistance",
+      "title": "DSPF source editing",
       "properties": {
         "dspf-edit.assist.enabled": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Master switch for the DDS editing assistance (status bar, hovers, diagnostics, completion, section highlight). Turn this off to keep only the graphical DSPF tooling: schema tree, screen preview and element commands.",
+          "markdownDescription": "Master switch for the DSPF source editing assistance (status bar, hovers, diagnostics, completion, section highlight). Turn this off to keep only the graphical tooling: schema tree, screen preview and element commands.",
           "order": 0
         },
         "dspf-edit.assist.statusBar.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Show the DDS column assistant in the status bar.",
+          "description": "Show the column assistant in the status bar while editing a display file.",
           "order": 1
         },
         "dspf-edit.assist.statusBar.format": {
           "type": "string",
-          "default": "DDS | Col {column} | {section}",
-          "markdownDescription": "Status bar text. Available tokens: `{column}`, `{section}`, `{fileType}`.",
+          "default": "DSPF | Col {column} | {section}",
+          "markdownDescription": "Status bar text. Available tokens: `{column}`, `{section}`.",
           "order": 2
         },
         "dspf-edit.assist.statusBar.showIcon": {
@@ -632,19 +551,19 @@
         "dspf-edit.assist.hover.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Show hover documentation for DDS columns and keywords.",
+          "description": "Show hover documentation for DDS columns and display file keywords.",
           "order": 4
         },
         "dspf-edit.assist.diagnostics.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable DDS diagnostics (invalid data types, misaligned entries, overflow past column 80, ...).",
+          "description": "Enable display file diagnostics (invalid data types, misaligned entries, overflow past column 80, ...).",
           "order": 5
         },
         "dspf-edit.assist.completion.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable DDS keyword completion in the keyword area (columns 45-80).",
+          "description": "Enable display file keyword completion in the keyword area (columns 45-80).",
           "order": 6
         },
         "dspf-edit.assist.highlight.enabled": {

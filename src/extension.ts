@@ -10,7 +10,7 @@ import { DdsRecordCodeLensProvider } from './dspf-edit.providers/dspf-edit.recor
 import { registerCommands } from './dspf-edit.commands/register-commands';
 import { ExtensionState } from './dspf-edit.states/state';
 import { initializeDocumentListeners } from './dspf-edit.listeners/listeners';
-import { registerDdsAssist } from './dspf-edit.assist/dspf-edit.assist';
+import { registerDspfAssist } from './dspf-edit.assist/dspf-edit.assist';
 
 // Activate extension
 export function activate(context: vscode.ExtensionContext) {
@@ -48,10 +48,10 @@ export function activate(context: vscode.ExtensionContext) {
 	// Register all commands
 	registerCommands(context, treeProvider);
 
-	// DDS editing assistance: column-aware status bar, column reference, hovers,
+	// DSPF source editing: column-aware status bar, column reference, hovers,
 	// diagnostics, keyword completion, section highlight and outline symbols.
 	// Self-contained in dspf-edit.assist/ and independent of the tree/preview above.
-	registerDdsAssist(context);
+	registerDspfAssist(context);
 };
 
 export function deactivate() {

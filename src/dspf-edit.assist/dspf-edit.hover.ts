@@ -1,6 +1,6 @@
 /*
 	Rabbi Hossain, 2026
-	"DDS editing assistance"
+	"DSPF source editing assistance"
 	dspf-edit.assist/dspf-edit.hover.ts
 */
 

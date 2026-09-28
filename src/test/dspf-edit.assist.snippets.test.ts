@@ -1,6 +1,6 @@
 /*
 	Rabbi Hossain, 2026
-	"DDS editing assistance"
+	"DSPF source editing assistance"
 	test/dspf-edit.assist.snippets.test.ts
 */
 
@@ -36,7 +36,7 @@ function render(line: string, defaults: Map<string, string>): string {
     return out;
 }
 
-suite('DDS assist: snippets', () => {
+suite('DSPF assist: snippets', () => {
 
     test('every snippet renders to valid, column-aligned DDS', () => {
         for (const [name, snippet] of Object.entries(snippets)) {

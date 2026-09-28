@@ -1,6 +1,6 @@
 /*
 	Rabbi Hossain, 2026
-	"DDS editing assistance"
+	"DSPF source editing assistance"
 	test/dspf-edit.assist.columns.test.ts
 */
 
@@ -12,7 +12,7 @@ import {
     DDS_LINE_WIDTH
 } from '../dspf-edit.assist/dspf-edit.columns';
 
-suite('DDS assist: column definitions', () => {
+suite('DSPF assist: column definitions', () => {
 
     test('covers columns 1 through 80 with no gaps or overlaps', () => {
         let expected = 1;

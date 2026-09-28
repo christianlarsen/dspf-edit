@@ -1,18 +1,18 @@
 ---
-title: DDS Source Editing
-description: Column awareness, hovers, validation, completion and snippets for writing DDS by hand.
+title: DSPF Source Editing
+description: Column awareness, hovers, validation, completion and snippets for writing display file DDS by hand.
 ---
 
 The [Schema Tree](/dspf-edit/guides/schema-tree/) and [Screen Preview](/dspf-edit/guides/screen-preview/) work on the *structure* of a display file. This layer works on the *text*, for the moments you are typing DDS by hand.
 
-It applies to every DDS source type — `.dspf`, `.prtf`, `.pf`, `.lf` and `.dds` — not just display files.
+Like the rest of the extension, it applies to `.dspf` sources.
 
 ## Where am I? The status bar
 
-Open a DDS source and look at the bottom right of the window:
+Open a display file and look at the bottom right of the window:
 
 ```
-DDS | Col 21 | Name
+DSPF | Col 21 | Name
 ```
 
 Move the cursor along the line and the label follows it, naming the DDS area you are in. It is plain text, so it works regardless of theme or color vision.
@@ -21,7 +21,7 @@ Move the cursor along the line and the label follows it, naming the DDS area you
 
 ## The column reference
 
-Run **DSPF Edit: Show DDS Column Reference** from the Command Palette (`Ctrl+Shift+P`), or click the status bar item.
+Run **DSPF Edit: Show DSPF Column Reference** from the Command Palette (`Ctrl+Shift+P`), or click the status bar item.
 
 You get a searchable list of every DDS region with its columns and purpose. Picking one **moves the cursor to the first column of that region** on the current line — padding the line with spaces if it is shorter than that column, so you land exactly where you need to type.
 
@@ -37,17 +37,17 @@ Every feature here is driven by one internal map of the layout:
 | 6 | Form Type | Always `A` |
 | 7 | Comment / And-Or | `*` = comment line; `A`/`O` chain indicator conditions |
 | 8–16 | Conditioning Indicators | Up to three conditions, e.g. `N50` |
-| 17 | Name Type | `R` record, `K` key, `S` select, `O` omit, `J` join, `H` help, blank = field |
+| 17 | Name Type | `R` record, `H` help, blank = field |
 | 18 | Reserved | Must be blank |
-| 19–28 | Name | Record/field/key name, left-justified, max 10 characters |
+| 19–28 | Name | Record or field name, left-justified, max 10 characters |
 | 29 | Reference | `R` = copy the definition from a referenced field |
 | 30–34 | Length | Right-justified, digits only |
-| 35 | Data Type | `A` char, `P` packed, `S` zoned, `L` date, `T` time, `Z` timestamp, ... |
+| 35 | Data Type | `A` alphanumeric, `S` signed numeric, `Y` numeric only, `L` date, `T` time, ... |
 | 36–37 | Decimal Positions | Right-justified, numeric fields only |
-| 38 | Usage | `B` both, `I` input, `O` output, `H` hidden, ... |
-| 39–41 | Location: Line | Screen/print line |
-| 42–44 | Location: Position | Screen/print column |
-| 45–80 | Keywords | `TEXT('...')`, `COLHDG(...)`, `EDTCDE(Z)`, `SFL`, ... |
+| 38 | Usage | `B` both, `I` input, `O` output, `H` hidden, `M` message, `P` program-to-system |
+| 39–41 | Location: Line | Screen line |
+| 42–44 | Location: Position | Screen column |
+| 45–80 | Keywords | `TEXT('...')`, `COLOR(BLU)`, `EDTCDE(Z)`, `SFL`, ... |
 
 You never have to memorize it — it is exactly what the status bar, the hovers, the highlight and the guides show you in place.
 
@@ -60,19 +60,15 @@ Two kinds, with no configuration:
 
 ## Column guides and section highlight
 
-Thin vertical lines can mark every DDS column boundary. They are VS Code's own `editor.rulers`, scoped to the DDS languages, so other file types are untouched and there is no rendering cost.
+Thin vertical lines can mark every DDS column boundary. They are VS Code's own `editor.rulers`, scoped to the `dds.dspf` language, so other file types are untouched and there is no rendering cost.
 
-Run **DSPF Edit: Apply Recommended DDS Editor Settings** once from the Command Palette to switch them on. The same command also sets, for DDS languages only:
-
-- one space per `Tab` (`editor.tabSize: 1`, `editor.insertSpaces: true`) so you can land on an exact column,
-- no indentation guessing (`editor.detectIndentation: false`),
-- no word wrap (`editor.wordWrap: "off"`), because a DDS line is meaningful only when it stays one line.
+Run **DSPF Edit: Apply Recommended DSPF Editor Settings** once from the Command Palette to switch them on. It writes `editor.rulers` under `[dds.dspf]` only, so no other file type is affected.
 
 This is the one thing you have to ask for — the extension never writes to your settings on its own.
 
 The column region containing the cursor is shaded very subtly regardless — 8% opacity by default, never above 15%, following your theme. Only the region is shaded, never the whole line.
 
-Toggle either one with **DSPF Edit: Toggle DDS Column Guides** and **DSPF Edit: Toggle DDS Section Highlight**.
+Toggle either one with **DSPF Edit: Toggle DSPF Column Guides** and **DSPF Edit: Toggle DSPF Section Highlight**.
 
 To change where the guides sit, edit the rulers like any other setting:
 
@@ -90,21 +86,31 @@ Mistakes are flagged in the editor and in the Problems panel (`Ctrl+Shift+M`) be
 | Invalid data type in column 35 | Error |
 | Length is not numeric | Error |
 | Decimal positions exceed the field length | Error |
-| Packed/zoned over 63 digits, character over 32766 | Error |
+| Zoned over 63 digits, character over 32766 | Error |
 | Decimal positions on a character field | Warning |
 | Name too long, invalid characters, or not left-justified | Warning |
 | Length not right-justified in column 34 | Warning |
-| Length/type specified on a record (`R`) or key (`K`) line | Warning |
+| Length/type specified on a record (`R`) line | Warning |
 | Invalid usage or name type letter | Warning |
 | Column 6 is not `A` | Warning |
 
 Comment lines (`*` in column 7) are always ignored, and conditioning lines — including AND/OR indicator continuations — are understood and left alone.
 
-Try it: type a `Q` in column 35. A squiggle appears immediately saying *"'Q' is not a valid DDS data type."* That is a compile error you just avoided.
+Try it: type a `Q` in column 35. A squiggle appears immediately saying *"'Q' is not a valid display file data type."* That is a compile error you just avoided.
+
+### Entries copied from a physical or logical file
+
+Some entries are perfectly valid DDS but belong to database files, so a display file line carrying one is nearly always a copy-paste from a PF or LF rather than a typo. Those get a warning that names the reason instead of a bare error:
+
+| Entry | Message |
+|---|---|
+| `P`, `B`, `H` in column 35 | Belongs to physical and logical files; a display file uses `S` or `Y` for numeric fields |
+| `K`, `S`, `O`, `J` in column 17 | Belongs to physical and logical files; a display file uses `R`, `H` or blank |
+| `N` in column 38 | Belongs to logical files |
 
 ## Keyword completion
 
-Put the cursor in the keyword area (column 45 or beyond) and press `Ctrl+Space`. You get DDS keywords **filtered by file type** — a `.dspf` offers `SFL`, `SFLCTL`, `WINDOW`, `DSPATR`...; a `.pf` offers `COLHDG`, `UNIQUE`, `VARLEN`... Each one shows documentation and inserts a fill-in-the-blanks template.
+Put the cursor in the keyword area (column 45 or beyond) and press `Ctrl+Space`. You get the 47 display file keywords — `SFL`, `SFLCTL`, `SFLPAG`, `WINDOW`, `DSPATR`, `COLOR`, `ERRMSG`, `EDTCDE`, `CAnn`, `CFnn` and the rest — each with documentation and a fill-in-the-blanks template.
 
 ## Snippets
 
@@ -118,18 +124,16 @@ Type a prefix on an empty line and press `Tab`. Every snippet is column-perfect,
 | `dspf-window` | Window record format |
 | `dspf-subfile` | Complete subfile + control record pair |
 | `dspf-fkey` | Function key definition (`CAnn`) |
-| `pf-record` / `lf-record` | Physical / logical file record format |
-| `key-field` | Key field (`K` in column 17) |
-| `field-char` / `field-packed` / `field-zoned` | Character / packed / zoned field |
+| `field-char` / `field-zoned` | Character / zoned numeric field |
 | `field-date` / `field-time` / `field-timestamp` | Date / time / timestamp field |
-| `dds-header` | Commented header block |
+| `dspf-header` | Commented header block |
 
 ## Outline and breadcrumbs
 
-Record formats, fields and keys also appear in the Outline view and the breadcrumb bar above the editor, with fields showing their length and type (`7P,0`). `Ctrl+Shift+O` gives you quick symbol navigation inside the file.
+Record formats and their fields also appear in the Outline view and the breadcrumb bar above the editor, with fields showing their length and type (`7Y,0`). `Ctrl+Shift+O` gives you quick symbol navigation inside the file.
 
-This is complementary to the [Schema Tree](/dspf-edit/guides/schema-tree/): the tree is the place to *act* on a display file, the Outline is the place to *jump* around any DDS source.
+This is complementary to the [Schema Tree](/dspf-edit/guides/schema-tree/): the tree is the place to *act* on a display file, the Outline is the place to *jump* around its source.
 
 ## Turning it off
 
-Everything on this page is optional. `dspf-edit.assist.enabled` turns the whole layer off in one click and leaves the graphical DSPF tooling untouched; each feature also has its own switch. See [Configuration](/dspf-edit/guides/configuration/).
+Everything on this page is optional. `dspf-edit.assist.enabled` turns the whole layer off in one click and leaves the graphical tooling untouched; each feature also has its own switch. See [Configuration](/dspf-edit/guides/configuration/).

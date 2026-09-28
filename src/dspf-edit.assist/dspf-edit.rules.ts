@@ -1,11 +1,11 @@
 /*
 	Rabbi Hossain, 2026
-	"DDS editing assistance"
+	"DSPF source editing assistance"
 	dspf-edit.assist/dspf-edit.rules.ts
 */
 
 /**
- * Pure diagnostic rules for DDS lines. No VS Code dependencies.
+ * Pure diagnostic rules for display file DDS lines. No VS Code dependencies.
  */
 
 import { DDS_LINE_WIDTH, regionById } from "./dspf-edit.columns";
@@ -24,15 +24,28 @@ export interface Issue {
   readonly code: string;
 }
 
+/** Data type / keyboard shift entries a display file accepts in column 35. */
 const VALID_DATA_TYPES = new Set([
-  "A", "P", "S", "B", "F", "L", "T", "Z", "H", "G", "O",
-  // Display/printer keyboard shifts
-  "X", "Y", "N", "I", "D", "M", "W",
+  "A", "X", "N", "S", "Y", "D", "M", "I", "W", "F", "L", "T", "Z", "G",
+  // DBCS
+  "J", "E", "O",
 ]);
 
-const VALID_NAME_TYPES = new Set(["R", "K", "S", "O", "J", "H"]);
+/** Name types a display file accepts in column 17 (blank means "field"). */
+const VALID_NAME_TYPES = new Set(["R", "H"]);
 
-const VALID_USAGE = new Set(["B", "I", "O", "H", "M", "P", "N"]);
+/** Usage entries a display file accepts in column 38. */
+const VALID_USAGE = new Set(["B", "I", "O", "H", "M", "P"]);
+
+/**
+ * Entries that are perfectly valid DDS but belong to physical and logical
+ * files. They are reported as warnings naming the reason rather than as plain
+ * "invalid" errors, because a line carrying one is nearly always copied from a
+ * database file rather than mistyped.
+ */
+const DATABASE_ONLY_DATA_TYPES = new Set(["P", "B", "H"]);
+const DATABASE_ONLY_NAME_TYPES = new Set(["K", "S", "O", "J"]);
+const DATABASE_ONLY_USAGE = new Set(["N"]);
 
 const NAME_PATTERN = /^[A-Z@#$][A-Z0-9@#$_]*$/i;
 
@@ -128,12 +141,15 @@ export function checkLine(line: ParsedLine): Issue[] {
 
   // Name type letter.
   if (line.nameType !== "" && !VALID_NAME_TYPES.has(line.nameType)) {
+    const databaseOnly = DATABASE_ONLY_NAME_TYPES.has(line.nameType);
     push(
       issues,
       line,
       "nameType",
       "warning",
-      `'${line.nameType}' is not a valid name type. Expected R, K, S, O, J or H.`,
+      databaseOnly
+        ? `Name type '${line.nameType}' belongs to physical and logical files. A display file uses R, H or blank.`
+        : `'${line.nameType}' is not a valid name type. Expected R, H or blank.`,
       "dds-name-type",
     );
   }
@@ -166,12 +182,15 @@ export function checkLine(line: ParsedLine): Issue[] {
 
   // Data type letter.
   if (line.dataType !== "" && !VALID_DATA_TYPES.has(line.dataType)) {
+    const databaseOnly = DATABASE_ONLY_DATA_TYPES.has(line.dataType);
     push(
       issues,
       line,
       "dataType",
-      "error",
-      `'${line.dataType}' is not a valid DDS data type.`,
+      databaseOnly ? "warning" : "error",
+      databaseOnly
+        ? `Data type '${line.dataType}' belongs to physical and logical files. A display file uses S or Y for numeric fields.`
+        : `'${line.dataType}' is not a valid display file data type.`,
       "dds-data-type",
     );
   }
@@ -240,12 +259,15 @@ export function checkLine(line: ParsedLine): Issue[] {
 
   // Usage letter.
   if (line.usage !== "" && !VALID_USAGE.has(line.usage)) {
+    const databaseOnly = DATABASE_ONLY_USAGE.has(line.usage);
     push(
       issues,
       line,
       "usage",
       "warning",
-      `'${line.usage}' is not a valid usage. Expected B, I, O, H, M, P or N.`,
+      databaseOnly
+        ? `Usage '${line.usage}' belongs to logical files. A display file uses B, I, O, H, M, P or blank.`
+        : `'${line.usage}' is not a valid usage. Expected B, I, O, H, M, P or blank.`,
       "dds-usage",
     );
   }
@@ -259,18 +281,6 @@ export function checkLine(line: ParsedLine): Issue[] {
       "warning",
       "Record format lines (R) should not specify length or data type.",
       "dds-record-data",
-    );
-  }
-
-  // Key fields should not redefine length/type.
-  if (line.kind === "key" && (line.length !== "" || line.dataType !== "")) {
-    push(
-      issues,
-      line,
-      "length",
-      "warning",
-      "Key field lines (K) reference existing fields and should not specify length or data type.",
-      "dds-key-data",
     );
   }
 

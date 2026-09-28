@@ -1,6 +1,6 @@
 /*
 	Rabbi Hossain, 2026
-	"DDS editing assistance"
+	"DSPF source editing assistance"
 	dspf-edit.assist/dspf-edit.symbols.ts
 */
 
@@ -10,11 +10,10 @@ import { parseSource, ParsedLine } from "./dspf-edit.column-parser";
 const KIND_BY_LINE: Partial<Record<ParsedLine["kind"], vscode.SymbolKind>> = {
   record: vscode.SymbolKind.Struct,
   field: vscode.SymbolKind.Field,
-  key: vscode.SymbolKind.Key,
 };
 
 /**
- * Outline view: record formats as parents, fields and keys as children.
+ * Outline view: record formats as parents, their fields as children.
  */
 export class DdsDocumentSymbolProvider implements vscode.DocumentSymbolProvider {
   provideDocumentSymbols(
@@ -38,9 +37,7 @@ export class DdsDocumentSymbolProvider implements vscode.DocumentSymbolProvider 
       const detail =
         line.kind === "field" && line.length !== ""
           ? `${line.length}${line.dataType !== "" ? line.dataType : ""}${line.decimals !== "" ? `,${line.decimals}` : ""}`
-          : line.kind === "key"
-            ? "key"
-            : "";
+          : "";
       const symbol = new vscode.DocumentSymbol(line.name, detail, kind, range, range);
 
       if (line.kind === "record") {

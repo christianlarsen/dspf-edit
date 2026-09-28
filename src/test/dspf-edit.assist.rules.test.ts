@@ -1,6 +1,6 @@
 /*
 	Rabbi Hossain, 2026
-	"DDS editing assistance"
+	"DSPF source editing assistance"
 	test/dspf-edit.assist.rules.test.ts
 */
 
@@ -25,12 +25,22 @@ function hasCode(issues: ReturnType<typeof checkLine>, code: string): boolean {
     return issues.some(i => i.code === code);
 }
 
+/** The single issue reported for a line, for assertions on severity/message. */
+function onlyIssue(line: string): ReturnType<typeof checkLine>[number] {
+    const issues = checkLine(parseLine(line, 0));
+    assert.strictEqual(
+        issues.length, 1,
+        `expected exactly one issue, got: ${issues.map(i => i.code).join(', ')}`
+    );
+    return issues[0];
+}
+
 const A: [number, string] = [6, 'A'];
 
-suite('DDS assist: checkLine', () => {
+suite('DSPF assist: checkLine', () => {
 
     test('accepts a valid field line', () => {
-        const line = ddsLine([A, [19, 'CUSNO'], [34, '7'], [35, 'P'], [37, '0']]);
+        const line = ddsLine([A, [19, 'CUSNO'], [34, '7'], [35, 'Y'], [37, '0']]);
         assert.deepStrictEqual(checkLine(parseLine(line, 0)), []);
     });
 
@@ -48,7 +58,9 @@ suite('DDS assist: checkLine', () => {
 
     test('flags invalid data types', () => {
         const line = ddsLine([A, [19, 'FLD'], [34, '5'], [35, 'Q']]);
-        assert.ok(hasCode(checkLine(parseLine(line, 0)), 'dds-data-type'));
+        const issue = onlyIssue(line);
+        assert.strictEqual(issue.code, 'dds-data-type');
+        assert.strictEqual(issue.severity, 'error');
     });
 
     test('flags non-numeric length', () => {
@@ -62,12 +74,12 @@ suite('DDS assist: checkLine', () => {
     });
 
     test('flags decimals greater than length', () => {
-        const line = ddsLine([A, [19, 'FLD'], [34, '3'], [35, 'P'], [37, '5']]);
+        const line = ddsLine([A, [19, 'FLD'], [34, '3'], [35, 'S'], [37, '5']]);
         assert.ok(hasCode(checkLine(parseLine(line, 0)), 'dds-decimals-length'));
     });
 
-    test('flags packed fields longer than 63 digits', () => {
-        const line = ddsLine([A, [19, 'FLD'], [33, '64'], [35, 'P'], [37, '0']]);
+    test('flags zoned fields longer than 63 digits', () => {
+        const line = ddsLine([A, [19, 'FLD'], [33, '64'], [35, 'S'], [37, '0']]);
         assert.ok(hasCode(checkLine(parseLine(line, 0)), 'dds-numeric-length'));
     });
 
@@ -103,20 +115,71 @@ suite('DDS assist: checkLine', () => {
     });
 });
 
-suite('DDS assist: checkSource', () => {
+suite('DSPF assist: database-only entries are warnings, not errors', () => {
+
+    // A line carrying one of these is nearly always copied from a physical or
+    // logical file rather than mistyped, so it gets a warning that names the
+    // reason instead of a bare "invalid" error.
+
+    test('packed, binary and hexadecimal data types name the reason', () => {
+        for (const dataType of ['P', 'B', 'H']) {
+            const line = ddsLine([A, [19, 'FLD'], [34, '7'], [35, dataType]]);
+            const issue = onlyIssue(line);
+            assert.strictEqual(issue.code, 'dds-data-type');
+            assert.strictEqual(issue.severity, 'warning', `${dataType} should warn, not error`);
+            assert.match(issue.message, /physical and logical files/);
+        };
+    });
+
+    test('database name types name the reason', () => {
+        for (const nameType of ['K', 'S', 'O', 'J']) {
+            const line = ddsLine([A, [17, nameType], [19, 'CUSNO']]);
+            const issue = onlyIssue(line);
+            assert.strictEqual(issue.code, 'dds-name-type');
+            assert.strictEqual(issue.severity, 'warning');
+            assert.match(issue.message, /physical and logical files/);
+        };
+    });
+
+    test('usage N names the reason', () => {
+        const line = ddsLine([A, [19, 'FLD'], [33, '10'], [35, 'A'], [38, 'N']]);
+        const issue = onlyIssue(line);
+        assert.strictEqual(issue.code, 'dds-usage');
+        assert.strictEqual(issue.severity, 'warning');
+        assert.match(issue.message, /logical files/);
+    });
+
+    test('every display file data type and usage is accepted', () => {
+        for (const dataType of ['A', 'X', 'N', 'S', 'Y', 'D', 'M', 'I', 'W', 'F', 'L', 'T', 'Z', 'G']) {
+            const line = ddsLine([A, [19, 'FLD'], [33, '10'], [35, dataType]]);
+            assert.deepStrictEqual(
+                checkLine(parseLine(line, 0)), [],
+                `data type ${dataType} should be accepted`
+            );
+        };
+        for (const usage of ['B', 'I', 'O', 'H', 'M', 'P']) {
+            const line = ddsLine([A, [19, 'FLD'], [33, '10'], [35, 'A'], [38, usage]]);
+            assert.deepStrictEqual(
+                checkLine(parseLine(line, 0)), [],
+                `usage ${usage} should be accepted`
+            );
+        };
+    });
+});
+
+suite('DSPF assist: checkSource', () => {
 
     test('reports issues across an entire source', () => {
         const source = [
             '     A          R CUSREC',
             '     A            CUSNO          7Q 0',
-            '     A          K CUSNO',
         ].join('\n');
         const issues = checkSource(parseSource(source));
         assert.ok(issues.some(i => i.code === 'dds-data-type'));
     });
 });
 
-suite('DDS assist: diagnostics stay quiet on real DSPF conditioning', () => {
+suite('DSPF assist: diagnostics stay quiet on real DSPF conditioning', () => {
 
     // The graphical side of this extension already round-trips these shapes; the
     // point here is that the DDS rules must not invent problems on them.

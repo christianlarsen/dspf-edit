@@ -1,32 +1,25 @@
 /*
 	Rabbi Hossain, 2026
-	"DDS editing assistance"
+	"DSPF source editing assistance"
 	dspf-edit.assist/dspf-edit.settings.ts
 */
 
 import * as vscode from "vscode";
 
-/** Configuration section holding every DDS-assistance setting. */
+/** Configuration section holding every source-editing setting. */
 const SECTION = "dspf-edit.assist";
 
 /**
- * Every language ID the DDS editing assistance applies to.
+ * The only language ID this extension handles: display file DDS.
  *
- * The graphical DSPF tooling (schema tree, screen preview, element commands) is
- * display-file only and keeps using `dds.dspf` directly. The text-editing
- * assistance in this folder is layout-driven, so it is useful on every DDS
- * source type. `dds` is this extension's own ID for plain `.dds` sources; the
- * `dds.*` IDs are the ones the IBM i ecosystem already uses.
+ * It is the same ID the IBM i ecosystem already uses for `.dspf` sources, so
+ * declaring it here does not fight with Code for IBM i or IBM i Languages, it
+ * just means the extension no longer depends on one of them being installed.
  *
- * This array is the single place to widen or narrow that scope.
+ * This constant is the single place to widen the scope if printer files or
+ * physical/logical files are ever brought in.
  */
-export const DDS_LANGUAGES: readonly string[] = [
-  "dds",
-  "dds.pf",
-  "dds.lf",
-  "dds.dspf",
-  "dds.prtf",
-];
+export const DSPF_LANGUAGE_ID = "dds.dspf";
 
 /** Typed, centralized access to all DDS-assistance settings. */
 export interface DdsAssistSettings {
@@ -51,7 +44,7 @@ export function readSettings(): DdsAssistSettings {
   return {
     enabled,
     statusBarEnabled: enabled && config.get("statusBar.enabled", true),
-    statusBarFormat: config.get("statusBar.format", "DDS | Col {column} | {section}"),
+    statusBarFormat: config.get("statusBar.format", "DSPF | Col {column} | {section}"),
     statusBarShowIcon: config.get("statusBar.showIcon", true),
     hoverEnabled: enabled && config.get("hover.enabled", true),
     diagnosticsEnabled: enabled && config.get("diagnostics.enabled", true),
@@ -70,10 +63,6 @@ export function onSettingsChanged(listener: () => void): vscode.Disposable {
   });
 }
 
-export function isDdsLanguage(languageId: string): boolean {
-  return DDS_LANGUAGES.includes(languageId);
-}
-
-export function isDdsDocument(document: vscode.TextDocument): boolean {
-  return isDdsLanguage(document.languageId);
+export function isDspfDocument(document: vscode.TextDocument): boolean {
+  return document.languageId === DSPF_LANGUAGE_ID;
 }

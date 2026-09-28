@@ -1,6 +1,6 @@
 /*
 	Rabbi Hossain, 2026
-	"DDS editing assistance"
+	"DSPF source editing assistance"
 	dspf-edit.assist/dspf-edit.column-reference.ts
 */
 
@@ -25,7 +25,7 @@ export async function showColumnReference(): Promise<void> {
   }));
 
   const picked = await vscode.window.showQuickPick(items, {
-    title: "DDS Column Reference",
+    title: "DSPF Column Reference",
     placeHolder: "Pick a region to jump to it on the current line",
     matchOnDetail: true,
   });

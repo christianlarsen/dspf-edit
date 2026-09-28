@@ -1,13 +1,13 @@
 /*
 	Rabbi Hossain, 2026
-	"DDS editing assistance"
+	"DSPF source editing assistance"
 	dspf-edit.assist/dspf-edit.diagnostics.ts
 */
 
 import * as vscode from "vscode";
 import { parseSource } from "./dspf-edit.column-parser";
 import { checkSource, Issue } from "./dspf-edit.rules";
-import { readSettings, isDdsDocument } from "./dspf-edit.settings";
+import { readSettings, isDspfDocument } from "./dspf-edit.settings";
 
 const SEVERITIES: Record<Issue["severity"], vscode.DiagnosticSeverity> = {
   error: vscode.DiagnosticSeverity.Error,
@@ -43,7 +43,7 @@ export class DiagnosticManager implements vscode.Disposable {
   }
 
   private scheduleAnalyze(document: vscode.TextDocument): void {
-    if (!isDdsDocument(document)) {
+    if (!isDspfDocument(document)) {
       return;
     }
     const key = document.uri.toString();
@@ -61,7 +61,7 @@ export class DiagnosticManager implements vscode.Disposable {
   }
 
   private analyze(document: vscode.TextDocument): void {
-    if (!isDdsDocument(document)) {
+    if (!isDspfDocument(document)) {
       return;
     }
     if (!readSettings().diagnosticsEnabled) {

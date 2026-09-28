@@ -1,12 +1,12 @@
 /*
 	Rabbi Hossain, 2026
-	"DDS editing assistance"
+	"DSPF source editing assistance"
 	dspf-edit.assist/dspf-edit.decorations.ts
 */
 
 import * as vscode from "vscode";
 import { regionAt } from "./dspf-edit.columns";
-import { readSettings, isDdsDocument } from "./dspf-edit.settings";
+import { readSettings, isDspfDocument } from "./dspf-edit.settings";
 
 function toRgba(hex: string, opacity: number): string {
   const match = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
@@ -66,7 +66,7 @@ export class DecorationManager implements vscode.Disposable {
     if (!this.highlightType) {
       return;
     }
-    if (!isDdsDocument(editor.document)) {
+    if (!isDspfDocument(editor.document)) {
       return;
     }
     const settings = readSettings();

@@ -1,15 +1,13 @@
 /*
 	Rabbi Hossain, 2026
-	"DDS editing assistance"
+	"DSPF source editing assistance"
 	dspf-edit.assist/dspf-edit.keywords.ts
 */
 
 /**
- * DDS keyword dictionary used for completion and hover documentation.
- * Pure data — no VS Code dependencies.
+ * Display file DDS keyword dictionary used for completion and hover
+ * documentation. Pure data — no VS Code dependencies.
  */
-
-import { FileType } from "./dspf-edit.columns";
 
 export interface DdsKeyword {
   readonly name: string;
@@ -18,15 +16,7 @@ export interface DdsKeyword {
   readonly signature: string;
   readonly description: string;
   readonly example: string;
-  /** File types the keyword applies to. Empty means all. */
-  readonly fileTypes: readonly FileType[];
 }
-
-const ALL: readonly FileType[] = [];
-const PF_LF: readonly FileType[] = ["PF", "LF"];
-const DSPF: readonly FileType[] = ["DSPF"];
-const PRTF: readonly FileType[] = ["PRTF"];
-const DSPF_PRTF: readonly FileType[] = ["DSPF", "PRTF"];
 
 export const KEYWORDS: readonly DdsKeyword[] = [
   {
@@ -36,16 +26,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     description:
       "Supplies a text description (up to 50 characters) for a record format or field. Shown by commands such as DSPFFD and used as documentation.",
     example: "TEXT('Customer master record')",
-    fileTypes: ALL,
-  },
-  {
-    name: "COLHDG",
-    insertText: "COLHDG('${1:heading}')",
-    signature: "COLHDG('line1' ['line2' ['line3']])",
-    description:
-      "Column headings for the field, up to three lines of 20 characters each. Used by Query, SQL and DSPFFD.",
-    example: "COLHDG('Customer' 'Number')",
-    fileTypes: PF_LF,
   },
   {
     name: "REF",
@@ -54,7 +34,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     description:
       "Names the file used to look up referenced field definitions for fields flagged with R in column 29.",
     example: "REF(MYLIB/FIELDREF)",
-    fileTypes: ALL,
   },
   {
     name: "REFFLD",
@@ -63,7 +42,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     description:
       "Copies the definition of another field. Used with R in column 29 when the referenced field name or file differs from the default.",
     example: "REFFLD(CUSNAM REFLIB/FIELDREF)",
-    fileTypes: ALL,
   },
   {
     name: "VALUES",
@@ -72,7 +50,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     description:
       "Restricts valid input to an explicit list of values. Validity checking keyword.",
     example: "VALUES('Y' 'N')",
-    fileTypes: ALL,
   },
   {
     name: "RANGE",
@@ -80,7 +57,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "RANGE(low-value high-value)",
     description: "Restricts valid input to a range of values.",
     example: "RANGE(1 999)",
-    fileTypes: ALL,
   },
   {
     name: "COMP",
@@ -89,7 +65,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     description:
       "Compares input against a value. Operators: EQ, NE, LT, NL, GT, NG, LE, GE.",
     example: "COMP(GT 0)",
-    fileTypes: ALL,
   },
   {
     name: "EDTCDE",
@@ -98,7 +73,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     description:
       "Edits numeric output with a predefined edit code (1-4, A-D, J-Q, W-Z). Z suppresses leading zeros.",
     example: "EDTCDE(Z)",
-    fileTypes: ALL,
   },
   {
     name: "EDTWRD",
@@ -106,7 +80,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "EDTWRD('edit-word')",
     description: "Edits numeric output with a custom edit word mask.",
     example: "EDTWRD('  /  /  ')",
-    fileTypes: ALL,
   },
   {
     name: "DFT",
@@ -114,7 +87,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "DFT('value')",
     description: "Specifies a default value for the field.",
     example: "DFT('N')",
-    fileTypes: ALL,
   },
   {
     name: "ALIAS",
@@ -123,57 +95,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     description:
       "Alternative (long) field name, up to 30 characters, used by SQL and high-level languages that support long names.",
     example: "ALIAS(CUSTOMER_NUMBER)",
-    fileTypes: ALL,
-  },
-  {
-    name: "UNIQUE",
-    insertText: "UNIQUE",
-    signature: "UNIQUE",
-    description:
-      "File-level keyword: key values must be unique. Duplicate key insert/update fails.",
-    example: "UNIQUE",
-    fileTypes: PF_LF,
-  },
-  {
-    name: "PFILE",
-    insertText: "PFILE(${1:library}/${2:file})",
-    signature: "PFILE([library/]physical-file)",
-    description:
-      "Logical file record level keyword: names the physical file the logical file is based on.",
-    example: "PFILE(MYLIB/CUSTOMER)",
-    fileTypes: ["LF"],
-  },
-  {
-    name: "JFILE",
-    insertText: "JFILE(${1:file1} ${2:file2})",
-    signature: "JFILE(file-1 file-2 [...])",
-    description: "Join logical file: names the physical files being joined.",
-    example: "JFILE(CUSTOMER ORDERS)",
-    fileTypes: ["LF"],
-  },
-  {
-    name: "JOIN",
-    insertText: "JOIN(${1:1} ${2:2})",
-    signature: "JOIN(from-file to-file)",
-    description: "Identifies which pair of files a join specification joins.",
-    example: "JOIN(1 2)",
-    fileTypes: ["LF"],
-  },
-  {
-    name: "JFLD",
-    insertText: "JFLD(${1:field1} ${2:field2})",
-    signature: "JFLD(from-field to-field)",
-    description: "Names the fields whose values are matched in a join.",
-    example: "JFLD(CUSNO CUSNO)",
-    fileTypes: ["LF"],
-  },
-  {
-    name: "DESCEND",
-    insertText: "DESCEND",
-    signature: "DESCEND",
-    description: "Key field keyword: sorts this key in descending order.",
-    example: "DESCEND",
-    fileTypes: PF_LF,
   },
   {
     name: "CAA",
@@ -182,7 +103,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     description:
       "Command Attention key: pressing Fnn sets the indicator without returning field data. (Type CA01-CA24.)",
     example: "CA03(03 'Exit')",
-    fileTypes: DSPF,
   },
   {
     name: "CFA",
@@ -191,7 +111,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     description:
       "Command Function key: pressing Fnn sets the indicator and returns input data. (Type CF01-CF24.)",
     example: "CF04(04 'Prompt')",
-    fileTypes: DSPF,
   },
   {
     name: "SFL",
@@ -199,7 +118,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "SFL",
     description: "Record-level keyword: this record format is a subfile.",
     example: "SFL",
-    fileTypes: DSPF,
   },
   {
     name: "SFLCTL",
@@ -207,7 +125,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "SFLCTL(subfile-record-format)",
     description: "Marks this record as the subfile control record for the named subfile.",
     example: "SFLCTL(SFLREC)",
-    fileTypes: DSPF,
   },
   {
     name: "SFLSIZ",
@@ -215,7 +132,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "SFLSIZ(number-of-records)",
     description: "Total number of records the subfile can hold.",
     example: "SFLSIZ(0050)",
-    fileTypes: DSPF,
   },
   {
     name: "SFLPAG",
@@ -223,7 +139,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "SFLPAG(records-per-page)",
     description: "Number of subfile records shown on the display at one time.",
     example: "SFLPAG(0010)",
-    fileTypes: DSPF,
   },
   {
     name: "SFLDSP",
@@ -231,7 +146,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "SFLDSP",
     description: "Displays the subfile when the control record is written.",
     example: "SFLDSP",
-    fileTypes: DSPF,
   },
   {
     name: "SFLDSPCTL",
@@ -239,7 +153,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "SFLDSPCTL",
     description: "Displays the subfile control record fields.",
     example: "SFLDSPCTL",
-    fileTypes: DSPF,
   },
   {
     name: "SFLCLR",
@@ -247,7 +160,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "SFLCLR",
     description: "Clears all records from the subfile.",
     example: "SFLCLR",
-    fileTypes: DSPF,
   },
   {
     name: "SFLEND",
@@ -256,7 +168,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     description:
       "Shows a 'More...' / '+' / scroll bar indication when more subfile records exist.",
     example: "SFLEND(*MORE)",
-    fileTypes: DSPF,
   },
   {
     name: "SFLRCDNBR",
@@ -265,7 +176,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     description:
       "Hidden field holding the subfile record number of the page to display first.",
     example: "SFLRCDNBR(CURSOR)",
-    fileTypes: DSPF,
   },
   {
     name: "OVERLAY",
@@ -274,7 +184,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     description:
       "Writes this record without clearing the rest of the display.",
     example: "OVERLAY",
-    fileTypes: DSPF,
   },
   {
     name: "WINDOW",
@@ -282,7 +191,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "WINDOW(start-line start-pos lines positions)",
     description: "Displays this record format as a window on the screen.",
     example: "WINDOW(5 10 12 60)",
-    fileTypes: DSPF,
   },
   {
     name: "WDWBORDER",
@@ -290,7 +198,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "WDWBORDER((*COLOR value) (*DSPATR value) (*CHAR 'chars'))",
     description: "Customizes the border of a window.",
     example: "WDWBORDER((*COLOR BLU) (*CHAR '........'))",
-    fileTypes: DSPF,
   },
   {
     name: "DSPATR",
@@ -299,7 +206,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     description:
       "Display attributes: HI (high intensity), RI (reverse image), UL (underline), BL (blink), CS (column separators), ND (non-display), PC (position cursor), PR (protect).",
     example: "DSPATR(HI UL)",
-    fileTypes: DSPF,
   },
   {
     name: "COLOR",
@@ -307,7 +213,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "COLOR(BLU | GRN | PNK | RED | TRQ | WHT | YLW)",
     description: "Sets the display color of the field on color displays.",
     example: "COLOR(WHT)",
-    fileTypes: DSPF,
   },
   {
     name: "ERRMSG",
@@ -316,7 +221,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     description:
       "Displays an error message on the message line when the option indicator is on.",
     example: "ERRMSG('Customer not found' 99)",
-    fileTypes: DSPF,
   },
   {
     name: "ERRMSGID",
@@ -324,7 +228,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "ERRMSGID(msg-id [library/]msg-file [indicator] [&field])",
     description: "Displays a message from a message file when the option indicator is on.",
     example: "ERRMSGID(CPF9898 QCPFMSG)",
-    fileTypes: DSPF,
   },
   {
     name: "BLANKS",
@@ -332,7 +235,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "BLANKS(response-indicator)",
     description: "Sets the indicator on when the field is blank on input.",
     example: "BLANKS(50)",
-    fileTypes: DSPF,
   },
   {
     name: "CHANGE",
@@ -340,7 +242,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "CHANGE(response-indicator)",
     description: "Sets the indicator on when data is typed into the field.",
     example: "CHANGE(88)",
-    fileTypes: DSPF,
   },
   {
     name: "CHECK",
@@ -349,7 +250,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     description:
       "Validity/keyboard checks: ME (mandatory enter), MF (mandatory fill), AB (allow blanks), LC (lowercase), RB (right-justify blank fill), RZ (right-justify zero fill).",
     example: "CHECK(ME)",
-    fileTypes: DSPF,
   },
   {
     name: "DATE",
@@ -357,7 +257,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "DATE([*YY | *SYS] [edit])",
     description: "Outputs the current job or system date as a constant field.",
     example: "DATE(*YY)",
-    fileTypes: DSPF_PRTF,
   },
   {
     name: "TIME",
@@ -365,7 +264,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "TIME",
     description: "Outputs the current system time as a constant field.",
     example: "TIME",
-    fileTypes: DSPF_PRTF,
   },
   {
     name: "EDTMSK",
@@ -373,7 +271,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "EDTMSK('edit-mask')",
     description: "Protects parts of an edited input-capable field (used with EDTCDE/EDTWRD).",
     example: "EDTMSK('   &  &   ')",
-    fileTypes: DSPF,
   },
   {
     name: "INDARA",
@@ -382,7 +279,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     description:
       "File-level keyword: passes indicators in a separate 99-byte indicator area instead of the record buffer.",
     example: "INDARA",
-    fileTypes: DSPF_PRTF,
   },
   {
     name: "PRINT",
@@ -390,7 +286,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "PRINT[([library/]printer-file)]",
     description: "Allows the workstation user to print the current display.",
     example: "PRINT",
-    fileTypes: DSPF,
   },
   {
     name: "VLDCMDKEY",
@@ -398,7 +293,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "VLDCMDKEY(response-indicator)",
     description: "Sets the indicator on when any valid command key is pressed.",
     example: "VLDCMDKEY(70)",
-    fileTypes: DSPF,
   },
   {
     name: "ASSUME",
@@ -407,7 +301,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     description:
       "Assumes this record is already on the display when the file is opened; prevents the screen from being cleared.",
     example: "ASSUME",
-    fileTypes: DSPF,
   },
   {
     name: "KEEP",
@@ -415,7 +308,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "KEEP",
     description: "Keeps the display contents when the file is closed.",
     example: "KEEP",
-    fileTypes: DSPF,
   },
   {
     name: "PUTOVR",
@@ -424,7 +316,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     description:
       "Enables override attributes/data (OVRDTA, OVRATR) on an already-displayed record, reducing data transmission.",
     example: "PUTOVR",
-    fileTypes: DSPF,
   },
   {
     name: "OVRDTA",
@@ -432,7 +323,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "OVRDTA",
     description: "With PUTOVR: sends this field's data again on a re-write.",
     example: "OVRDTA",
-    fileTypes: DSPF,
   },
   {
     name: "OVRATR",
@@ -440,7 +330,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "OVRATR",
     description: "With PUTOVR: overrides this field's display attributes on a re-write.",
     example: "OVRATR",
-    fileTypes: DSPF,
   },
   {
     name: "ROLLUP",
@@ -448,7 +337,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "ROLLUP(response-indicator)",
     description: "Sets the indicator when the user presses Page Down (Roll Up).",
     example: "ROLLUP(25)",
-    fileTypes: DSPF,
   },
   {
     name: "ROLLDOWN",
@@ -456,71 +344,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "ROLLDOWN(response-indicator)",
     description: "Sets the indicator when the user presses Page Up (Roll Down).",
     example: "ROLLDOWN(26)",
-    fileTypes: DSPF,
-  },
-  {
-    name: "SKIPB",
-    insertText: "SKIPB(${1:1})",
-    signature: "SKIPB(line-number)",
-    description: "Printer file: skip to the given line before printing.",
-    example: "SKIPB(1)",
-    fileTypes: PRTF,
-  },
-  {
-    name: "SKIPA",
-    insertText: "SKIPA(${1:1})",
-    signature: "SKIPA(line-number)",
-    description: "Printer file: skip to the given line after printing.",
-    example: "SKIPA(1)",
-    fileTypes: PRTF,
-  },
-  {
-    name: "SPACEB",
-    insertText: "SPACEB(${1:1})",
-    signature: "SPACEB(lines)",
-    description: "Printer file: space the given number of lines before printing.",
-    example: "SPACEB(1)",
-    fileTypes: PRTF,
-  },
-  {
-    name: "SPACEA",
-    insertText: "SPACEA(${1:1})",
-    signature: "SPACEA(lines)",
-    description: "Printer file: space the given number of lines after printing.",
-    example: "SPACEA(2)",
-    fileTypes: PRTF,
-  },
-  {
-    name: "PAGNBR",
-    insertText: "PAGNBR",
-    signature: "PAGNBR",
-    description: "Printer file: prints the current page number (4-digit zoned field).",
-    example: "PAGNBR",
-    fileTypes: PRTF,
-  },
-  {
-    name: "UNDERLINE",
-    insertText: "UNDERLINE",
-    signature: "UNDERLINE",
-    description: "Printer file: underlines the field when printed.",
-    example: "UNDERLINE",
-    fileTypes: PRTF,
-  },
-  {
-    name: "HIGHLIGHT",
-    insertText: "HIGHLIGHT",
-    signature: "HIGHLIGHT",
-    description: "Printer file: prints the field in bold.",
-    example: "HIGHLIGHT",
-    fileTypes: PRTF,
-  },
-  {
-    name: "CPI",
-    insertText: "CPI(${1:10})",
-    signature: "CPI(characters-per-inch)",
-    description: "Printer file: sets characters per inch.",
-    example: "CPI(15)",
-    fileTypes: PRTF,
   },
   {
     name: "TIMFMT",
@@ -528,7 +351,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "TIMFMT(*HMS | *ISO | *USA | *EUR | *JIS)",
     description: "Format of a time (T) field.",
     example: "TIMFMT(*ISO)",
-    fileTypes: ALL,
   },
   {
     name: "DATFMT",
@@ -536,7 +358,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "DATFMT(*MDY | *DMY | *YMD | *JUL | *ISO | *USA | *EUR | *JIS)",
     description: "Format of a date (L) field.",
     example: "DATFMT(*ISO)",
-    fileTypes: ALL,
   },
   {
     name: "DATSEP",
@@ -544,88 +365,6 @@ export const KEYWORDS: readonly DdsKeyword[] = [
     signature: "DATSEP('separator')",
     description: "Separator character of a date (L) field.",
     example: "DATSEP('-')",
-    fileTypes: ALL,
-  },
-  {
-    name: "ALWNULL",
-    insertText: "ALWNULL",
-    signature: "ALWNULL",
-    description: "Allows the null value in this field.",
-    example: "ALWNULL",
-    fileTypes: PF_LF,
-  },
-  {
-    name: "VARLEN",
-    insertText: "VARLEN(${1:allocated-length})",
-    signature: "VARLEN([allocated-length])",
-    description: "Makes a character field variable length.",
-    example: "VARLEN(50)",
-    fileTypes: PF_LF,
-  },
-  {
-    name: "FORMAT",
-    insertText: "FORMAT(${1:library}/${2:file})",
-    signature: "FORMAT([library/]file)",
-    description: "Shares the record format of another file.",
-    example: "FORMAT(MYLIB/CUSTOMER)",
-    fileTypes: PF_LF,
-  },
-  {
-    name: "RENAME",
-    insertText: "RENAME(${1:old-name})",
-    signature: "RENAME(physical-file-field)",
-    description: "Logical file: renames a field from the based-on physical file.",
-    example: "RENAME(CUSNO)",
-    fileTypes: ["LF"],
-  },
-  {
-    name: "CONCAT",
-    insertText: "CONCAT(${1:field1} ${2:field2})",
-    signature: "CONCAT(field-1 field-2 [...])",
-    description: "Logical file: concatenates physical file fields into one field.",
-    example: "CONCAT(FIRST LAST)",
-    fileTypes: ["LF"],
-  },
-  {
-    name: "SST",
-    insertText: "SST(${1:field} ${2:start} ${3:length})",
-    signature: "SST(field start-position [length])",
-    description: "Logical file: defines a substring of a physical file field.",
-    example: "SST(PHONE 1 3)",
-    fileTypes: ["LF"],
-  },
-  {
-    name: "DYNSLT",
-    insertText: "DYNSLT",
-    signature: "DYNSLT",
-    description:
-      "Logical file: performs select/omit dynamically at read time instead of maintaining an access path.",
-    example: "DYNSLT",
-    fileTypes: ["LF"],
-  },
-  {
-    name: "FCFO",
-    insertText: "FCFO",
-    signature: "FCFO",
-    description: "Duplicate keys are retrieved first-changed-first-out.",
-    example: "FCFO",
-    fileTypes: PF_LF,
-  },
-  {
-    name: "FIFO",
-    insertText: "FIFO",
-    signature: "FIFO",
-    description: "Duplicate keys are retrieved first-in-first-out.",
-    example: "FIFO",
-    fileTypes: PF_LF,
-  },
-  {
-    name: "LIFO",
-    insertText: "LIFO",
-    signature: "LIFO",
-    description: "Duplicate keys are retrieved last-in-first-out.",
-    example: "LIFO",
-    fileTypes: PF_LF,
   },
 ] as const;
 
@@ -641,14 +380,4 @@ export function findKeyword(name: string): DdsKeyword | undefined {
     return KEYWORDS.find((k) => k.name === (fkey[1] === "CA" ? "CAA" : "CFA"));
   }
   return undefined;
-}
-
-/** Keywords applicable to a file type (UNKNOWN gets everything). */
-export function keywordsFor(fileType: FileType): readonly DdsKeyword[] {
-  if (fileType === "UNKNOWN") {
-    return KEYWORDS;
-  }
-  return KEYWORDS.filter(
-    (k) => k.fileTypes.length === 0 || k.fileTypes.includes(fileType),
-  );
 }

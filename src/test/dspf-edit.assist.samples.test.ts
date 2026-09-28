@@ -1,6 +1,6 @@
 /*
 	Rabbi Hossain, 2026
-	"DDS editing assistance"
+	"DSPF source editing assistance"
 	test/dspf-edit.assist.samples.test.ts
 */
 
@@ -16,12 +16,12 @@ import { checkSource } from '../dspf-edit.assist/dspf-edit.rules';
 // fresh clone and CI both have them.
 const fixturesDir = join(__dirname, '..', '..', 'src', 'test', 'fixtures');
 
-suite('DDS assist: whole-source fixtures are clean', () => {
+suite('DSPF assist: whole-source fixtures are clean', () => {
 
-    const files = readdirSync(fixturesDir);
+    const files = readdirSync(fixturesDir).filter(f => f.toLowerCase().endsWith('.dspf'));
 
     test('there are fixtures to check', () => {
-        assert.ok(files.length > 0, `no DDS fixtures found in ${fixturesDir}`);
+        assert.ok(files.length > 0, `no display file fixtures found in ${fixturesDir}`);
     });
 
     for (const file of files) {

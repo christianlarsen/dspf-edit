@@ -1,17 +1,17 @@
 /*
 	Rabbi Hossain, 2026
-	"DDS editing assistance"
+	"DSPF source editing assistance"
 	dspf-edit.assist/dspf-edit.column-parser.ts
 */
 
 /**
- * Pure DDS line parser. No VS Code dependencies — reusable and unit-testable.
+ * Pure DDS line parser for display files. No VS Code dependencies — reusable
+ * and unit-testable.
  */
 
 import {
   COMMENT_COLUMN,
   DDS_LINE_WIDTH,
-  FileType,
   ColumnRegion,
   regionAt,
 } from "./dspf-edit.columns";
@@ -20,10 +20,6 @@ export type LineKind =
   | "blank"
   | "comment"
   | "record"
-  | "key"
-  | "select"
-  | "omit"
-  | "join"
   | "help"
   | "field"
   | "keywordContinuation"
@@ -66,12 +62,14 @@ function area(raw: string, start: number, end: number): string {
   return slice(raw, start, end).trim();
 }
 
+/**
+ * Name types a display file uses in column 17. K (key), S (select), O (omit)
+ * and J (join) are database-file entries and are deliberately absent, so they
+ * fall through to the normal field/unknown handling and get reported by the
+ * name-type diagnostic instead of being silently accepted.
+ */
 const NAME_TYPE_KINDS: Record<string, LineKind> = {
   R: "record",
-  K: "key",
-  S: "select",
-  O: "omit",
-  J: "join",
   H: "help",
 };
 
@@ -117,24 +115,6 @@ export function parseLine(raw: string, lineNumber: number): ParsedLine {
 
 export function parseSource(text: string): ParsedLine[] {
   return text.split(/\r?\n/).map((raw, i) => parseLine(raw, i));
-}
-
-/** Infer the DDS file type from a file name / extension. */
-export function fileTypeFromName(fileName: string): FileType {
-  const lower = fileName.toLowerCase();
-  if (lower.endsWith(".pf")) {
-    return "PF";
-  }
-  if (lower.endsWith(".lf")) {
-    return "LF";
-  }
-  if (lower.endsWith(".dspf")) {
-    return "DSPF";
-  }
-  if (lower.endsWith(".prtf")) {
-    return "PRTF";
-  }
-  return "UNKNOWN";
 }
 
 export interface ColumnInfo {

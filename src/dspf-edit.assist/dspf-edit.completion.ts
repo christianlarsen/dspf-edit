@@ -1,22 +1,21 @@
 /*
 	Rabbi Hossain, 2026
-	"DDS editing assistance"
+	"DSPF source editing assistance"
 	dspf-edit.assist/dspf-edit.completion.ts
 */
 
 import * as vscode from "vscode";
 import { regionById } from "./dspf-edit.columns";
-import { keywordsFor } from "./dspf-edit.keywords";
-import { fileTypeFromName } from "./dspf-edit.column-parser";
+import { KEYWORDS } from "./dspf-edit.keywords";
 import { readSettings } from "./dspf-edit.settings";
 
 /**
- * Suggests DDS keywords when the cursor is inside the keyword area
- * (columns 45-80). Suggestions are filtered by file type.
+ * Suggests display file DDS keywords when the cursor is inside the keyword area
+ * (columns 45-80).
  */
 export class DdsCompletionProvider implements vscode.CompletionItemProvider {
   provideCompletionItems(
-    document: vscode.TextDocument,
+    _document: vscode.TextDocument,
     position: vscode.Position,
   ): vscode.ProviderResult<vscode.CompletionItem[]> {
     if (!readSettings().completionEnabled) {
@@ -27,8 +26,7 @@ export class DdsCompletionProvider implements vscode.CompletionItemProvider {
       return undefined;
     }
 
-    const fileType = fileTypeFromName(document.fileName);
-    return keywordsFor(fileType).map((keyword) => {
+    return KEYWORDS.map((keyword) => {
       const item = new vscode.CompletionItem(
         keyword.name === "CAA" ? "CAnn" : keyword.name === "CFA" ? "CFnn" : keyword.name,
         vscode.CompletionItemKind.Keyword,

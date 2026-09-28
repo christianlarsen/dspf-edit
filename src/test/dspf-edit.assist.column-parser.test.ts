@@ -1,6 +1,6 @@
 /*
 	Rabbi Hossain, 2026
-	"DDS editing assistance"
+	"DSPF source editing assistance"
 	test/dspf-edit.assist.column-parser.test.ts
 */
 
@@ -8,19 +8,18 @@ import * as assert from 'assert';
 import {
     parseLine,
     parseSource,
-    columnInfoAt,
-    fileTypeFromName
+    columnInfoAt
 } from '../dspf-edit.assist/dspf-edit.column-parser';
 
 // Column ruler for building test lines:
 //          1         2         3         4         5
 // 123456789012345678901234567890123456789012345678901234567890
 const RECORD_LINE = "     A          R CUSREC                    TEXT('Customer')";
-const FIELD_LINE = "     A            CUSNO          7P 0       TEXT('Customer number')";
-const KEY_LINE = '     A          K CUSNO';
+const FIELD_LINE = "     A            CUSNO          7Y 0B  5 20TEXT('Customer number')";
+const HELP_LINE = '     A          H HLPREC';
 const COMMENT_LINE = '     A* This is a comment';
 
-suite('DDS assist: parseLine', () => {
+suite('DSPF assist: parseLine', () => {
 
     test('classifies record format lines', () => {
         const parsed = parseLine(RECORD_LINE, 0);
@@ -34,15 +33,30 @@ suite('DDS assist: parseLine', () => {
         assert.strictEqual(parsed.kind, 'field');
         assert.strictEqual(parsed.name, 'CUSNO');
         assert.strictEqual(parsed.length, '7');
-        assert.strictEqual(parsed.dataType, 'P');
+        assert.strictEqual(parsed.dataType, 'Y');
         assert.strictEqual(parsed.decimals, '0');
+        assert.strictEqual(parsed.usage, 'B');
+        assert.strictEqual(parsed.locationLine, '5');
+        assert.strictEqual(parsed.locationPosition, '20');
         assert.strictEqual(parsed.keywords, "TEXT('Customer number')");
     });
 
-    test('classifies key lines', () => {
-        const parsed = parseLine(KEY_LINE, 2);
-        assert.strictEqual(parsed.kind, 'key');
-        assert.strictEqual(parsed.name, 'CUSNO');
+    test('classifies help specification lines', () => {
+        const parsed = parseLine(HELP_LINE, 2);
+        assert.strictEqual(parsed.kind, 'help');
+        assert.strictEqual(parsed.name, 'HLPREC');
+    });
+
+    test('does not treat database name types as their own kind', () => {
+        // K, S, O and J belong to physical and logical files. They must fall
+        // through to the generic handling so the name-type diagnostic reports
+        // them instead of the parser silently accepting them.
+        for (const nameType of ['K', 'S', 'O', 'J']) {
+            const line = `     A          ${nameType} CUSNO`;
+            const parsed = parseLine(line, 0);
+            assert.strictEqual(parsed.nameType, nameType);
+            assert.strictEqual(parsed.kind, 'field', `${nameType} should not get its own kind`);
+        };
     });
 
     test("classifies comments via '*' in column 7", () => {
@@ -55,7 +69,7 @@ suite('DDS assist: parseLine', () => {
     });
 
     test('classifies keyword continuation lines', () => {
-        const line = "     A                                      COLHDG('Customer')";
+        const line = '     A                                      COLOR(BLU)';
         assert.strictEqual(parseLine(line, 6).kind, 'keywordContinuation');
     });
 
@@ -67,7 +81,7 @@ suite('DDS assist: parseLine', () => {
     });
 });
 
-suite('DDS assist: columnInfoAt (column service)', () => {
+suite('DSPF assist: columnInfoAt (column service)', () => {
 
     test('maps cursor positions to regions', () => {
         // character is 0-based; column = character + 1
@@ -86,6 +100,8 @@ suite('DDS assist: columnInfoAt (column service)', () => {
         assert.strictEqual(at(34), 'dataType');         // col 35
         assert.strictEqual(at(36), 'decimals');         // col 37
         assert.strictEqual(at(37), 'usage');            // col 38
+        assert.strictEqual(at(40), 'locationLine');     // col 41
+        assert.strictEqual(at(43), 'locationPosition'); // col 44
         assert.strictEqual(at(44), 'keywords');         // col 45
         assert.strictEqual(at(79), 'keywords');         // col 80
         assert.strictEqual(at(80), 'beyond');           // col 81
@@ -97,23 +113,12 @@ suite('DDS assist: columnInfoAt (column service)', () => {
     });
 });
 
-suite('DDS assist: parseSource', () => {
+suite('DSPF assist: parseSource', () => {
 
     test('parses multiple lines with correct numbering', () => {
-        const lines = parseSource([RECORD_LINE, FIELD_LINE, KEY_LINE].join('\n'));
+        const lines = parseSource([RECORD_LINE, FIELD_LINE, HELP_LINE].join('\n'));
         assert.strictEqual(lines.length, 3);
         assert.strictEqual(lines[0].kind, 'record');
         assert.strictEqual(lines[2].lineNumber, 2);
-    });
-});
-
-suite('DDS assist: fileTypeFromName', () => {
-
-    test('detects known extensions', () => {
-        assert.strictEqual(fileTypeFromName('CUSTOMER.PF'), 'PF');
-        assert.strictEqual(fileTypeFromName('customer.lf'), 'LF');
-        assert.strictEqual(fileTypeFromName('screen.dspf'), 'DSPF');
-        assert.strictEqual(fileTypeFromName('report.prtf'), 'PRTF');
-        assert.strictEqual(fileTypeFromName('something.dds'), 'UNKNOWN');
     });
 });

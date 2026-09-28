@@ -1,19 +1,19 @@
 /*
 	Rabbi Hossain, 2026
-	"DDS editing assistance"
+	"DSPF source editing assistance"
 	dspf-edit.assist/dspf-edit.columns.ts
 */
 
 /**
- * The single source of truth for the DDS positional layout.
+ * The single source of truth for the DDS positional layout of a display file.
  *
  * Every feature (status bar, hovers, decorations, diagnostics, quick fixes)
  * derives its knowledge of "what lives in which column" from this module.
  *
- * All columns are 1-based and inclusive, matching IBM documentation.
+ * All columns are 1-based and inclusive, matching IBM documentation. Values
+ * listed per column are the display file entries only; database and printer
+ * file entries are out of scope for this extension.
  */
-
-export type FileType = "PF" | "LF" | "DSPF" | "PRTF" | "UNKNOWN";
 
 export interface ColumnRegion {
   /** Stable identifier, e.g. "fieldName". */
@@ -74,7 +74,7 @@ export const REGIONS: readonly ColumnRegion[] = [
     start: 8,
     end: 16,
     purpose:
-      "Up to three indicator conditions (display and printer files). Each condition is an optional 'N' (not) followed by a two-digit indicator.",
+      "Up to three indicator conditions. Each condition is an optional 'N' (not) followed by a two-digit indicator.",
     examples: ["N50", "50 51", "N31N32"],
     notes: "Columns 8-9-10, 11-12-13 and 14-15-16 each hold one condition.",
   },
@@ -86,13 +86,10 @@ export const REGIONS: readonly ColumnRegion[] = [
     purpose: "Declares what the name in columns 19-28 is.",
     values: [
       "R = Record format",
-      "K = Key field",
-      "S = Select (LF)",
-      "O = Omit (LF)",
-      "J = Join (LF)",
-      "H = Help (DSPF)",
+      "H = Help specification",
       "(blank) = Field",
     ],
+    notes: "K, S, O and J are database file entries and are not used in display files.",
   },
   {
     id: "reserved",
@@ -136,22 +133,25 @@ export const REGIONS: readonly ColumnRegion[] = [
     label: "Data Type",
     start: 35,
     end: 35,
-    purpose:
-      "Data type (physical/logical files) or data type / keyboard shift (display and printer files).",
+    purpose: "Data type or keyboard shift for the field.",
     values: [
-      "A = Character",
-      "P = Packed decimal",
-      "S = Zoned decimal",
-      "B = Binary",
+      "A = Alphanumeric shift",
+      "X = Alphabetic only",
+      "N = Numeric shift",
+      "S = Signed numeric",
+      "Y = Numeric only",
+      "D = Digits only",
+      "M = Numeric only character",
+      "I = Inhibit keyboard entry",
+      "W = Katakana shift",
       "F = Floating point",
       "L = Date",
       "T = Time",
       "Z = Timestamp",
-      "H = Hexadecimal",
-      "G = Graphic",
-      "Y = Numeric only (DSPF)",
-      "X = Alphabetic only (DSPF)",
+      "G = Graphic (DBCS)",
     ],
+    notes:
+      "Packed (P), binary (B) and hexadecimal (H) are database file data types; a display file uses S or Y for numeric fields.",
   },
   {
     id: "decimals",
@@ -169,35 +169,33 @@ export const REGIONS: readonly ColumnRegion[] = [
     end: 38,
     purpose: "How the field is used.",
     values: [
-      "(blank) = default (data / output)",
+      "(blank) = default (output)",
       "B = Both input and output",
       "I = Input only",
       "O = Output only",
-      "H = Hidden (DSPF)",
-      "M = Message (DSPF)",
-      "P = Program-to-system (DSPF)",
-      "N = Neither (LF)",
+      "H = Hidden",
+      "M = Message",
+      "P = Program-to-system",
     ],
+    notes: "N (neither) is a logical file entry and is not used in display files.",
   },
   {
     id: "locationLine",
     label: "Location: Line",
     start: 39,
     end: 41,
-    purpose:
-      "Screen line (display files) or print line (printer files) where the field appears. Right-justified.",
+    purpose: "Screen line where the field appears. Right-justified.",
     examples: ["  3", " 12"],
-    notes: "Unused for physical and logical files.",
+    notes: "Leave blank for hidden (H), message (M) and program-to-system (P) fields.",
   },
   {
     id: "locationPosition",
     label: "Location: Position",
     start: 42,
     end: 44,
-    purpose:
-      "Screen or print column where the field starts. Right-justified.",
+    purpose: "Screen column where the field starts. Right-justified.",
     examples: ["  2", " 25"],
-    notes: "Unused for physical and logical files.",
+    notes: "Leave blank for hidden (H), message (M) and program-to-system (P) fields.",
   },
   {
     id: "keywords",
@@ -205,8 +203,8 @@ export const REGIONS: readonly ColumnRegion[] = [
     start: 45,
     end: 80,
     purpose:
-      "DDS keywords and constants, e.g. TEXT('...'), COLHDG('...'), EDTCDE(Z). Continues on following lines when needed.",
-    examples: ["TEXT('Customer name')", "COLHDG('Order' 'Number')", "EDTCDE(Z)"],
+      "DDS keywords and constants, e.g. TEXT('...'), COLOR(RED), EDTCDE(Z). Continues on following lines when needed.",
+    examples: ["TEXT('Customer name')", "COLOR(BLU)", "EDTCDE(Z)", "'Customer Inquiry'"],
   },
 ] as const;
 
