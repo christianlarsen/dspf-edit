@@ -158,7 +158,7 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.9.0** - 2026-09-27
+**1.9.0** - 2026-09-28
 - Added: file-level `REF` support ([#91](https://github.com/christianlarsen/dspf-edit/issues/91)) — a new **Reference File** option on the file node adds, changes or removes it, and the Schema Tree shows where each referenced field takes its definition from.
 - Added: Add Field offers hidden alphanumeric and numeric fields directly, with no position asked.
 - Added: Add Field offers referenced fields directly — from the `REF` file (just an `R`, no `REFFLD()` needed), from another file, or from a field earlier in the same source (`*SRC`), picked from a list.

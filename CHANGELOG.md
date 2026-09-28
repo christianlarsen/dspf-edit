@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
-## [1.9.0] - 2026-09-27
+## [1.9.0] - 2026-09-28
 ### Added
 - File-level `REF` keyword support ([#91](https://github.com/christianlarsen/dspf-edit/issues/91)):
   - New **Reference File** option on the file node of the Schema Tree adds, changes or removes the file's `REF`. It asks for the library (optional, `*LIBL` or `*CURLIB` allowed), the file and the record format (optional), and writes the keyword right after `DSPSIZ`, where STRSDA puts it. Changing or removing it makes the document's referenced fields pending again, so they are resolved against the new file.
