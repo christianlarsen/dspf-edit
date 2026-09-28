@@ -1,0 +1,95 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "DDS",
+  "scopeName": "source.dds",
+  "patterns": [
+    {
+      "comment": "Comment lines: '*' in column 7",
+      "match": "^(.{6})(\\*.*)$",
+      "captures": {
+        "1": { "name": "constant.numeric.sequence.dds" },
+        "2": { "name": "comment.line.dds" }
+      }
+    },
+    {
+      "comment": "Record format lines: R in column 17. Everything after the name is optional.",
+      "match": "^(.{5})(A)(.{10})(R)(.?)(.{0,10})(.*)$",
+      "captures": {
+        "1": { "name": "constant.numeric.sequence.dds" },
+        "2": { "name": "keyword.control.formtype.dds" },
+        "4": { "name": "storage.type.record.dds" },
+        "6": { "name": "entity.name.type.record.dds" },
+        "7": { "name": "meta.keywords.dds", "patterns": [{ "include": "#keywordArea" }] }
+      }
+    },
+    {
+      "comment": "Key/select/omit/join/help lines: K, S, O, J, H in column 17. Everything after the name is optional.",
+      "match": "^(.{5})(A)(.{10})([KSOJH])(.?)(.{0,10})(.*)$",
+      "captures": {
+        "1": { "name": "constant.numeric.sequence.dds" },
+        "2": { "name": "keyword.control.formtype.dds" },
+        "4": { "name": "storage.modifier.nametype.dds" },
+        "6": { "name": "variable.other.constant.key.dds" },
+        "7": { "name": "meta.keywords.dds", "patterns": [{ "include": "#keywordArea" }] }
+      }
+    },
+    {
+      "comment": "Field lines. Every area after the indicators may be absent on short (but valid) lines.",
+      "match": "^(.{5})(A)(.{11})(.?)(.{0,10})(.?)(.{0,5})(.?)(.{0,2})(.?)(.{0,3})(.{0,3})(.*)$",
+      "captures": {
+        "1": { "name": "constant.numeric.sequence.dds" },
+        "2": { "name": "keyword.control.formtype.dds" },
+        "3": { "name": "meta.indicators.dds", "patterns": [{ "include": "#indicators" }] },
+        "5": { "name": "variable.other.field.dds" },
+        "7": { "name": "constant.numeric.length.dds" },
+        "8": { "name": "storage.type.datatype.dds" },
+        "9": { "name": "constant.numeric.decimals.dds" },
+        "10": { "name": "storage.modifier.usage.dds" },
+        "11": { "name": "constant.numeric.line.dds" },
+        "12": { "name": "constant.numeric.position.dds" },
+        "13": { "name": "meta.keywords.dds", "patterns": [{ "include": "#keywordArea" }] }
+      }
+    },
+    {
+      "comment": "Catch-all for short / partially typed specification lines: color the form type and any indicators",
+      "match": "^(.{5})(A)(.*)$",
+      "captures": {
+        "1": { "name": "constant.numeric.sequence.dds" },
+        "2": { "name": "keyword.control.formtype.dds" },
+        "3": { "name": "meta.indicators.dds", "patterns": [{ "include": "#indicators" }] }
+      }
+    }
+  ],
+  "repository": {
+    "indicators": {
+      "patterns": [
+        { "match": "N", "name": "keyword.operator.not.dds" },
+        { "match": "\\d{2}", "name": "constant.numeric.indicator.dds" }
+      ]
+    },
+    "keywordArea": {
+      "patterns": [
+        {
+          "match": "'(?:[^']|'')*'",
+          "name": "string.quoted.single.dds"
+        },
+        {
+          "match": "\\*[A-Z][A-Z0-9]*",
+          "name": "support.constant.special.dds"
+        },
+        {
+          "match": "\\b[A-Z][A-Z0-9]*(?=\\()",
+          "name": "support.function.keyword.dds"
+        },
+        {
+          "match": "\\b(UNIQUE|DESCEND|SFL|SFLDSP|SFLDSPCTL|SFLCLR|SFLEND|OVERLAY|ASSUME|KEEP|PUTOVR|OVRDTA|OVRATR|INDARA|PRINT|BLINK|HIGHLIGHT|UNDERLINE|PAGNBR|TIME|DYNSLT|FCFO|FIFO|LIFO|ALWNULL|SFLRCDNBR)\\b",
+          "name": "support.function.keyword.dds"
+        },
+        {
+          "match": "\\d+",
+          "name": "constant.numeric.dds"
+        }
+      ]
+    }
+  }
+}

@@ -35,11 +35,40 @@
   "license": "MIT",
   "categories": [
     "Programming Languages",
+    "Linters",
+    "Snippets",
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onLanguage:dds.dspf"
+  ],
   "main": "./out/extension.js",
   "contributes": {
+    "languages": [
+      {
+        "id": "dds.dspf",
+        "aliases": [
+          "DDS Display File"
+        ],
+        "extensions": [
+          ".dspf"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "dds.dspf",
+        "scopeName": "source.dds",
+        "path": "./syntaxes/dds.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "dds.dspf",
+        "path": "./snippets/dds.code-snippets"
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {
@@ -230,9 +259,43 @@
         "command": "dspf-edit.configure-preview-colors",
         "title": "Configure Preview Colors...",
         "category": "DSPF Edit"
+      },
+      {
+        "command": "dspf-edit.show-column-reference",
+        "title": "Show DSPF Column Reference",
+        "category": "DSPF Edit"
+      },
+      {
+        "command": "dspf-edit.toggle-column-guides",
+        "title": "Toggle DSPF Column Guides",
+        "category": "DSPF Edit"
+      },
+      {
+        "command": "dspf-edit.toggle-section-highlight",
+        "title": "Toggle DSPF Section Highlight",
+        "category": "DSPF Edit"
+      },
+      {
+        "command": "dspf-edit.apply-dspf-editor-defaults",
+        "title": "Apply Recommended DSPF Editor Settings",
+        "category": "DSPF Edit"
       }
     ],
     "menus": {
+      "commandPalette": [
+        {
+          "command": "dspf-edit.show-column-reference",
+          "when": "resourceLangId == dds.dspf"
+        },
+        {
+          "command": "dspf-edit.toggle-column-guides",
+          "when": "resourceLangId == dds.dspf"
+        },
+        {
+          "command": "dspf-edit.toggle-section-highlight",
+          "when": "resourceLangId == dds.dspf"
+        }
+      ],
       "view/title": [
         {
           "command": "dspf-edit.filterTreeView",
@@ -457,6 +520,73 @@
           "group": "inline@99"
         }
       ]
+    },
+    "configuration": {
+      "title": "DSPF source editing",
+      "properties": {
+        "dspf-edit.assist.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Master switch for the DSPF source editing assistance (status bar, hovers, diagnostics, completion, section highlight). Turn this off to keep only the graphical tooling: schema tree, screen preview and element commands.",
+          "order": 0
+        },
+        "dspf-edit.assist.statusBar.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the column assistant in the status bar while editing a display file.",
+          "order": 1
+        },
+        "dspf-edit.assist.statusBar.format": {
+          "type": "string",
+          "default": "DSPF | Col {column} | {section}",
+          "markdownDescription": "Status bar text. Available tokens: `{column}`, `{section}`.",
+          "order": 2
+        },
+        "dspf-edit.assist.statusBar.showIcon": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show an icon before the status bar text.",
+          "order": 3
+        },
+        "dspf-edit.assist.hover.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show hover documentation for DDS columns and display file keywords.",
+          "order": 4
+        },
+        "dspf-edit.assist.diagnostics.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable display file diagnostics (invalid data types, misaligned entries, overflow past column 80, ...).",
+          "order": 5
+        },
+        "dspf-edit.assist.completion.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable display file keyword completion in the keyword area (columns 45-80).",
+          "order": 6
+        },
+        "dspf-edit.assist.highlight.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Subtly highlight the DDS column section under the cursor.",
+          "order": 7
+        },
+        "dspf-edit.assist.highlight.color": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Custom highlight color as hex (e.g. `#61AFEF`). Leave empty to follow the current theme.",
+          "order": 8
+        },
+        "dspf-edit.assist.highlight.opacity": {
+          "type": "number",
+          "default": 0.08,
+          "minimum": 0.02,
+          "maximum": 0.15,
+          "description": "Opacity of the section highlight (kept below 0.15 to stay subtle).",
+          "order": 9
+        }
+      }
     }
   },
   "scripts": {
