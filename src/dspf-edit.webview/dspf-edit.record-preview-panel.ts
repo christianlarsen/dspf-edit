@@ -10,6 +10,7 @@ import { checkForEditorAndDocument, updateTreeProvider, applyWorkspaceEdit, appl
 import { getBackgroundColor, getDdsColorMap, getReferencedFieldColor } from '../dspf-edit.utils/dspf-edit.preview-colors';
 import { getDecimalSeparators } from '../dspf-edit.utils/dspf-edit.decimal-format';
 import { getDateSeparator } from '../dspf-edit.utils/dspf-edit.date-format';
+import { getOverlaySubfilePair, getOverlayKeepOnSwitch } from '../dspf-edit.utils/dspf-edit.overlay-settings';
 import { DdsTreeProvider, DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { ExtensionState } from '../dspf-edit.states/state';
 import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
@@ -1192,7 +1193,12 @@ export class RecordPreviewPanel {
     private recordName: string;
     private treeSubscription: vscode.Disposable | undefined;
     private treeProvider: DdsTreeProvider | undefined;
-    private overlayRecordName: string | undefined;
+    /** Records the user has checked in the Overlay list, drawn dimmed behind the previewed record.
+     * Kept when switching records within the same DDS file (see overlayFileUri), unless the
+     * "keep overlays" setting is off. */
+    private overlayRecordNames: Set<string> = new Set();
+    /** The DDS document the overlay selection belongs to; switching to another file clears it. */
+    private overlayFileUri: string | undefined = ExtensionState.lastDdsDocument?.uri.toString();
     private indicatorsEnabled = false;
     private activeIndicators: Set<number> = new Set();
     /** Simulates a subfile's SFLDROP/SFLFOLD toggle, once the user has actually clicked it — only
@@ -1321,6 +1327,14 @@ export class RecordPreviewPanel {
     };
 
     /**
+     * Re-renders the open preview panel after an overlay setting changes (see
+     * dspf-edit.utils/dspf-edit.overlay-settings.ts). No-op if no panel is open.
+     */
+    static refreshOverlays(): void {
+        RecordPreviewPanel.current?.render();
+    };
+
+    /**
      * Gets the single preview panel, retargeting it to the given record if it already exists,
      * or creates a new one.
      * @param recordName - Name of the record to preview
@@ -1331,7 +1345,11 @@ export class RecordPreviewPanel {
         if (existing) {
             existing.recordName = recordName;
             existing.treeProvider = treeProvider;
-            existing.overlayRecordName = undefined;
+            const fileUri = ExtensionState.lastDdsDocument?.uri.toString();
+            if (fileUri !== existing.overlayFileUri || !getOverlayKeepOnSwitch()) {
+                existing.overlayRecordNames = new Set();
+                existing.overlayFileUri = fileUri;
+            };
             // indicatorsEnabled (the "Indicators" toggle checkbox) and activeDisplayFormat (the
             // selected DSPSIZ format, e.g. *DS3) are deliberately NOT reset here — they're panel-wide
             // view preferences (formats are file-level, not per-record) that should stay as the user
@@ -1470,38 +1488,18 @@ export class RecordPreviewPanel {
             items = [...visibleBase, ...repeats];
         };
 
-        // The overlaid (background) record can be previewed on its own, whether or not it's itself
-        // a window, no matter what the record being previewed is. Indicator simulation doesn't
-        // apply to it, so its own indicators aren't offered in the toggle list either.
+        // Overlaid (background) records can be previewed on their own, whether or not they're
+        // themselves windows, no matter what the record being previewed is. Indicator simulation
+        // doesn't apply to them, so their own indicators aren't offered in the toggle list either.
+        // Drawn in source order: later records over earlier ones.
+        const autoOverlays = this.computeAutoOverlays();
+        const checkedOverlays = this.resolveCheckedOverlays(autoOverlays);
         const backgroundItems: PreviewItem[] = [];
-        const shownAsBackground = new Set<string>([this.recordName]);
-        const toProcess: string[] = [this.recordName];
-
-        const addBackground = (name: string | undefined): void => {
-            if (!name || shownAsBackground.has(name)) {
-                return;
+        for (const name of records) {
+            if (name === this.recordName || !checkedOverlays.has(name)) {
+                continue;
             };
-            const items = this.buildBackgroundItemsFor(name);
-            if (!items) {
-                return;
-            };
-            backgroundItems.push(...items);
-            shownAsBackground.add(name);
-            toProcess.push(name);
-        };
-
-        addBackground(this.overlayRecordName);
-
-        // A subfile's own preview is incomplete without its counterpart: the SFL detail record
-        // has no header/titles of its own (those live on the SFLCTL record), and the SFLCTL record
-        // has no rows of its own. Likewise, a record whose WINDOW() keyword only names another
-        // record (or that inherited its window from an SFL/SFLCTL pair) is missing that owner's
-        // own content (e.g. WDWTITLE, footer text). Show whichever of these isn't already visible,
-        // automatically, following the chain (e.g. SFL -> its SFLCTL -> that SFLCTL's window owner).
-        for (let i = 0; i < toProcess.length; i++) {
-            const anchor = toProcess[i];
-            addBackground(findSubfilePairRecordName(anchor));
-            addBackground(findWindowOwnerRecordName(anchor, this.activeDisplayFormat));
+            backgroundItems.push(...(this.buildBackgroundItemsFor(name) ?? []));
         };
 
         const availableIndicators = this.collectIndicatorNumbers(recordInfo).sort((a, b) => a - b);
@@ -1566,7 +1564,8 @@ export class RecordPreviewPanel {
             sflPag,
             maxSize,
             availableRecords,
-            overlayRecordName: this.overlayRecordName ?? null,
+            overlayRecordNames: availableRecords.filter(name => checkedOverlays.has(name)),
+            overlayLockedRecords: availableRecords.filter(name => autoOverlays.pairs.has(name) || autoOverlays.windowOwners.has(name)),
             availableIndicators,
             indicatorsEnabled: this.indicatorsEnabled,
             activeIndicators: [...this.activeIndicators],
@@ -1579,6 +1578,61 @@ export class RecordPreviewPanel {
             subfileExpanded: this.resolveSubfileExpanded(),
             subfileToggleEnabled: this.canToggleSubfileFold()
         });
+    };
+
+    /**
+     * Finds the records the preview checks in the Overlay list on its own: for the record being
+     * previewed and for every record the user checked as an overlay.
+     * - pairs: a subfile's other half. The SFL detail record has no header/titles of its own (those
+     *   live on the SFLCTL record), and the SFLCTL record has no rows of its own. Only added if the
+     *   "overlay subfile pair" setting is on; then both halves always go together, so the user
+     *   can't uncheck one on its own (unchecking the half they checked removes both).
+     * - windowOwners: the record(s) named by WINDOW(record-name), following the chain (e.g. SFL ->
+     *   its SFLCTL's WINDOW(record-name) -> that record). That's how the window is built — the owner
+     *   carries its WDWTITLE, footer text... — so these are always shown and can't be unchecked.
+     *   A subfile half that merely inherited its window from the other half is never one of these:
+     *   that's still the pair, governed by the setting.
+     */
+    private computeAutoOverlays(): { pairs: Set<string>, windowOwners: Set<string> } {
+        const roots = [this.recordName, ...records.filter(name => name !== this.recordName && this.overlayRecordNames.has(name))];
+        const pairOf = (name: string): string | undefined => {
+            const pairName = findSubfilePairRecordName(name);
+            return pairName && pairName !== name && records.includes(pairName) ? pairName : undefined;
+        };
+
+        const pairs = new Set<string>();
+        const anchors: string[] = [];
+        for (const root of roots) {
+            anchors.push(root);
+            const pair = pairOf(root);
+            if (pair) {
+                anchors.push(pair);
+                if (getOverlaySubfilePair() && !roots.includes(pair)) {
+                    pairs.add(pair);
+                };
+            };
+        };
+
+        const windowOwners = new Set<string>();
+        for (let i = 0; i < anchors.length; i++) {
+            const anchor = anchors[i];
+            const owner = findWindowOwnerRecordName(anchor, this.activeDisplayFormat);
+            if (owner && owner !== this.recordName && owner !== pairOf(anchor) && !windowOwners.has(owner) && records.includes(owner)) {
+                windowOwners.add(owner);
+                anchors.push(owner);
+            };
+        };
+
+        return { pairs, windowOwners };
+    };
+
+    /**
+     * The records currently checked in the Overlay list: the ones the user checked, plus the ones
+     * the preview adds on its own (see computeAutoOverlays).
+     * @param autoOverlays - Result of computeAutoOverlays()
+     */
+    private resolveCheckedOverlays(autoOverlays: { pairs: Set<string>, windowOwners: Set<string> }): Set<string> {
+        return new Set([...this.overlayRecordNames, ...autoOverlays.pairs, ...autoOverlays.windowOwners]);
     };
 
     /**
@@ -2288,8 +2342,15 @@ export class RecordPreviewPanel {
             return;
         };
 
-        if (message?.type === 'setOverlay') {
-            this.overlayRecordName = message.recordName || undefined;
+        // One record at a time rather than the whole list: the list never offers the record being
+        // previewed, so replacing the set would drop it — and it should still be checked when the
+        // user switches back to another record.
+        if (message?.type === 'setOverlay' && typeof message.recordName === 'string') {
+            if (message.checked) {
+                this.overlayRecordNames.add(message.recordName);
+            } else {
+                this.overlayRecordNames.delete(message.recordName);
+            };
             this.render();
             return;
         };
@@ -3117,7 +3178,68 @@ export class RecordPreviewPanel {
         align-items: center;
         gap: 4px;
     }
-    #formatBar select, #toolbar select {
+    #toolbar {
+        position: relative;
+    }
+    #overlayBtn {
+        background: ${bg};
+        color: ${fg};
+        border: 1px solid #333333;
+        font-family: inherit;
+        font-size: inherit;
+        max-width: 320px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        cursor: pointer;
+    }
+    #overlayPopup {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        z-index: 10;
+        margin-top: 2px;
+        padding: 4px;
+        min-width: 180px;
+        background: ${bg};
+        color: ${fg};
+        border: 1px solid #333333;
+    }
+    #overlayPopup.open {
+        display: block;
+    }
+    #overlaySearch {
+        display: none;
+        width: 100%;
+        box-sizing: border-box;
+        margin-bottom: 4px;
+        background: ${bg};
+        color: ${fg};
+        border: 1px solid #333333;
+        font-family: inherit;
+    }
+    #overlayList {
+        max-height: 260px;
+        overflow-y: auto;
+    }
+    #overlayList label {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 1px 2px;
+        white-space: nowrap;
+        cursor: pointer;
+    }
+    #overlayList label:has(input:disabled) {
+        cursor: default;
+        opacity: 0.7;
+    }
+    #overlayList .empty {
+        opacity: 0.6;
+        padding: 1px 2px;
+    }
+    #formatBar select {
         background: ${bg};
         color: ${fg};
         border: 1px solid #333333;
@@ -3255,8 +3377,12 @@ export class RecordPreviewPanel {
         <select id="formatSelect"></select>
     </span>
     <span id="toolbar">
-        <label for="overlaySelect">Overlay: </label>
-        <select id="overlaySelect"></select>
+        <label for="overlayBtn">Overlay: </label>
+        <button id="overlayBtn" title="Choose records to show dimmed behind this one">(none) ▾</button>
+        <div id="overlayPopup">
+            <input id="overlaySearch" type="text" placeholder="Filter records..." spellcheck="false">
+            <div id="overlayList"></div>
+        </div>
     </span>
     <span id="sflpagBar">
         <label>Page rows: </label>
@@ -3292,7 +3418,10 @@ export class RecordPreviewPanel {
     const formatBar = document.getElementById('formatBar');
     const formatSelect = document.getElementById('formatSelect');
     const toolbar = document.getElementById('toolbar');
-    const overlaySelect = document.getElementById('overlaySelect');
+    const overlayBtn = document.getElementById('overlayBtn');
+    const overlayPopup = document.getElementById('overlayPopup');
+    const overlaySearch = document.getElementById('overlaySearch');
+    const overlayList = document.getElementById('overlayList');
     const indicatorBar = document.getElementById('indicatorBar');
     const indicatorsToggle = document.getElementById('indicatorsToggle');
     const indicatorList = document.getElementById('indicatorList');
@@ -3938,34 +4067,42 @@ export class RecordPreviewPanel {
         );
     }
 
-    // Hit-tests the dimmed background record(s) for the double-click-to-switch gesture — by row
+    // Hit-tests the dimmed background record(s) for the double-click-to-switch gesture. A click
+    // right on an overlay's own field/constant text picks that record. Otherwise it goes by row
     // range per source record rather than requiring the click to land exactly on a field/constant's
-    // own text, the way findItemAt does for the foreground. A background block (an SFLCTL header,
+    // own text, the way findItemAt does for the foreground: a background block (an SFLCTL header,
     // an SFL detail area, a shared window's owner...) reads as one visual region to the user, blank
     // cells included, so double-clicking anywhere across the rows it occupies — not just its actual
-    // characters — switches to it.
+    // characters — switches to it. Where several overlays share the spot, the one drawn on top wins
+    // (same order as draw(): behind-the-window items first, then same-window ones, each in the order
+    // the extension sent them — later records over earlier ones).
     function findBackgroundItemAt(ev) {
-        const { row } = cellAt(ev);
-        const rowRangeBySourceRecord = {};
-        for (const item of currentBackgroundItems) {
-            if (!item.sourceRecord) {
-                continue;
+        const { row, col } = cellAt(ev);
+        const drawOrder = [
+            ...currentBackgroundItems.filter(item => !item.sameWindow),
+            ...currentBackgroundItems.filter(item => item.sameWindow)
+        ].filter(item => item.sourceRecord);
+
+        for (let i = drawOrder.length - 1; i >= 0; i--) {
+            const item = drawOrder[i];
+            if (row === item.row && col >= item.col && col < item.col + Math.max(item.length, item.text.length, 1)) {
+                return { sourceRecord: item.sourceRecord };
             }
-            const range = rowRangeBySourceRecord[item.sourceRecord];
+        }
+
+        // Records in draw order (bottom first), each with the rows it spans.
+        const ranges = new Map();
+        for (const item of drawOrder) {
+            const range = ranges.get(item.sourceRecord);
             if (range) {
                 range.min = Math.min(range.min, item.row);
                 range.max = Math.max(range.max, item.row);
             } else {
-                rowRangeBySourceRecord[item.sourceRecord] = { min: item.row, max: item.row };
+                ranges.set(item.sourceRecord, { min: item.row, max: item.row });
             }
         }
-        for (const sourceRecord in rowRangeBySourceRecord) {
-            const range = rowRangeBySourceRecord[sourceRecord];
-            if (row >= range.min && row <= range.max) {
-                return { sourceRecord };
-            }
-        }
-        return undefined;
+        const topmost = [...ranges].reverse().find(([, range]) => row >= range.min && row <= range.max);
+        return topmost ? { sourceRecord: topmost[0] } : undefined;
     }
 
     function isOverResizeHandle(ev) {
@@ -4546,26 +4683,109 @@ export class RecordPreviewPanel {
         formatSelect.value = selectedValue;
     }
 
-    overlaySelect.addEventListener('change', () => {
-        vscode.postMessage({ type: 'setOverlay', recordName: overlaySelect.value || null });
+    // The filter box only earns its space once the list gets long enough to need scrolling.
+    const OVERLAY_SEARCH_THRESHOLD = 8;
+    let overlayAvailable = [];
+    let overlayChecked = new Set();
+    // Added by the preview itself (a subfile's other half, a WINDOW(record-name) owner): always
+    // shown alongside the record that brought them, so checked and disabled in the list.
+    let overlayLocked = new Set();
+
+    function setOverlayPopupOpen(open) {
+        overlayPopup.classList.toggle('open', open);
+        if (open) {
+            overlaySearch.value = '';
+            renderOverlayList();
+            if (overlayAvailable.length > OVERLAY_SEARCH_THRESHOLD) {
+                overlaySearch.focus();
+            }
+        }
+    }
+
+    overlayBtn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        setOverlayPopupOpen(!overlayPopup.classList.contains('open'));
     });
 
-    function rebuildOverlayOptions(availableRecords, selectedValue) {
-        overlaySelect.innerHTML = '';
+    // Clicks inside the popup (checkboxes, filter box) or on its button must not reach the document
+    // listener below, which closes it — for the button, it would close on mousedown and then reopen
+    // on click, so the button could never close it.
+    overlayBtn.addEventListener('mousedown', (ev) => ev.stopPropagation());
+    overlayPopup.addEventListener('mousedown', (ev) => ev.stopPropagation());
+    overlayPopup.addEventListener('click', (ev) => ev.stopPropagation());
+    document.addEventListener('mousedown', () => setOverlayPopupOpen(false));
 
-        const noneOption = document.createElement('option');
-        noneOption.value = '';
-        noneOption.textContent = '(none)';
-        overlaySelect.appendChild(noneOption);
-
-        for (const name of availableRecords) {
-            const opt = document.createElement('option');
-            opt.value = name;
-            opt.textContent = name;
-            overlaySelect.appendChild(opt);
+    overlaySearch.addEventListener('input', renderOverlayList);
+    overlaySearch.addEventListener('keydown', (ev) => {
+        ev.stopPropagation();
+        if (ev.key === 'Escape') {
+            setOverlayPopupOpen(false);
+            overlayBtn.focus();
         }
+    });
+    overlayPopup.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Escape') {
+            ev.stopPropagation();
+            setOverlayPopupOpen(false);
+            overlayBtn.focus();
+        }
+    });
 
-        overlaySelect.value = selectedValue;
+    function updateOverlayButton() {
+        const checked = overlayAvailable.filter(name => overlayChecked.has(name));
+        overlayBtn.textContent = (checked.length > 0 ? checked.join(', ') : '(none)') + ' ▾';
+        overlayBtn.title = checked.length > 0
+            ? 'Shown behind this record: ' + checked.join(', ')
+            : 'Choose records to show dimmed behind this one';
+    }
+
+    function renderOverlayList() {
+        overlaySearch.style.display = overlayAvailable.length > OVERLAY_SEARCH_THRESHOLD ? 'block' : 'none';
+        const filter = overlaySearch.value.trim().toUpperCase();
+        const visible = overlayAvailable.filter(name => !filter || name.toUpperCase().includes(filter));
+
+        overlayList.innerHTML = '';
+        if (visible.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'empty';
+            empty.textContent = 'No matching records';
+            overlayList.appendChild(empty);
+            return;
+        }
+        for (const name of visible) {
+            const label = document.createElement('label');
+            const box = document.createElement('input');
+            box.type = 'checkbox';
+            box.checked = overlayChecked.has(name);
+            box.disabled = overlayLocked.has(name);
+            if (box.disabled) {
+                label.title = 'Always shown together with the record being previewed or an overlay (subfile pair or window)';
+            }
+            box.addEventListener('change', () => {
+                if (box.checked) {
+                    overlayChecked.add(name);
+                } else {
+                    overlayChecked.delete(name);
+                }
+                updateOverlayButton();
+                vscode.postMessage({ type: 'setOverlay', recordName: name, checked: box.checked });
+            });
+            label.appendChild(box);
+            label.appendChild(document.createTextNode(name));
+            overlayList.appendChild(label);
+        }
+    }
+
+    function rebuildOverlayOptions(availableRecords, checkedRecords, lockedRecords) {
+        overlayAvailable = availableRecords;
+        overlayLocked = new Set(lockedRecords);
+        overlayChecked = new Set(checkedRecords);
+        updateOverlayButton();
+        // Re-rendered on every 'render' message (e.g. after an edit re-parses the source); keep the
+        // popup and its filter text as they are if the user has it open.
+        if (overlayPopup.classList.contains('open')) {
+            renderOverlayList();
+        }
     }
 
     indicatorsToggle.addEventListener('change', () => {
@@ -4652,7 +4872,9 @@ export class RecordPreviewPanel {
             const hasOverlayOptions = message.availableRecords && message.availableRecords.length > 0;
             toolbar.style.display = hasOverlayOptions ? 'inline-flex' : 'none';
             if (hasOverlayOptions) {
-                rebuildOverlayOptions(message.availableRecords, message.overlayRecordName || '');
+                rebuildOverlayOptions(message.availableRecords, message.overlayRecordNames || [], message.overlayLockedRecords || []);
+            } else {
+                setOverlayPopupOpen(false);
             }
 
             // indicatorBar (the "Indicators" checkbox) and indicatorList (the toggle buttons below

@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import { PREVIEW_COLOR_SETTINGS, readColorSetting, resetPreviewColors, setPreviewColor } from '../dspf-edit.utils/dspf-edit.preview-colors';
 import { DECIMAL_FORMAT_OPTIONS, DecimalFormat, getDecimalFormat, resetDecimalFormat, setDecimalFormat } from '../dspf-edit.utils/dspf-edit.decimal-format';
 import { DATE_SEPARATOR_OPTIONS, DateSeparatorFormat, getDateSeparatorFormat, resetDateSeparatorFormat, setDateSeparatorFormat } from '../dspf-edit.utils/dspf-edit.date-format';
+import { getOverlaySubfilePair, setOverlaySubfilePair, getOverlayKeepOnSwitch, setOverlayKeepOnSwitch } from '../dspf-edit.utils/dspf-edit.overlay-settings';
 import { resolveDecimalFormatFromSystem, resolveDateSeparatorFormatFromSystem } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 import { RecordPreviewPanel } from './dspf-edit.record-preview-panel';
 
@@ -121,6 +122,13 @@ export class PreviewColorsPanel {
                 } catch (error) {
                     vscode.window.showErrorMessage(error instanceof Error ? error.message : 'Could not read QDECFMT from the connected IBM i.');
                 };
+                break;
+            case 'setOverlayKeepOnSwitch':
+                await setOverlayKeepOnSwitch(!!message.value);
+                break;
+            case 'setOverlaySubfilePair':
+                await setOverlaySubfilePair(!!message.value);
+                RecordPreviewPanel.refreshOverlays();
                 break;
             case 'setDateSeparator':
                 await setDateSeparatorFormat(message.value as DateSeparatorFormat);
@@ -291,6 +299,23 @@ ${dateSeparatorRows}
     <button id="fetchDateSeparator" class="btn-secondary" style="margin-top: 0;">Fetch from IBM i</button>
     <button id="resetDateSeparator" class="btn-secondary" style="margin-top: 0;">Reset to Default</button>
 </div>
+
+<hr class="section">
+
+<h2>Preview Overlay</h2>
+<p class="hint">Records shown dimmed behind the one being previewed.</p>
+<div class="row">
+    <label class="radio-label">
+        <input type="checkbox" id="overlaySubfilePair" ${getOverlaySubfilePair() ? 'checked' : ''}>
+        Show a subfile's detail and control records together
+    </label>
+</div>
+<div class="row">
+    <label class="radio-label">
+        <input type="checkbox" id="overlayKeepOnSwitch" ${getOverlayKeepOnSwitch() ? 'checked' : ''}>
+        Keep checked overlays when switching to another record
+    </label>
+</div>
 <script>
     const vscode = acquireVsCodeApi();
 
@@ -343,6 +368,14 @@ ${dateSeparatorRows}
 
     document.getElementById('resetDateSeparator').addEventListener('click', () => {
         vscode.postMessage({ type: 'resetDateSeparator' });
+    });
+
+    document.getElementById('overlayKeepOnSwitch').addEventListener('change', (ev) => {
+        vscode.postMessage({ type: 'setOverlayKeepOnSwitch', value: ev.target.checked });
+    });
+
+    document.getElementById('overlaySubfilePair').addEventListener('change', (ev) => {
+        vscode.postMessage({ type: 'setOverlaySubfilePair', value: ev.target.checked });
     });
 
     // Reset/Fetch don't reload the panel's html (see updateDecimalFormatRadio's comment on the

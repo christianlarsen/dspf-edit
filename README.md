@@ -39,8 +39,8 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
   - "+ Field" / "+ Constant" buttons: click, then click a point on the screen to place a new field/constant there, using the same prompts as the tree's "Add field"/"Add constant" commands.
   - WINDOW records are drawn at their real screen position and can be resized/moved with the mouse; shows WDWTITLE if present. Supports windows shared via WINDOW(record-name).
   - Click a window's title to edit it, or use its "⋮" actions menu / one-click "center horizontally" icon — all shown only while hovering over the window.
-  - Subfile (SFL/SFLCTL) records show all SFLPAG rows, and automatically preview their paired header/detail record; detail rows can't be dragged up over the header's own content.
-  - Overlay any other record (dimmed) behind the one being previewed, to see how they compose.
+  - Subfile (SFL/SFLCTL) records show all SFLPAG rows, together with their paired header/detail record; detail rows can't be dragged up over the header's own content.
+  - Overlay any number of other records (dimmed) behind the one being previewed, picked from a checkbox list, to see how they compose. A subfile's header and detail always come together, and the record named in `WINDOW(record-name)` is always shown. Both that pairing and keeping the checked overlays when switching records can be turned off from the "⚙ Configuration" panel.
   - Simulate indicators on/off to preview conditional fields, constants, and attributes.
   - A function-key legend (`F3`, `F12`, ...) shows every command key available to the record being previewed (file-level + record-level CAxx/CFxx); a key still shows even when its indicator condition isn't currently met (so you can see it's defined), switching to solid/inverted styling when it's actually active.
   - An active `ERRMSG()` on a window shows on the window's own reserved message line (its last content row) when the window doesn't specify `*NOMSGLIN`, matching real DDS behavior, instead of always at the bottom of the physical screen.
@@ -51,7 +51,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
   - "Focus" maximizes the preview so it fills the editing area, hiding the DDS source editor beside it; "Show code" brings the source back.
   - Select a field or constant (or several, with Ctrl/Cmd+click) to get a "⋮ Actions" menu: add color/attribute, copy, or delete — applied to every selected element at once for a multi-selection. A single selected field or constant also gets Rename.../Edit Text..., Indicators..., and — for fields — Validity Checks..., Editing Keywords..., and Error Messages..., the same commands the tree's context menu offers, so most of what you'd do from the tree is also reachable straight from the preview.
   - Press `Delete`/`Backspace` with one or more fields/constants selected to delete them directly — same confirmation as the "⋮ Actions" menu's Delete.
-  - Double-click a dimmed background record (an SFL/SFLCTL auto-paired header/detail, the manual overlay, or a shared window's owner) to switch the preview to it, the same as picking it in the tree.
+  - Double-click a dimmed overlay record (a checked overlay, an SFL/SFLCTL header/detail, or a shared window's owner) to switch the preview to it, the same as picking it in the tree. Where several overlap, the one drawn on top wins.
   - Right-click a field or constant to open the "⋮ Actions" menu directly, instead of the browser's native Cut/Copy/Paste menu — selecting it first if it wasn't already selected.
   - The decimal point and thousands-separator convention used to preview `EDTCDE()`-edited numeric fields — US or European — is configurable from the "⚙ Configuration" panel, either picked manually or fetched with one click from the connected IBM i's `QDECFMT` system value.
 
@@ -158,15 +158,11 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.9.0** - 2026-09-28
-- Added: file-level `REF` support ([#91](https://github.com/christianlarsen/dspf-edit/issues/91)) — a new **Reference File** option on the file node adds, changes or removes it, and the Schema Tree shows where each referenced field takes its definition from.
-- Added: Add Field offers hidden alphanumeric and numeric fields directly, with no position asked.
-- Added: Add Field offers referenced fields directly — from the `REF` file (just an `R`, no `REFFLD()` needed), from another file, or from a field earlier in the same source (`*SRC`), picked from a list.
-- Added: referenced fields pointing to a field of the same source (`*SRC`) are resolved locally, without an IBM i connection.
-- Added: a referenced field's own length, decimals or data type (e.g. `+4`, `-2`, `12`) now override the referenced definition.
-- Fixed: `REF(LIB/FILE RECFMT)` with a record format is now recognized, and a long `REFFLD()` written by Add Field is continued onto a second line instead of running past position 80.
-- Fixed: Schema Tree no longer offers positioning, colors/attributes, validity checks, editing keywords or error messages on hidden, message and program-to-system fields, which are never displayed.
-- Fixed: Add Field's "More options..." now only offers the data types DDS allows for message and program-to-system fields, and cancelling the length no longer adds the field anyway.
+**1.10.0** - 2026-09-29
+- Added: Screen Preview overlays several records at once ([#89](https://github.com/christianlarsen/dspf-edit/discussions/89)), picked from a checkbox list with a filter for long files. Checked overlays stay checked when switching records in the same file.
+- Added: a subfile's header and detail now appear checked in the Overlay list and always go together, also when checked as an overlay. The record named in `WINDOW(record-name)` is always shown.
+- Added: **Preview Overlay** settings in the Configuration panel to turn off the subfile pairing and keeping overlays when switching records.
+- Changed: double-clicking overlapping overlays switches to the one drawn on top.
 
 ---
 

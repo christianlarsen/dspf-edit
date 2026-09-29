@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.10.0] - 2026-09-29
+### Added
+- Screen Preview: overlay several records at once ([#89](https://github.com/christianlarsen/dspf-edit/discussions/89)). The **Overlay** dropdown is now a list of checkboxes, with a filter box when the file has more than 8 records, so you can show, for example, a header, a footer and a "no records" format behind the record being previewed. Overlays are drawn dimmed behind it, in source order, each over the ones before it.
+- Screen Preview: checked overlays stay checked when switching to another record of the same file, and are cleared when previewing another file.
+- Screen Preview: a subfile's other half (the detail record while previewing its `SFLCTL`, and the other way round) now appears checked in the Overlay list instead of being shown with no way to turn it off. Checking a subfile record as an overlay also brings its other half. Both halves always go together; to see one without the other, turn off the new setting below.
+- Screen Preview: the record named in `WINDOW(record-name)` is always shown, checked and locked in the Overlay list, since the window is built from it (its title, footer text...). That applies to the record being previewed and to its overlays.
+- Configuration panel: new **Preview Overlay** section with two settings, both on by default:
+  - **Show a subfile's detail and control records together**: turn it off to preview a subfile record without its other half, and check it yourself when you want it.
+  - **Keep checked overlays when switching to another record**: turn it off to start each record with only its subfile pair and window owner.
+
+### Changed
+- Screen Preview: double-clicking a dimmed overlay to switch to it now picks the record whose field or constant is under the pointer. On an empty spot where several overlays overlap, the one drawn on top wins, instead of the first one in the file.
+
 ## [1.9.0] - 2026-09-28
 ### Added
 - File-level `REF` keyword support ([#91](https://github.com/christianlarsen/dspf-edit/issues/91)):
