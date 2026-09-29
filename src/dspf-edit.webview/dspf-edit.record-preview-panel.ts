@@ -1708,7 +1708,8 @@ export class RecordPreviewPanel {
                 // its own — so it's shown as a single marker character instead of a guessed-width
                 // placeholder, unless its real type/length has already been resolved (via the
                 // "Resolve Referenced Field" tree command), in which case it renders like any other
-                // field, just tinted the reference color when it carries no COLOR()/DSPATR() of its own.
+                // field, in its normal color — as STRSDA shows it. The reference color is only kept
+                // for unresolved fields, as a cue that they still need resolving.
                 const resolvedRef = field.referenced && documentUri ? getResolvedRef(documentUri, recordInfo.record, field.name, field.refOverrides) : undefined;
                 const isReferenced = field.referenced === true && !resolvedRef;
                 // The displayed text's own length drives the item's width/hit-box (below), not the
@@ -1728,7 +1729,7 @@ export class RecordPreviewPanel {
                     : isReferenced
                         ? getFieldPlaceholderText(field.name, field.type, field.usage, 1)
                         : getFieldPlaceholderText(field.name, effectiveType, field.usage, effectiveLength, editingMask, rawDecimals);
-                const color = isReferenced || (field.referenced && activeAttrs.length === 0)
+                const color = isReferenced
                     ? getReferencedFieldColor()
                     : getDisplayColor(activeAttrs, hasDisplayAttribute(activeAttrs, 'HI'));
                 // A drag handle to resize a field only makes sense when its displayed width maps

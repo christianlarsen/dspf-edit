@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 - Screen Preview: double-clicking a dimmed overlay to switch to it now picks the record whose field or constant is under the pointer. On an empty spot where several overlays overlap, the one drawn on top wins, instead of the first one in the file.
+- Screen Preview: a referenced field that has been resolved now shows in its normal color, as STRSDA shows it. The referenced field marker color (orange by default) is only used for fields still waiting to be resolved. Before, a resolved field with no `COLOR()` or `DSPATR()` of its own kept the marker color.
 
 ## [1.9.0] - 2026-09-28
 ### Added

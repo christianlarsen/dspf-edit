@@ -163,6 +163,7 @@ See the full changelog [here](./CHANGELOG.md).
 - Added: a subfile's header and detail now appear checked in the Overlay list and always go together, also when checked as an overlay. The record named in `WINDOW(record-name)` is always shown.
 - Added: **Preview Overlay** settings in the Configuration panel to turn off the subfile pairing and keeping overlays when switching records.
 - Changed: double-clicking overlapping overlays switches to the one drawn on top.
+- Changed: resolved referenced fields show in their normal color; the orange marker is only for fields still waiting to be resolved.
 
 ---
 
