@@ -37,7 +37,9 @@
     "Programming Languages",
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onLanguage:dds.dspf"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "viewsContainers": {
@@ -234,6 +236,19 @@
         "command": "dspf-edit.configure-preview-colors",
         "title": "Configure Preview Colors...",
         "category": "DSPF Edit"
+      },
+      {
+        "command": "dspf-edit.toggle-column-ruler",
+        "title": "Show/Hide Column Ruler",
+        "category": "DSPF Edit",
+        "enablement": "editorLangId == dds.dspf"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "dspf-edit.toggle-column-ruler",
+        "key": "shift+f4",
+        "when": "editorTextFocus && editorLangId == dds.dspf"
       }
     ],
     "menus": {

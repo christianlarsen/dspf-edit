@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
-## [1.10.0] - 2026-09-29
+## [1.10.0] - 2026-09-30
 ### Added
 - Screen Preview: overlay several records at once ([#89](https://github.com/christianlarsen/dspf-edit/discussions/89)). The **Overlay** dropdown is now a list of checkboxes, with a filter box when the file has more than 8 records, so you can show, for example, a header, a footer and a "no records" format behind the record being previewed. Overlays are drawn dimmed behind it, in source order, each over the ones before it.
 - Screen Preview: checked overlays stay checked when switching to another record of the same file, and are cleared when previewing another file.
@@ -17,6 +17,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Configuration panel: new **Preview Overlay** section with two settings, both on by default:
   - **Show a subfile's detail and control records together**: turn it off to preview a subfile record without its other half, and check it yourself when you want it.
   - **Keep checked overlays when switching to another record**: turn it off to start each record with only its subfile pair and window owner.
+
+- Column ruler ([#94](https://github.com/christianlarsen/dspf-edit/issues/94)): while editing DDS source, shows the format line `.....AAN01N02N03T.Name++++++RLen++TDpBLinPosFunctions+++…` above the line the cursor is on, and outlines each column area of that line, highlighting the one the cursor is in. Hovering an area shows its name and positions. It helps spot values typed into the wrong columns, like a usage `O` that ended up in the decimal positions. Works like the fixed-format RPG ruler of vscode-rpgle. Off by default: turn it on with `Shift+F4`, from the new **Source Editor** section of the Configuration panel, or with **Show/Hide Column Ruler** in the Command Palette.
+- The extension now starts when a DDS display file is opened, instead of waiting for the DSPF Structure view to be opened, so the column ruler is there from the start.
 
 ### Changed
 - Screen Preview: double-clicking a dimmed overlay to switch to it now picks the record whose field or constant is under the pointer. On an empty spot where several overlays overlap, the one drawn on top wins, instead of the first one in the file.

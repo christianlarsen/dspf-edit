@@ -11,6 +11,8 @@ import { DATE_SEPARATOR_OPTIONS, DateSeparatorFormat, getDateSeparatorFormat, re
 import { getOverlaySubfilePair, setOverlaySubfilePair, getOverlayKeepOnSwitch, setOverlayKeepOnSwitch } from '../dspf-edit.utils/dspf-edit.overlay-settings';
 import { resolveDecimalFormatFromSystem, resolveDateSeparatorFormatFromSystem } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 import { RecordPreviewPanel } from './dspf-edit.record-preview-panel';
+import { getColumnRulerEnabled, setColumnRulerEnabled } from '../dspf-edit.utils/dspf-edit.column-ruler-settings';
+import { refreshColumnRuler } from '../dspf-edit.listeners/dspf-edit.column-ruler';
 
 /**
  * The extension's "⚙ Configuration" webview panel. Lets the user pick the record preview's colors
@@ -76,6 +78,15 @@ export class PreviewColorsPanel {
         this.panel.webview.postMessage({ type: 'updateDecimalFormat', value: getDecimalFormat() });
     };
 
+    /**
+     * Tells the open panel's own script whether the column ruler checkbox should be checked —
+     * after Shift+F4 toggles it from the editor. Via postMessage for the same reason as
+     * updateDecimalFormatRadio. No-op if the panel isn't open.
+     */
+    static updateColumnRulerIfOpen(): void {
+        PreviewColorsPanel.current?.panel.webview.postMessage({ type: 'updateColumnRuler', value: getColumnRulerEnabled() });
+    };
+
     /** Same as updateDecimalFormatRadio, for the date separator's radios. */
     private updateDateSeparatorRadio(): void {
         this.panel.webview.postMessage({ type: 'updateDateSeparator', value: getDateSeparatorFormat() });
@@ -122,6 +133,10 @@ export class PreviewColorsPanel {
                 } catch (error) {
                     vscode.window.showErrorMessage(error instanceof Error ? error.message : 'Could not read QDECFMT from the connected IBM i.');
                 };
+                break;
+            case 'setColumnRuler':
+                await setColumnRulerEnabled(!!message.value);
+                refreshColumnRuler();
                 break;
             case 'setOverlayKeepOnSwitch':
                 await setOverlayKeepOnSwitch(!!message.value);
@@ -316,6 +331,17 @@ ${dateSeparatorRows}
         Keep checked overlays when switching to another record
     </label>
 </div>
+
+<hr class="section">
+
+<h2>Source Editor</h2>
+<p class="hint">Help while editing the DDS source by hand.</p>
+<div class="row">
+    <label class="radio-label">
+        <input type="checkbox" id="columnRuler" ${getColumnRulerEnabled() ? 'checked' : ''}>
+        Show a column ruler above the line being edited (Shift+F4)
+    </label>
+</div>
 <script>
     const vscode = acquireVsCodeApi();
 
@@ -370,6 +396,10 @@ ${dateSeparatorRows}
         vscode.postMessage({ type: 'resetDateSeparator' });
     });
 
+    document.getElementById('columnRuler').addEventListener('change', (ev) => {
+        vscode.postMessage({ type: 'setColumnRuler', value: ev.target.checked });
+    });
+
     document.getElementById('overlayKeepOnSwitch').addEventListener('change', (ev) => {
         vscode.postMessage({ type: 'setOverlayKeepOnSwitch', value: ev.target.checked });
     });
@@ -386,6 +416,9 @@ ${dateSeparatorRows}
             document.querySelectorAll('input[name="decimalFormat"]').forEach(input => {
                 input.checked = input.value === event.data.value;
             });
+        };
+        if (event.data?.type === 'updateColumnRuler') {
+            document.getElementById('columnRuler').checked = event.data.value;
         };
         if (event.data?.type === 'updateDateSeparator') {
             document.querySelectorAll('input[name="dateSeparator"]').forEach(input => {

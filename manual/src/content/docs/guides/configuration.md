@@ -1,6 +1,6 @@
 ---
 title: Configuration
-description: Numeric formatting, preview overlay and preview color settings.
+description: Numeric formatting, preview overlay, source editor and preview color settings.
 ---
 
 ## Numeric (decimal) formatting
@@ -22,6 +22,12 @@ Two settings in the **Preview Overlay** section of the **⚙ Configuration** pan
 - **Keep checked overlays when switching to another record**: while on, the overlays you checked stay checked when you switch to another record of the same file. Turn it off to start each record with only what's added on its own: its subfile pair (if the setting above is on) and the record named in its `WINDOW(record-name)`.
 
 The record named in `WINDOW(record-name)` is always shown, whatever these settings say, since the window is built from it.
+
+## Source editor
+
+The **Source Editor** section of the **⚙ Configuration** panel has one setting, off by default:
+
+- **Show a column ruler above the line being edited**: shows the DDS format line above the line the cursor is on, and outlines each column area of that line. `Shift+F4` in the source turns it on and off too. See [Column Ruler](/dspf-edit/guides/column-ruler/).
 
 ## Preview colors
 

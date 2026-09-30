@@ -67,6 +67,7 @@ export default defineConfig({
 						{ label: 'Subfiles', link: '/guides/subfiles/' },
 						{ label: 'Multiple Display Sizes', link: '/guides/display-sizes/' },
 						{ label: 'Referenced Fields', link: '/guides/referenced-fields/' },
+						{ label: 'Column Ruler', link: '/guides/column-ruler/' },
 						{ label: 'Configuration', link: '/guides/configuration/' },
 					],
 					collapsed: false,
