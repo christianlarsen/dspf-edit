@@ -34,6 +34,23 @@ export let currentDdsElements: DdsElement[] = [];
  */
 let lastPositionInRecord: { row: number; col: number; length: number } | undefined;
 
+/** Looks up a referenced field's real length once it has been resolved (see setReferencedLengthResolver). */
+type ReferencedLengthResolver = (recordName: string, fieldName: string, overrides?: RefOverrides) => number | undefined;
+
+let referencedLengthResolver: ReferencedLengthResolver | undefined;
+
+/**
+ * Gives the parser a way to look up a referenced field's resolved length. A referenced field has
+ * no length of its own in the source, so without this a field/constant positioned "+n" after it
+ * would be placed as if it were 0 long — right on top of it. Set once by the extension (the parser
+ * itself stays free of any VS Code/IBM i dependency); when unset, or while the field is still
+ * unresolved, the length coded in the source (usually none) is used, as before.
+ * @param resolver - Returns the resolved length, or undefined if the field isn't resolved
+ */
+export function setReferencedLengthResolver(resolver: ReferencedLengthResolver | undefined): void {
+    referencedLengthResolver = resolver;
+};
+
 /**
  * AND-groups accumulated so far from indicator-only continuation lines (position 7 = 'A'/blank,
  * or 'O' to start a new OR'd group — see "Condition for display files (positions 7 through 16)"
@@ -535,7 +552,13 @@ function parseFieldElement(
         // width, not the declared DDS length (usually 0, since none is coded) — use that width here
         // so a following "+n" relative position lands after the actual rendered text, not the source length.
         const systemWidth = SYSTEM_FIELD_PLACEHOLDER[String(components.fieldName).trim().toUpperCase()]?.length;
-        lastPositionInRecord = { row: resolvedRow, col: resolvedCol, length: systemWidth ?? length };
+        // A referenced field's real length lives in the field it refers to: once resolved, that's
+        // the length a following "+n" has to count from, not the (usually blank) one in the source.
+        const resolvedLength = isReferenced ? referencedLengthResolver?.(lastRecord, components.fieldName, refOverrides) : undefined;
+        // Still unresolved with no length of its own: it shows as a 1-character marker in the
+        // preview, so count that much rather than 0, which would put the next element on top of it.
+        const pendingLength = isReferenced && length === 0 ? 1 : length;
+        lastPositionInRecord = { row: resolvedRow, col: resolvedCol, length: systemWidth ?? resolvedLength ?? pendingLength };
     };
 
     const element = {

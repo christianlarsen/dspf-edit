@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { parseDocument } from '../dspf-edit.parser/dspf-edit.parser';
+import { parseDocument, setReferencedLengthResolver } from '../dspf-edit.parser/dspf-edit.parser';
 import { DdsElement, DdsField } from '../dspf-edit.model/dspf-edit.model';
 
 /**
@@ -78,5 +78,37 @@ suite('Parser: referenced field overrides', () => {
 
     test('no overrides', () => {
         assert.strictEqual(findField(elements, 'PLAIN')?.refOverrides, undefined);
+    });
+});
+
+suite('Parser: relative position after a referenced field', () => {
+    // Issue #97: a field/constant positioned "+n" counts from the end of the element before it.
+    const src = [
+        srcLine({ 45: 'REF(FRF)' }),
+        srcLine({ 17: 'R', 19: 'RECORD' }),
+        srcLine({ 39: ' 15', 42: '  2', 45: "'Send Product group..'" }),
+        srcLine({ 19: 'FMUPGR', 29: 'R', 38: 'B', 42: ' +1', 45: 'REFFLD(DRYE)' }),
+        srcLine({ 19: 'FMPGRP', 29: 'R', 38: 'B', 42: ' +1', 45: 'REFFLD(PGRP)' }),
+        srcLine({ 19: 'FMNUM', 29: 'R', 30: '    4', 35: 'A', 38: 'B', 42: ' +1', 45: 'REFFLD(NUM)' }),
+        srcLine({ 19: 'FMPCA2', 29: 'R', 38: 'B', 42: ' +1', 45: 'REFFLD(PCA2)' }),
+    ].join('\n');
+
+    teardown(() => setReferencedLengthResolver(undefined));
+
+    test('unresolved: counts the 1-character marker, or the length coded in the source', () => {
+        const elements = parseDocument(src);
+        assert.strictEqual(findField(elements, 'FMUPGR')?.column, 23);
+        assert.strictEqual(findField(elements, 'FMPGRP')?.column, 25);
+        assert.strictEqual(findField(elements, 'FMNUM')?.column, 27);
+        assert.strictEqual(findField(elements, 'FMPCA2')?.column, 32);
+    });
+
+    test('resolved: counts the referenced field\'s real length', () => {
+        const lengths: Record<string, number> = { FMUPGR: 1, FMPGRP: 4, FMNUM: 4 };
+        setReferencedLengthResolver((_record, name) => lengths[name]);
+        const elements = parseDocument(src);
+        assert.strictEqual(findField(elements, 'FMPGRP')?.column, 25);
+        assert.strictEqual(findField(elements, 'FMNUM')?.column, 30);
+        assert.strictEqual(findField(elements, 'FMPCA2')?.column, 35);
     });
 });

@@ -52,6 +52,10 @@ Right-click a referenced field and choose **Resolve Referenced Field**.
 
 Use **Resolve All Referenced Fields** from the status bar to resolve every pending referenced field in the current document in one go. This is useful right after opening a display file with many `R` fields. Fields are resolved in source order, so a field referencing another referenced field of the same source is resolved after it.
 
+The [Screen Preview](/dspf-edit/guides/screen-preview/) also says so when the record it shows, or one of its overlays, still has pending referenced fields: a warning icon (⚠) shows in front of the screen size, and hovering it gives the count.
+
+Referenced fields are not resolved on their own when the file is opened. Until a field is resolved it shows as a single marker character, since its real length isn't known, and anything positioned after it with `+n` (relative to the end of the preceding field or constant) is not in its final place either. Once resolved, the field takes its real size and what follows it moves to where it belongs.
+
 ## Where the definition is looked up
 
 Hovering a referenced field in the Schema Tree shows where its definition comes from. It is looked up in this order:

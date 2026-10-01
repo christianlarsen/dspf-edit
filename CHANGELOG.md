@@ -19,11 +19,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **Keep checked overlays when switching to another record**: turn it off to start each record with only its subfile pair and window owner.
 
 - Column ruler ([#94](https://github.com/christianlarsen/dspf-edit/issues/94)): while editing DDS source, shows the format line `.....AAN01N02N03T.Name++++++RLen++TDpBLinPosFunctions+++…` above the line the cursor is on, and outlines each column area of that line, highlighting the one the cursor is in. Hovering an area shows its name and positions. It helps spot values typed into the wrong columns, like a usage `O` that ended up in the decimal positions. Works like the fixed-format RPG ruler of vscode-rpgle. Off by default: turn it on with `Shift+F4`, from the new **Source Editor** section of the Configuration panel, or with **Show/Hide Column Ruler** in the Command Palette.
+- Screen Preview: when the previewed record, or one of its overlays, has referenced fields still waiting to be resolved, a warning icon (⚠) shows in front of the screen size. Hovering it says how many are pending. Until they are resolved their size, and the position of anything placed after them with `+n`, is not final.
 - The extension now starts when a DDS display file is opened, instead of waiting for the DSPF Structure view to be opened, so the column ruler is there from the start.
 
 ### Changed
 - Screen Preview: double-clicking a dimmed overlay to switch to it now picks the record whose field or constant is under the pointer. On an empty spot where several overlays overlap, the one drawn on top wins, instead of the first one in the file.
 - Screen Preview: a referenced field that has been resolved now shows in its normal color, as STRSDA shows it. The referenced field marker color (orange by default) is only used for fields still waiting to be resolved. Before, a resolved field with no `COLOR()` or `DSPATR()` of its own kept the marker color.
+
+### Fixed
+- A field or constant positioned with `+n` right after a referenced field ([#97](https://github.com/christianlarsen/dspf-edit/issues/97)) was placed as if the referenced field were 0 long, on top of it or right next to it, even after resolving it. It now counts from the end of the referenced field, using its real length once resolved. The Schema Tree and the Screen Preview are updated as soon as the field is resolved. While it is still pending, the 1-character marker shown in the preview is counted.
 
 ## [1.9.0] - 2026-09-28
 ### Added

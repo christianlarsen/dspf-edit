@@ -1504,6 +1504,15 @@ export class RecordPreviewPanel {
 
         const availableIndicators = this.collectIndicatorNumbers(recordInfo).sort((a, b) => a - b);
 
+        // Referenced fields still shown as a 1-character marker (previewed record and overlays):
+        // until they're resolved their real size is unknown, and so is the position of anything
+        // placed "+n" after them. Counted so the preview can flag it.
+        const pendingReferencedCount = new Set(
+            [...items, ...backgroundItems]
+                .filter(item => item.isReferenced)
+                .map(item => `${item.sourceRecord ?? this.recordName}/${item.name}`)
+        ).size;
+
         // The content area (where fields/constants live); its top-left is 1 row/col inside the border.
         const windowFrame: WindowFrame | null = isWindow
             ? { row: size.originRow + WINDOW_BORDER_TOP, col: size.originCol + WINDOW_BORDER_LEFT, rows: size.rows, cols: size.cols }
@@ -1567,6 +1576,7 @@ export class RecordPreviewPanel {
             overlayRecordNames: availableRecords.filter(name => checkedOverlays.has(name)),
             overlayLockedRecords: availableRecords.filter(name => autoOverlays.pairs.has(name) || autoOverlays.windowOwners.has(name)),
             availableIndicators,
+            pendingReferencedCount,
             indicatorsEnabled: this.indicatorsEnabled,
             activeIndicators: [...this.activeIndicators],
             availableFormats,
@@ -3174,6 +3184,12 @@ export class RecordPreviewPanel {
     #info {
         opacity: 0.7;
     }
+    #pendingRefsIcon {
+        display: none;
+        color: ${getReferencedFieldColor()};
+        cursor: default;
+        margin-right: -10px;
+    }
     #formatBar, #toolbar {
         display: none;
         align-items: center;
@@ -3368,6 +3384,7 @@ export class RecordPreviewPanel {
 </head>
 <body>
 <div id="toolbarRow1" class="toolbar-row">
+    <span id="pendingRefsIcon">⚠</span>
     <span id="info">Loading...</span>
     <button id="focusModeBtn" title="Hide the source code editor to focus on the preview (tree view stays visible)">🗖 Focus</button>
     <button id="configBtn" title="Configure the preview (colors)">⚙ Configuration</button>
@@ -3416,6 +3433,7 @@ export class RecordPreviewPanel {
     const info = document.getElementById('info');
     const focusModeBtn = document.getElementById('focusModeBtn');
     const configBtn = document.getElementById('configBtn');
+    const pendingRefsIcon = document.getElementById('pendingRefsIcon');
     const formatBar = document.getElementById('formatBar');
     const formatSelect = document.getElementById('formatSelect');
     const toolbar = document.getElementById('toolbar');
@@ -4908,6 +4926,11 @@ export class RecordPreviewPanel {
                 ? baseInfo + '  —  window ' + message.windowFrame.rows + 'x' + message.windowFrame.cols +
                   ' at (' + message.windowFrame.row + ',' + message.windowFrame.col + ')'
                 : baseInfo;
+
+            // Warning icon ahead of the screen size, only while referenced fields are pending.
+            const pendingCount = message.pendingReferencedCount || 0;
+            pendingRefsIcon.style.display = pendingCount > 0 ? 'inline' : 'none';
+            pendingRefsIcon.title = pendingCount + ' referenced field' + (pendingCount === 1 ? '' : 's') + ' not resolved';
 
             currentErrorMessage = message.errorMessage || null;
             currentErrorMessageFrame = message.errorMessageFrame || null;
