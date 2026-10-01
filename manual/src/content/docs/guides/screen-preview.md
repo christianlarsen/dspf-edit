@@ -94,6 +94,8 @@ A function-key legend (`F3`, `F12`, ...) shows every command key available to th
 
 `HELP()`, `PAGEDOWN()`, and `PAGEUP()` show in the same legend, labeled **Help**, **Page Up**, and **Page Down** — they're dedicated keyboard keys rather than a numbered `Fnn` slot (`PAGEDOWN`/`PAGEUP` are DDS's own names for `ROLLUP`/`ROLLDOWN`), so they're listed after the numbered keys instead of trying to fit an `Fnn` label that doesn't apply to them.
 
+A key shows however it is coded: on its own (`CF03`, `HELP`), with a response indicator (`CF03(03)`, `HELP(83)`), or with an indicator and a text (`CF03(03 'Exit')`). `ROLLUP` and `ROLLDOWN` show as **Page Down** and **Page Up**.
+
 A subfile's `SFLDROP`/`SFLFOLD` fold/truncate key, if declared, shows apart from the rest after a `|` separator, in blue — see [Subfiles](/dspf-edit/guides/subfiles/).
 
 ## Multiple display sizes

@@ -915,12 +915,15 @@ function extractFunctionKeyCommands(attributes: DdsAttribute[] | undefined): Fun
         // that had to wrap (see dspf-edit.add-keys.ts's extractKeyCommandsFromAttributes for the
         // matching read-side fix, and validateKeyCommandDescription for where 25 legitimately still
         // applies: only when this tool itself creates a new one).
-        const caCfMatch = attr.value.match(/^(CA|CF)(\d{2})\(\d{2}\s+'([^']*)'\)$/);
+        //
+        // The response indicator and the text are both optional in DDS: `CF03`, `CF03(03)` and
+        // `CF03(03 'Exit')` are all valid, and the key is just as available in each.
+        const caCfMatch = attr.value.trim().match(/^(CA|CF)(\d{2})(?:\(\s*(?:\d{2})?\s*(?:'([^']*)')?\s*\))?$/i);
         if (caCfMatch) {
             commands.push({
-                type: caCfMatch[1] as 'CA' | 'CF',
+                type: caCfMatch[1].toUpperCase() as 'CA' | 'CF',
                 keyNumber: caCfMatch[2],
-                description: caCfMatch[3],
+                description: caCfMatch[3] ?? '',
                 indicators: attr.indicators,
                 displayFormat: attr.displayFormat
             });
@@ -930,13 +933,16 @@ function extractFunctionKeyCommands(attributes: DdsAttribute[] | undefined): Fun
         // Captures the response indicator (the first `nn`) too: unlike CA/CF, whose Fnn label
         // already names their key number, HELP/PAGEDOWN/PAGEUP have no numbered slot to show it —
         // it only surfaces in the preview's legend tooltip (see getVisibleFunctionKeys).
-        const namedMatch = attr.value.match(/^(HELP|PAGEDOWN|PAGEUP)\((\d{2})\s+'([^']*)'\)$/i);
+        // Same optional forms as CA/CF: `HELP`, `HELP(83)` and `HELP(83 'text')`. ROLLUP/ROLLDOWN are
+        // the older names of PAGEDOWN/PAGEUP (same keys), still common in existing source.
+        const namedMatch = attr.value.trim().match(/^(HELP|PAGEDOWN|PAGEUP|ROLLUP|ROLLDOWN)(?:\(\s*(\d{2})?\s*(?:'([^']*)')?\s*\))?$/i);
         if (namedMatch) {
-            const type = namedMatch[1].toUpperCase() as 'HELP' | 'PAGEDOWN' | 'PAGEUP';
+            const keyword = namedMatch[1].toUpperCase();
+            const type = (keyword === 'ROLLUP' ? 'PAGEDOWN' : keyword === 'ROLLDOWN' ? 'PAGEUP' : keyword) as 'HELP' | 'PAGEDOWN' | 'PAGEUP';
             commands.push({
                 type,
                 keyNumber: type,
-                description: namedMatch[3],
+                description: namedMatch[3] ?? '',
                 responseIndicator: namedMatch[2],
                 indicators: attr.indicators,
                 displayFormat: attr.displayFormat

@@ -28,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 - A field or constant positioned with `+n` right after a referenced field ([#97](https://github.com/christianlarsen/dspf-edit/issues/97)) was placed as if the referenced field were 0 long, on top of it or right next to it, even after resolving it. It now counts from the end of the referenced field, using its real length once resolved. The Schema Tree and the Screen Preview are updated as soon as the field is resolved. While it is still pending, the 1-character marker shown in the preview is counted.
+- Screen Preview: the function-key legend only showed keys coded with a response indicator and a text, such as `CF03(03 'Exit')` or `HELP(01 'Help')`. Keys coded as `CF03`, `CF03(03)`, `HELP` or `HELP(83)`, which are just as valid, were missing, so a file using only those showed no legend at all ([#97](https://github.com/christianlarsen/dspf-edit/issues/97)). All three forms now show. `ROLLUP` and `ROLLDOWN`, the older names of `PAGEDOWN` and `PAGEUP`, show as **Page Down** and **Page Up** too.
 
 ## [1.9.0] - 2026-09-28
 ### Added

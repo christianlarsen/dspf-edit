@@ -169,6 +169,7 @@ See the full changelog [here](./CHANGELOG.md).
 - Added: a column ruler above the line being edited, like vscode-rpgle's for fixed-format RPG ([#94](https://github.com/christianlarsen/dspf-edit/issues/94)). Off by default; `Shift+F4` or the Configuration panel turns it on.
 - Added: the Screen Preview shows a warning icon (⚠) while referenced fields are still waiting to be resolved.
 - Fixed: a field or constant positioned with `+n` after a referenced field now counts from the end of that field, using its real length once resolved ([#97](https://github.com/christianlarsen/dspf-edit/issues/97)).
+- Fixed: the function-key legend now shows keys coded without a text or response indicator (`CF03`, `HELP(83)`), and `ROLLUP`/`ROLLDOWN`.
 - Changed: double-clicking overlapping overlays switches to the one drawn on top.
 - Changed: resolved referenced fields show in their normal color; the orange marker is only for fields still waiting to be resolved.
 
