@@ -162,7 +162,7 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.10.0** - 2026-09-30
+**1.10.0** - 2026-10-02
 - Added: Screen Preview overlays several records at once ([#89](https://github.com/christianlarsen/dspf-edit/discussions/89)), picked from a checkbox list with a filter for long files. Checked overlays stay checked when switching records in the same file.
 - Added: a subfile's header and detail now appear checked in the Overlay list and always go together, also when checked as an overlay. The record named in `WINDOW(record-name)` is always shown.
 - Added: **Preview Overlay** settings in the Configuration panel to turn off the subfile pairing and keeping overlays when switching records.

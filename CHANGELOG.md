@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
-## [1.10.0] - 2026-09-30
+## [1.10.0] - 2026-10-02
 ### Added
 - Screen Preview: overlay several records at once ([#89](https://github.com/christianlarsen/dspf-edit/discussions/89)). The **Overlay** dropdown is now a list of checkboxes, with a filter box when the file has more than 8 records, so you can show, for example, a header, a footer and a "no records" format behind the record being previewed. Overlays are drawn dimmed behind it, in source order, each over the ones before it.
 - Screen Preview: checked overlays stay checked when switching to another record of the same file, and are cleared when previewing another file.
