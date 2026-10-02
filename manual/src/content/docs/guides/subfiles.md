@@ -9,7 +9,9 @@ Subfile (`SFL`/`SFLCTL`) records are recognized and rendered specially in the [S
 
 ## Subfile page rows
 
-The preview shows all `SFLPAG` rows for the subfile, and automatically pairs the subfile detail record with its `SFLCTL` header record so both preview together as they'd actually appear on screen.
+The preview shows all `SFLPAG` rows for the subfile, and pairs the subfile detail record with its `SFLCTL` header record so both preview together as they'd actually appear on screen. The other half appears checked and locked in the [Overlay](/dspf-edit/guides/screen-preview/#overlay) list, and checking a subfile record as an overlay brings its other half too.
+
+To preview one half without the other (for example, a header with a "no records" format instead of its detail rows), turn off **Show a subfile's detail and control records together** in the **⚙ Configuration** panel — see [Configuration](/dspf-edit/guides/configuration/#preview-overlay).
 
 ## Jumping between header and detail
 

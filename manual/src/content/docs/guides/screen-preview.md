@@ -14,7 +14,7 @@ Open it from the schema tree: right-click a record and choose **Preview Screen L
 A single, compact toolbar sits above the preview with:
 
 - Display size / display format selector (see [Multiple Display Sizes](/dspf-edit/guides/display-sizes/)).
-- Overlay selector.
+- Overlay list (see [Overlay](#overlay)).
 - Indicators toggle (see [Simulating indicators](#simulating-indicators)).
 - "+ Field" / "+ Constant" add buttons.
 
@@ -51,11 +51,21 @@ The Indicators toggle, and the selected display format, persist when you switch 
 
 ## Overlay
 
-Overlay any other record (dimmed) behind the one being previewed, to see how the two compose — useful for checking a detail record against its header, or a window against the record behind it.
+Overlay other records (dimmed) behind the one being previewed, to see how they compose — useful for checking a detail record against its header, a window against the record behind it, or a whole screen built from several records (a header, a footer, a "no records" format...).
+
+Click the **Overlay** button in the toolbar to open the list of the file's records and check the ones you want to see. When the file has more than 8 records, a filter box at the top narrows the list by name. The button shows the checked records, or `(none)`.
 
 ![Overlaying a record behind the preview](/dspf-edit/screenshots/captura8.png)
 
-**Double-click anywhere on a dimmed background record** — the manual overlay, an SFL/SFLCTL auto-paired header/detail (see [Subfiles](/dspf-edit/guides/subfiles/)), or a shared window's owner — to switch the preview to it, the same as picking it in the tree. Works anywhere across the rows the background occupies, not just directly on one of its fields/constants.
+- The record being previewed is always drawn on top, at full intensity. Overlays are drawn dimmed behind it, in source order: each one over the ones before it.
+- Checked overlays stay checked when you switch to another record of the same file, and are cleared when you preview a different file.
+- Some records are checked on their own, and locked, so they can't be unchecked by themselves:
+  - A subfile's other half: the detail record while previewing its `SFLCTL` header, and the other way round. This also applies to a subfile record you check as an overlay, which brings its other half along. Unchecking the half you checked removes both. See [Subfiles](/dspf-edit/guides/subfiles/).
+  - The record named in `WINDOW(record-name)`, since the window is built from it: it carries the window's title, footer text and so on.
+
+Both the subfile pairing and keeping overlays when switching records can be turned off in the **⚙ Configuration** panel — see [Configuration](/dspf-edit/guides/configuration/#preview-overlay).
+
+**Double-click anywhere on a dimmed overlay record** to switch the preview to it, the same as picking it in the tree. Works anywhere across the rows the overlay occupies, not just directly on one of its fields/constants. On a field or constant, its own record wins; on an empty spot where several overlays overlap, the one drawn on top wins.
 
 ## Windows
 
@@ -83,6 +93,8 @@ A field with no `CNTFLD()` that's simply too long to fit between its start colum
 A function-key legend (`F3`, `F12`, ...) shows every command key available to the record being previewed — file-level, record-level, and (for a subfile) its `SFL`/`SFLCTL` pair's own `CAxx`/`CFxx` keys, since both preview together as one screen. A key still shows even when its indicator condition isn't currently met, so you can see it's defined; it switches to solid/inverted styling when it's actually active under the current simulated indicators.
 
 `HELP()`, `PAGEDOWN()`, and `PAGEUP()` show in the same legend, labeled **Help**, **Page Up**, and **Page Down** — they're dedicated keyboard keys rather than a numbered `Fnn` slot (`PAGEDOWN`/`PAGEUP` are DDS's own names for `ROLLUP`/`ROLLDOWN`), so they're listed after the numbered keys instead of trying to fit an `Fnn` label that doesn't apply to them.
+
+A key shows however it is coded: on its own (`CF03`, `HELP`), with a response indicator (`CF03(03)`, `HELP(83)`), or with an indicator and a text (`CF03(03 'Exit')`). `ROLLUP` and `ROLLDOWN` show as **Page Down** and **Page Up**.
 
 A subfile's `SFLDROP`/`SFLFOLD` fold/truncate key, if declared, shows apart from the rest after a `|` separator, in blue — see [Subfiles](/dspf-edit/guides/subfiles/).
 
