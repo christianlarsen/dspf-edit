@@ -8,6 +8,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.11.0] - 2026-10-08
+### Added
+- Screen Preview: the user-defined edit codes, `EDTCDE(5)` to `EDTCDE(9)`, are now previewed. Their editing is not part of DDS: it lives on each IBM i, in the edit descriptions `QEDIT5` to `QEDIT9`. **Fetch from IBM i**, in the **Decimal Format** section of the Configuration panel, now reads them along with `QDECFMT`, and the message it shows says which codes were read. A field using one of them then shows as STRSDA shows it, for example `9,999.99CR` for a 6,2 field with the IBM-supplied `EDTCDE(5)`. These codes do not follow the decimal format setting, since each edit description has its own decimal point and separators. **Reset to Default** forgets them. Until they are fetched, a field with one of these codes previews with no editing, as before. Tested on IBM i 7.5.
+
+### Changed
+- Attributes and Colors: on a field or constant that already has some, **Attributes** and **Colors** now open a list of them, each with the indicators that condition it, instead of asking whether to add more, replace all or remove all. Each row has a button to change its indicators (✏️) and one to remove it (🗑️); **Add attributes...** / **Add colors...** adds more, and **Remove all** clears them.
+  - Changing the indicators of an attribute or color opens the same menu a field or constant has in **Indicators**: up to nine indicators per condition, and several conditions joined with OR. Before, an attribute or color could only get up to three indicators, and no OR.
+  - Indicators condition a whole source line. So an attribute or color that shares its line with something else (the field's own line, another keyword, or a keyword with several attributes such as `DSPATR(UL HI)`) is first moved to a line of its own, keeping the condition it had.
+  - Removing one attribute of a keyword that holds several leaves the others in place.
+
+### Fixed
+- Indicators on an attribute of a field (from the attribute's node in the Schema Tree) always treated it as written on the field's own line, even when it was on a line of its own: it asked to move it, and left a line with only the old indicators behind. It now opens the indicators menu directly, with AND and OR conditions, as it already did for a constant's attributes.
+- Removing an attribute or color whose condition spans several lines (more than three indicators, or OR conditions) left those extra indicator lines in the source, where they would condition whatever came next. They are now removed with it.
+### Fixed
+- Screen Preview: an input-capable field (usage `I` or `B`) with `EDTCDE()` previewed with no editing at all: no thousands separators, no sign, no date separators and no currency symbol. STRSDA shows it edited, the same as an output field, and so does the preview now. A 13,2 `B` field with `EDTCDE(M)` shows `99999999999,99-` instead of `99999999999,99`, and a 6,2 `B` field shows `9.999,99-` with `EDTCDE(J)`, `9.999,99CR` with `EDTCDE(A)`, `-9.999,99` with `EDTCDE(N)`, `$9.999,99-` with `EDTCDE(J $)` and `99-99-99` with `EDTCDE(Y)`. This undoes a change made in an earlier version, which had it the other way round.
+- Screen Preview: an input-capable field with decimals and `EDTCDE(Z)` showed a decimal point. `EDTCDE(Z)` never shows one: a 6,2 `B` field now previews as `999999`, as in STRSDA.
+
 ## [1.10.0] - 2026-10-02
 ### Added
 - Screen Preview: overlay several records at once ([#89](https://github.com/christianlarsen/dspf-edit/discussions/89)). The **Overlay** dropdown is now a list of checkboxes, with a filter box when the file has more than 8 records, so you can show, for example, a header, a footer and a "no records" format behind the record being previewed. Overlays are drawn dimmed behind it, in source order, each over the ones before it.

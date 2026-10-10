@@ -6,7 +6,8 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from './../dspf-edit.providers/dspf-edit.providers';
-import { findElementInsertionPoint, checkForEditorAndDocument, applyWorkspaceEdit, removeKeywordTextFromLines } from './../dspf-edit.utils/dspf-edit.helper';
+import { findElementInsertionPoint, checkForEditorAndDocument, applyWorkspaceEdit, formatIndicatorCondition } from './../dspf-edit.utils/dspf-edit.helper';
+import { KeywordValue, showKeywordValueMenu, removeKeywordValue, removeWholeKeyword, changeKeywordValueIndicators } from './dspf-edit.conditioned-keywords';
 import { fieldsPerRecords, DdsIndicator } from '../dspf-edit.model/dspf-edit.model';
 
 // INTERFACES AND TYPES
@@ -20,7 +21,10 @@ interface AttributeWithIndicators {
     /** The whole DSPATR() keyword text this attribute was read from — shared by every attribute
      * of a multi-attribute keyword such as DSPATR(UL HI). */
     keywordText?: string;
+    /** The attribute's whole indicator condition spelled out, OR'd groups included. */
+    conditionText?: string;
 };
+
 
 // COMMAND REGISTRATION
 
@@ -62,37 +66,46 @@ async function handleAddAttributeCommand(node: DdsNode): Promise<void> {
         const currentAttributes = getCurrentAttributesForElement(node.ddsElement);
 
         // Get available attributes (excluding current ones)
-        let availableAttributes = getAvailableAttributes(currentAttributes.map(a => a.attribute));
+        const availableAttributes = getAvailableAttributes(currentAttributes.map(a => a.attribute));
 
-        // Show current attributes if any exist
+        // Show a summary menu — one row per attribute the element already has, with its
+        // indicators, changeable/removable individually (see dspf-edit.conditioned-keywords.ts).
         if (currentAttributes.length > 0) {
-            const currentAttributesList = currentAttributes.map(a =>
-                `${a.attribute}${a.indicators.length > 0 ? `(${a.indicators.join(',')})` : ''}`
-            ).join(', ');
+            const elementName = node.ddsElement.name;
+            const values = currentAttributes.map(toKeywordValue);
+            const choice = await showKeywordValueMenu(values, {
+                title: `Attributes for ${elementName}`,
+                placeholder: 'Select an attribute to change its indicators, use its buttons, or add more',
+                addLabel: availableAttributes.length > 0 ? 'Add attributes...' : undefined,
+                removeAllLabel: 'Remove all attributes',
+                describe: code => ATTRIBUTE_NAMES[code] ? `${code} — ${ATTRIBUTE_NAMES[code]}` : code
+            });
+            if (!choice) return;
 
-            const action = await vscode.window.showQuickPick(
-                ['Add more attributes', 'Replace all attributes', 'Remove all attributes'],
-                {
-                    title: `Current attributes: ${currentAttributesList}`,
-                    placeHolder: 'Choose how to manage attributes'
-                }
-            );
-
-            if (!action) return;
-
-            if (action === 'Remove all attributes') {
-                await removeAttributesFromElement(editor, node.ddsElement);
-                return;
-            };
-
-            if (action === 'Replace all attributes') {
+            if (choice.action === 'removeAll') {
                 if (!(await removeAttributesFromElement(editor, node.ddsElement))) {
                     return;
                 };
-                // Continue to add new attributes
-                availableAttributes = getAvailableAttributes([]);
+                await nudgeCursor();
+                vscode.window.showInformationMessage(`Removed all attributes from ${elementName}.`);
+                return;
             };
-            // If "Add more attributes", continue with current logic
+
+            if (choice.action === 'remove') {
+                const existing = values[choice.valueIndex];
+                if (!(await removeKeywordValue(editor, node.ddsElement, existing))) {
+                    return;
+                };
+                await nudgeCursor();
+                vscode.window.showInformationMessage(`Removed attribute ${existing.code} from ${elementName}.`);
+                return;
+            };
+
+            if (choice.action === 'edit') {
+                await changeKeywordValueIndicators(editor, node.ddsElement, values[choice.valueIndex]);
+                return;
+            };
+            // choice.action === 'addNew' falls through to the add flow below
         };
 
         // Collect new attributes to add
@@ -121,6 +134,36 @@ async function handleAddAttributeCommand(node: DdsNode): Promise<void> {
     } catch (error) {
         console.error('Error managing attributes:', error);
         vscode.window.showErrorMessage('An error occurred while managing attributes.');
+    };
+};
+
+// ATTRIBUTES SUMMARY MENU
+
+const ATTRIBUTE_NAMES: Record<string, string> = {
+    HI: 'High intensity',
+    RI: 'Reverse image',
+    CS: 'Column separators',
+    BL: 'Blink',
+    ND: 'Nondisplay',
+    UL: 'Underline',
+    PC: 'Position cursor',
+    PR: 'Protect'
+};
+
+/** Nudges the cursor so the tree and preview pick up the edit, as every command here does. */
+async function nudgeCursor(): Promise<void> {
+    await vscode.commands.executeCommand('cursorRight');
+    await vscode.commands.executeCommand('cursorLeft');
+};
+
+/** An existing attribute, as the shared summary menu and its edits take it. */
+function toKeywordValue(attr: AttributeWithIndicators): KeywordValue {
+    return {
+        code: attr.attribute,
+        keywordText: attr.keywordText ?? `DSPATR(${attr.attribute})`,
+        lineIndex: attr.lineIndex!,
+        lastLineIndex: attr.lastLineIndex ?? attr.lineIndex!,
+        conditionText: attr.conditionText ?? ''
     };
 };
 
@@ -159,7 +202,8 @@ function getCurrentAttributesForElement(element: any): AttributeWithIndicators[]
                     lineIndex: attr.lineIndex,
                     lastLineIndex: attr.lastLineIndex ?? attr.lineIndex,
                     isInlineAttribute: attr.lineIndex === element.lineIndex,
-                    keywordText: attr.value
+                    keywordText: attr.value,
+                    conditionText: formatIndicatorCondition(attr.indicators)
                 });
             };
         };
@@ -522,13 +566,7 @@ async function removeAttributesFromElement(editor: vscode.TextEditor, element: a
         currentAttributes.findIndex(other => other.lineIndex === attr.lineIndex && other.keywordText === attr.keywordText) === index);
 
     for (const attr of keywords.sort((a, b) => b.lineIndex! - a.lineIndex!)) {
-        const lineIndex = attr.lineIndex!;
-        const endLine = attr.lastLineIndex ?? lineIndex;
-        // The element's own definition line (field or constant) must keep its columns 1-44 even if
-        // nothing else is left in its keyword area once this attribute is removed.
-        const preserveFirstLine = lineIndex === element.lineIndex;
-
-        if (!(await removeKeywordTextFromLines(editor, lineIndex, endLine, attr.keywordText ?? `DSPATR(${attr.attribute})`, preserveFirstLine))) {
+        if (!(await removeWholeKeyword(editor, element, toKeywordValue(attr)))) {
             return false;
         };
     };

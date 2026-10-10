@@ -53,7 +53,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
   - Press `Delete`/`Backspace` with one or more fields/constants selected to delete them directly — same confirmation as the "⋮ Actions" menu's Delete.
   - Double-click a dimmed overlay record (a checked overlay, an SFL/SFLCTL header/detail, or a shared window's owner) to switch the preview to it, the same as picking it in the tree. Where several overlap, the one drawn on top wins.
   - Right-click a field or constant to open the "⋮ Actions" menu directly, instead of the browser's native Cut/Copy/Paste menu — selecting it first if it wasn't already selected.
-  - The decimal point and thousands-separator convention used to preview `EDTCDE()`-edited numeric fields — US or European — is configurable from the "⚙ Configuration" panel, either picked manually or fetched with one click from the connected IBM i's `QDECFMT` system value.
+  - The decimal point and thousands-separator convention used to preview `EDTCDE()`-edited numeric fields — US or European — is configurable from the "⚙ Configuration" panel, either picked manually or fetched with one click from the connected IBM i's `QDECFMT` system value. The same click reads the system's user-defined edit codes, `EDTCDE(5)` to `EDTCDE(9)`, so fields using them preview as they look on that system.
 
 ### 📏 Column ruler
   - While editing the source by hand, shows the DDS format line (`.....AAN01N02N03T.Name++++++RLen++TDpBLinPos...`) above the line being edited and outlines each column area, so a value in the wrong columns stands out. Hover an area to see its name.
@@ -162,16 +162,12 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.10.0** - 2026-10-02
-- Added: Screen Preview overlays several records at once ([#89](https://github.com/christianlarsen/dspf-edit/discussions/89)), picked from a checkbox list with a filter for long files. Checked overlays stay checked when switching records in the same file.
-- Added: a subfile's header and detail now appear checked in the Overlay list and always go together, also when checked as an overlay. The record named in `WINDOW(record-name)` is always shown.
-- Added: **Preview Overlay** settings in the Configuration panel to turn off the subfile pairing and keeping overlays when switching records.
-- Added: a column ruler above the line being edited, like vscode-rpgle's for fixed-format RPG ([#94](https://github.com/christianlarsen/dspf-edit/issues/94)). Off by default; `Shift+F4` or the Configuration panel turns it on.
-- Added: the Screen Preview shows a warning icon (⚠) while referenced fields are still waiting to be resolved.
-- Fixed: a field or constant positioned with `+n` after a referenced field now counts from the end of that field, using its real length once resolved ([#97](https://github.com/christianlarsen/dspf-edit/issues/97)).
-- Fixed: the function-key legend now shows keys coded without a text or response indicator (`CF03`, `HELP(83)`), and `ROLLUP`/`ROLLDOWN`.
-- Changed: double-clicking overlapping overlays switches to the one drawn on top.
-- Changed: resolved referenced fields show in their normal color; the orange marker is only for fields still waiting to be resolved.
+**1.11.0** - 2026-10-08
+- Added: the Screen Preview now shows the user-defined edit codes, `EDTCDE(5)` to `EDTCDE(9)`, as STRSDA does. **Fetch from IBM i**, in the Decimal Format section of the Configuration panel, reads their edit descriptions (`QEDIT5` to `QEDIT9`) along with `QDECFMT`.
+- Changed: **Attributes** and **Colors** on a field or constant that already has some now list them with their indicators, with buttons to remove one or change its indicators, instead of the add more / replace all / remove all question. Their indicators can now be up to nine per condition, with several conditions joined with OR.
+- Fixed: removing an attribute or color conditioned over several lines no longer leaves indicator lines behind, and **Indicators** on a field's attribute no longer treats one on its own line as inline.
+- Fixed: an input-capable field (usage `I` or `B`) with `EDTCDE()` now previews edited, the same as an output field: thousands separators, sign, date separators and currency symbol. A 13,2 `B` field with `EDTCDE(M)` shows `99999999999,99-`.
+- Fixed: an input-capable field with decimals and `EDTCDE(Z)` no longer shows a decimal point.
 
 ---
 
