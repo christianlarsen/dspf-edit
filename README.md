@@ -162,7 +162,7 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.11.0** - 2026-10-08
+**1.11.0** - 2026-10-11
 - Added: the Screen Preview now shows the user-defined edit codes, `EDTCDE(5)` to `EDTCDE(9)`, as STRSDA does. **Fetch from IBM i**, in the Decimal Format section of the Configuration panel, reads their edit descriptions (`QEDIT5` to `QEDIT9`) along with `QDECFMT`.
 - Changed: **Attributes** and **Colors** on a field or constant that already has some now list them with their indicators, with buttons to remove one or change its indicators, instead of the add more / replace all / remove all question. Their indicators can now be up to nine per condition, with several conditions joined with OR.
 - Fixed: removing an attribute or color conditioned over several lines no longer leaves indicator lines behind, and **Indicators** on a field's attribute no longer treats one on its own line as inline.

@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
-## [1.11.0] - 2026-10-08
+## [1.11.0] - 2026-10-11
 ### Added
 - Screen Preview: the user-defined edit codes, `EDTCDE(5)` to `EDTCDE(9)`, are now previewed. Their editing is not part of DDS: it lives on each IBM i, in the edit descriptions `QEDIT5` to `QEDIT9`. **Fetch from IBM i**, in the **Decimal Format** section of the Configuration panel, now reads them along with `QDECFMT`, and the message it shows says which codes were read. A field using one of them then shows as STRSDA shows it, for example `9,999.99CR` for a 6,2 field with the IBM-supplied `EDTCDE(5)`. These codes do not follow the decimal format setting, since each edit description has its own decimal point and separators. **Reset to Default** forgets them. Until they are fetched, a field with one of these codes previews with no editing, as before. Tested on IBM i 7.5.
 
