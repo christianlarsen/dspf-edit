@@ -106,6 +106,10 @@ For files with more than one `DSPSIZ` format (e.g. `*DS3`/`*DS4`), switch which 
 
 The decimal point and thousands-separator convention used to preview `EDTCDE()`-edited numeric fields — US or European — is configurable from the **⚙ Configuration** panel, either picked manually or fetched with one click from the connected IBM i's `QDECFMT` system value. See [Configuration](/dspf-edit/guides/configuration/).
 
+An `EDTCDE()` shows the same on an input-capable field (usage `I` or `B`) as on an output one, as in STRSDA: a 6,2 field with `EDTCDE(J)` previews as `9.999,99-` either way (European convention).
+
+The user-defined edit codes, `EDTCDE(5)` to `EDTCDE(9)`, are previewed once their definitions have been fetched from the IBM i — see [User-defined edit codes](/dspf-edit/guides/configuration/#user-defined-edit-codes).
+
 ## Time fields
 
 A `T` (time) field previews with its digit positions and separator laid out per its `TIMFMT()`/`TIMSEP()` — `*HMS`'s separator can be overridden by `TIMSEP()` (defaulting to `:`), while `*ISO` (the default when `TIMFMT()` isn't coded), `*USA`, `*EUR`, and `*JIS` each use their own fixed one. `*USA`'s trailing AM/PM half has no real value to preview, so it previews as ordinary placeholder digits rather than guessing which.

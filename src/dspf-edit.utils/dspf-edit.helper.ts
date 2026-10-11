@@ -1056,6 +1056,33 @@ export async function removeKeywordTextFromLines(
 };
 
 /**
+ * Replaces one keyword's own text with another (e.g. "DSPATR(UL HI)" with "DSPATR(UL)") in the DDS
+ * keyword area of the line(s) it occupies, with the same continuation-aware, sibling-preserving
+ * re-pagination as removeKeywordTextFromLines.
+ * @param editor - The active text editor
+ * @param lineIndex - The keyword's own first line
+ * @param lastLineIndex - The keyword's own last line (equal to lineIndex when it doesn't continue)
+ * @param value - The keyword's own text, exactly as parsed
+ * @param newValue - The text to put in its place
+ */
+export async function replaceKeywordTextInLines(
+    editor: vscode.TextEditor,
+    lineIndex: number,
+    lastLineIndex: number,
+    value: string,
+    newValue: string
+): Promise<boolean> {
+    return rewriteKeywordArea(editor, lineIndex, lastLineIndex, true, joined => {
+        const start = joined.indexOf(value);
+        if (start === -1) {
+            vscode.window.showErrorMessage(`Could not locate the attribute's text on its source line(s).`);
+            return null;
+        };
+        return joined.slice(0, start) + newValue + joined.slice(start + value.length);
+    });
+};
+
+/**
  * Removes every match of any of `patterns` (e.g. EDTCDE()/EDTWRD()/EDTMSK() at once) from the DDS
  * keyword area of the line(s) it occupies, with the same continuation-aware, sibling-preserving
  * re-pagination as removeKeywordTextFromLines — used where several *kinds* of keyword need removing

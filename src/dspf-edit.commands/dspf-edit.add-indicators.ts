@@ -106,80 +106,123 @@ async function handleAddIndicatorsCommand(node: DdsNode): Promise<void> {
             };
         };
 
-        const elementName = elementDisplayName(node.ddsElement);
-
-        // Read the element's full condition: every OR'd AND-group, including continuation lines
-        const { groups } = findIndicatorConditionBlock(editor, node.ddsElement.lineIndex);
-
-        // Show a summary menu — one row per existing OR'd condition, editable/removable
-        // individually — instead of the old flat "Add AND/Add OR/Modify/Remove a group/Replace
-        // all/Remove all" 6-choice picker.
-        if (groups.length > 0) {
-            const choice = await showIndicatorMenu(buildIndicatorMenuItems(groups), elementName);
-            if (!choice) return;
-
-            if (choice.action === 'removeAll') {
-                if (!(await applyGroupsToElement(editor, node.ddsElement, []))) {
-                    return;
-                };
-                await refreshEditorView();
-                vscode.window.showInformationMessage(`Removed all indicators from ${elementName}.`);
-                return;
-            };
-
-            if (choice.action === 'remove') {
-                const remaining = groups.filter((_, i) => i !== choice.groupIndex);
-                if (!(await applyGroupsToElement(editor, node.ddsElement, remaining))) {
-                    return;
-                };
-                await refreshEditorView();
-                vscode.window.showInformationMessage(`Removed OR condition from ${elementName}.`);
-                return;
-            };
-
-            if (choice.action === 'edit') {
-                if (!(await modifyGroup(editor, node.ddsElement, groups, choice.groupIndex))) {
-                    return;
-                };
-                await refreshEditorView();
-                return;
-            };
-
-            // choice.action === 'addOr'
-            if (groups.length >= MAX_OR_CONDITIONS) {
-                vscode.window.showWarningMessage(`Maximum of ${MAX_OR_CONDITIONS} OR'd conditions reached (DDS limit).`);
-                return;
-            };
-            const newGroup = await collectIndicatorsFromUser(MAX_AND_INDICATORS);
-            if (newGroup.length === 0) {
-                vscode.window.showInformationMessage('No indicators selected.');
-                return;
-            };
-            if (!(await applyGroupsToElement(editor, node.ddsElement, [...groups, newGroup]))) {
-                return;
-            };
-            await refreshEditorView();
-            vscode.window.showInformationMessage(`Added OR condition (${formatIndicatorsSummary(newGroup)}) to ${elementName}.`);
-            return;
-        };
-
-        // No condition yet: collect a single fresh AND group.
-        const newGroup = await collectIndicatorsFromUser(MAX_AND_INDICATORS);
-        if (newGroup.length === 0) {
-            vscode.window.showInformationMessage('No indicators selected.');
-            return;
-        };
-
-        if (!(await applyGroupsToElement(editor, node.ddsElement, [newGroup]))) {
-            return;
-        };
-        await refreshEditorView();
-        vscode.window.showInformationMessage(`Set indicators (${formatIndicatorsSummary(newGroup)}) for ${elementName}.`);
+        await manageLineCondition(editor, node.ddsElement, elementDisplayName(node.ddsElement));
 
     } catch (error) {
         console.error('Error managing indicators:', error);
         vscode.window.showErrorMessage('An error occurred while managing indicators.');
     };
+};
+
+/**
+ * Shows and applies the indicator condition of whatever sits on `element.lineIndex` — a field, a
+ * constant, or a keyword on a line of its own — as OR'd AND-groups: a summary menu when it already
+ * has a condition, or a fresh AND-group when it has none. Also what the Attributes and Colors menus
+ * use to change one attribute's indicators (see dspf-edit.conditioned-keywords.ts).
+ * @param editor - The active text editor
+ * @param element - The element or keyword; only its `lineIndex` is used
+ * @param elementName - How to name it in the menu's title and in messages
+ */
+export async function manageLineCondition(editor: vscode.TextEditor, element: { lineIndex: number }, elementName: string): Promise<void> {
+    // Read the element's full condition: every OR'd AND-group, including continuation lines
+    const { groups } = findIndicatorConditionBlock(editor, element.lineIndex);
+
+    // Show a summary menu — one row per existing OR'd condition, editable/removable
+    // individually — instead of the old flat "Add AND/Add OR/Modify/Remove a group/Replace
+    // all/Remove all" 6-choice picker.
+    if (groups.length > 0) {
+        const choice = await showIndicatorMenu(buildIndicatorMenuItems(groups), elementName);
+        if (!choice) return;
+
+        if (choice.action === 'removeAll') {
+            if (!(await applyGroupsToElement(editor, element, []))) {
+                return;
+            };
+            await refreshEditorView();
+            vscode.window.showInformationMessage(`Removed all indicators from ${elementName}.`);
+            return;
+        };
+
+        if (choice.action === 'remove') {
+            const remaining = groups.filter((_, i) => i !== choice.groupIndex);
+            if (!(await applyGroupsToElement(editor, element, remaining))) {
+                return;
+            };
+            await refreshEditorView();
+            vscode.window.showInformationMessage(`Removed OR condition from ${elementName}.`);
+            return;
+        };
+
+        if (choice.action === 'edit') {
+            if (!(await modifyGroup(editor, element, groups, choice.groupIndex))) {
+                return;
+            };
+            await refreshEditorView();
+            return;
+        };
+
+        // choice.action === 'addOr'
+        if (groups.length >= MAX_OR_CONDITIONS) {
+            vscode.window.showWarningMessage(`Maximum of ${MAX_OR_CONDITIONS} OR'd conditions reached (DDS limit).`);
+            return;
+        };
+        const newGroup = await collectIndicatorsFromUser(MAX_AND_INDICATORS);
+        if (newGroup.length === 0) {
+            vscode.window.showInformationMessage('No indicators selected.');
+            return;
+        };
+        if (!(await applyGroupsToElement(editor, element, [...groups, newGroup]))) {
+            return;
+        };
+        await refreshEditorView();
+        vscode.window.showInformationMessage(`Added OR condition (${formatIndicatorsSummary(newGroup)}) to ${elementName}.`);
+        return;
+    };
+
+    // No condition yet: collect a single fresh AND group.
+    const newGroup = await collectIndicatorsFromUser(MAX_AND_INDICATORS);
+    if (newGroup.length === 0) {
+        vscode.window.showInformationMessage('No indicators selected.');
+        return;
+    };
+
+    if (!(await applyGroupsToElement(editor, element, [newGroup]))) {
+        return;
+    };
+    await refreshEditorView();
+    vscode.window.showInformationMessage(`Set indicators (${formatIndicatorsSummary(newGroup)}) for ${elementName}.`);
+};
+
+/**
+ * Copies the whole indicator condition of one line onto another line that has none — its own
+ * indicators and marker, plus every continuation line above it.
+ * @param editor - The active text editor
+ * @param fromLineIndex - The line whose condition is copied
+ * @param toLineIndex - The line receiving it
+ * @returns The receiving line's index once its continuation lines are above it, or undefined if
+ * the edit couldn't be applied
+ */
+export async function copyLineCondition(editor: vscode.TextEditor, fromLineIndex: number, toLineIndex: number): Promise<number | undefined> {
+    const { groups } = findIndicatorConditionBlock(editor, fromLineIndex);
+    if (groups.length === 0) {
+        return toLineIndex;
+    };
+    if (!(await applyGroupsToElement(editor, { lineIndex: toLineIndex }, groups))) {
+        return undefined;
+    };
+    return toLineIndex + flattenGroupsIntoLineSpecs(groups).length - 1;
+};
+
+/**
+ * Removes a line's whole indicator condition, continuation lines included.
+ * @returns The line's index once those lines are gone, or undefined if the edit couldn't be applied
+ */
+export async function removeLineCondition(editor: vscode.TextEditor, lineIndex: number): Promise<number | undefined> {
+    const { startLine, groups } = findIndicatorConditionBlock(editor, lineIndex);
+    if (groups.length === 0) {
+        return lineIndex;
+    };
+    return (await applyGroupsToElement(editor, { lineIndex }, [])) ? startLine : undefined;
 };
 
 // SMALL SHARED HELPERS
@@ -284,8 +327,10 @@ function getInlineAttributeInfo(editor: vscode.TextEditor, element: any): Inline
     const fieldLine = editor.document.lineAt(fieldLineIndex);
     const fieldLineText = fieldLine.text;
 
-    // Check if there's an attribute at position 44+
-    if (fieldLineText.length > 44) {
+    // Inline means the attribute shares the field's own definition line — a line that also carries
+    // a name or a position. An attribute on a line of its own has nothing before column 45 but
+    // its indicators, and is conditioned right there like any other keyword.
+    if (fieldLineText.length > 44 && fieldLineText.substring(18, 44).trim() !== '') {
         const attributePart = fieldLineText.substring(44).trim();
         if (/\b(DSPATR|COLOR)\(/i.test(attributePart)) {
             return {

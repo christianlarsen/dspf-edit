@@ -9,7 +9,8 @@ import { PREVIEW_COLOR_SETTINGS, readColorSetting, resetPreviewColors, setPrevie
 import { DECIMAL_FORMAT_OPTIONS, DecimalFormat, getDecimalFormat, resetDecimalFormat, setDecimalFormat } from '../dspf-edit.utils/dspf-edit.decimal-format';
 import { DATE_SEPARATOR_OPTIONS, DateSeparatorFormat, getDateSeparatorFormat, resetDateSeparatorFormat, setDateSeparatorFormat } from '../dspf-edit.utils/dspf-edit.date-format';
 import { getOverlaySubfilePair, setOverlaySubfilePair, getOverlayKeepOnSwitch, setOverlayKeepOnSwitch } from '../dspf-edit.utils/dspf-edit.overlay-settings';
-import { resolveDecimalFormatFromSystem, resolveDateSeparatorFormatFromSystem } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
+import { resolveDecimalFormatFromSystem, resolveDateSeparatorFormatFromSystem, resolveUserEditDescriptionsFromSystem } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
+import { resetUserEditDescriptions, setUserEditDescriptions } from '../dspf-edit.utils/dspf-edit.user-edit-codes';
 import { RecordPreviewPanel } from './dspf-edit.record-preview-panel';
 import { getColumnRulerEnabled, setColumnRulerEnabled } from '../dspf-edit.utils/dspf-edit.column-ruler-settings';
 import { refreshColumnRuler } from '../dspf-edit.listeners/dspf-edit.column-ruler';
@@ -113,7 +114,10 @@ export class PreviewColorsPanel {
                 RecordPreviewPanel.refreshTheme();
                 break;
             case 'resetDecimalFormat': {
-                const changed = await resetDecimalFormat();
+                const formatChanged = await resetDecimalFormat();
+                // The user-defined edit codes come and go with the decimal format they're fetched with.
+                const editCodesChanged = await resetUserEditDescriptions();
+                const changed = formatChanged || editCodesChanged;
                 this.updateDecimalFormatRadio();
                 RecordPreviewPanel.refreshTheme();
                 vscode.window.showInformationMessage(
@@ -128,8 +132,21 @@ export class PreviewColorsPanel {
                     const format = await resolveDecimalFormatFromSystem();
                     await setDecimalFormat(format);
                     this.updateDecimalFormatRadio();
+                    // The user-defined edit codes (5-9) are read in the same go: their editing only
+                    // exists on the IBM i. Failing to read them doesn't undo the decimal format.
+                    let editCodes: string;
+                    try {
+                        const descriptions = await resolveUserEditDescriptionsFromSystem();
+                        await setUserEditDescriptions(descriptions);
+                        const codes = Object.keys(descriptions);
+                        editCodes = codes.length > 0
+                            ? `user-defined edit codes ${codes.join(', ')} read (QEDIT5-QEDIT9)`
+                            : 'no user-defined edit codes (QEDIT5-QEDIT9) could be read';
+                    } catch (error) {
+                        editCodes = `user-defined edit codes not read: ${error instanceof Error ? error.message : 'unknown error'}`;
+                    };
                     RecordPreviewPanel.refreshTheme();
-                    vscode.window.showInformationMessage(`DSPF Edit: decimal format set to '${format}' from the connected IBM i (QDECFMT).`);
+                    vscode.window.showInformationMessage(`DSPF Edit: decimal format set to '${format}' from the connected IBM i (QDECFMT); ${editCodes}.`);
                 } catch (error) {
                     vscode.window.showErrorMessage(error instanceof Error ? error.message : 'Could not read QDECFMT from the connected IBM i.');
                 };
@@ -298,7 +315,7 @@ ${rows}
 <hr class="section">
 
 <h2>Decimal Format</h2>
-<p class="hint">Decimal point and thousands separator used when previewing EDTCDE()-edited numeric fields.</p>
+<p class="hint">Decimal point and thousands separator used when previewing EDTCDE()-edited numeric fields. "Fetch from IBM i" also reads the user-defined edit codes (EDTCDE(5) to EDTCDE(9)), which only exist on the IBM i.</p>
 ${decimalFormatRows}
 <div class="row" style="gap: 8px; margin-top: 8px;">
     <button id="fetchDecimalFormat" class="btn-secondary" style="margin-top: 0;">Fetch from IBM i</button>

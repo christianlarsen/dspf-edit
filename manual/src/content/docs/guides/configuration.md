@@ -14,6 +14,17 @@ You can either:
 
 This only affects how numeric fields are *rendered in the preview* — it doesn't change the DDS source.
 
+### User-defined edit codes
+
+`EDTCDE(5)` to `EDTCDE(9)` are user-defined edit codes. What they do is not part of DDS: each IBM i holds its own definition of them, in the edit descriptions `QEDIT5` to `QEDIT9`, and an installation can change them. The extension can only know how they look by asking the system.
+
+**Fetch from IBM i** reads them in the same click as `QDECFMT`. The message shown afterwards says which codes were read. From then on, a field using one of them previews as STRSDA shows it, for example `9,999.99CR` for a 6,2 field with the IBM-supplied `EDTCDE(5)`.
+
+- These codes ignore the decimal convention chosen above. Each edit description carries its own decimal point and separators.
+- **Reset to Default** forgets the edit descriptions that were read, along with resetting the decimal convention.
+- Until they are fetched, or if a code could not be read, a field using it previews with no editing.
+- What was read belongs to the system it was read from. After connecting to a different IBM i, fetch again.
+
 ## Preview overlay
 
 Two settings in the **Preview Overlay** section of the **⚙ Configuration** panel control the [Overlay](/dspf-edit/guides/screen-preview/#overlay) list of the Screen Preview. Both are on by default, and changes save immediately.

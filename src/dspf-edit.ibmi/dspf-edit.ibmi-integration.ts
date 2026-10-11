@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import { DdsAttribute, DdsElement, DdsField, RefOverrides, attributesFileLevel, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
 import { DecimalFormat } from '../dspf-edit.utils/dspf-edit.decimal-format';
 import { DateSeparatorFormat } from '../dspf-edit.utils/dspf-edit.date-format';
+import { USER_EDIT_CODES, UserEditDescription, UserEditDescriptions } from '../dspf-edit.utils/dspf-edit.user-edit-codes';
 
 /**
  * Isolated from the rest of the extension on purpose: this is the only file that knows about the
@@ -24,6 +25,8 @@ const CODE_FOR_IBMI_EXTENSION_ID = 'halcyontechltd.code-for-ibmi';
 /** The slice of Code for i's `IBMi` connection this module actually calls. */
 interface MinimalIBMiConnection {
     runSQL(statements: string | string[], options?: { bindings?: (string | number | null)[] }): Promise<Record<string, string | number | null>[]>;
+    /** Runs a command in the connection's PASE shell. */
+    sendCommand?(options: { command: string }): Promise<{ code: number | null; stdout: string; stderr: string }>;
     /** The connection's own settings — only its library list is read here. */
     getConfig?(): { currentLibrary?: string; libraryList?: string[] } | undefined;
 };
@@ -396,4 +399,75 @@ export async function resolveDateSeparatorFormatFromSystem(): Promise<DateSepara
         throw new Error(`Unrecognized QDATSEP value '${raw}' on the connected IBM i.`);
     };
     return mapped;
+};
+
+/** Width of the keyword column in DSPEDTD's listing: the value starts this far after the keyword does. */
+const EDTD_LISTING_KEYWORD_WIDTH = 12;
+
+/**
+ * Parses the listing DSPEDTD prints for one edit description. Each line reads
+ * "label . . . :   KEYWORD     value" — e.g. "Integer mask . . . :   INTMASK     '   ,   ,  0'" —
+ * where the label is in the system's own language but the keyword is always the CRTEDTD parameter
+ * name, so values are picked by keyword. A value comes quoted when it's a character string (a mask,
+ * the status characters, the constants) and bare otherwise (the edit code, the decimal point).
+ * Returns undefined when the listing isn't for the edit code asked for.
+ * @param listing - DSPEDTD's printed output
+ * @param code - The edit code the listing should describe ('5'-'9')
+ */
+export function parseEditDescriptionListing(listing: string, code: string): UserEditDescription | undefined {
+    const values = new Map<string, string>();
+    for (const line of listing.split(/\r?\n/)) {
+        const match = line.match(/\s:\s+((EDTD|INTMASK|DECPNT|FRACMASK|CURSYM|NEGSTS|POSSTS|LFTCNS|RGTCNS)\b.*)$/);
+        if (!match || values.has(match[2])) {
+            continue;
+        };
+        const raw = match[1].slice(EDTD_LISTING_KEYWORD_WIDTH).replace(/\s+$/, '');
+        const quoted = raw.match(/^'(.*)'$/)?.[1];
+        values.set(match[2], quoted !== undefined ? quoted.replace(/''/g, "'") : raw.trim());
+    };
+
+    if (values.get('EDTD') !== code) {
+        return undefined;
+    };
+
+    const mask = (keyword: string) => {
+        const value = values.get(keyword);
+        return value === undefined || value.trim().toUpperCase() === '*NONE' ? null : value;
+    };
+    return {
+        integerMask: mask('INTMASK'),
+        decimalPoint: values.get('DECPNT') ?? '',
+        fractionMask: mask('FRACMASK'),
+        currencySymbol: values.get('CURSYM') ?? '',
+        negativeStatus: values.get('NEGSTS') ?? '',
+        positiveStatus: values.get('POSSTS') ?? '',
+        leftConstant: values.get('LFTCNS') ?? '',
+        rightConstant: values.get('RGTCNS') ?? ''
+    };
+};
+
+/**
+ * Reads the connected IBM i's user-defined edit descriptions (QEDIT5-QEDIT9, i.e. EDTCDE(5)-
+ * EDTCDE(9)) by running DSPEDTD for each one — there's no SQL service exposing them. A code whose
+ * edit description doesn't exist on the system, or whose listing can't be read, is just left out.
+ * Throws when there's no connection or it can't run commands — callers show it to the user.
+ */
+export async function resolveUserEditDescriptionsFromSystem(): Promise<UserEditDescriptions> {
+    const connection = getIBMiConnection();
+    if (!connection) {
+        throw new Error('No active IBM i connection. Connect via the Code for i extension first.');
+    };
+    if (!connection.sendCommand) {
+        throw new Error('The connected Code for i version cannot run the DSPEDTD command.');
+    };
+
+    const descriptions: UserEditDescriptions = {};
+    for (const code of USER_EDIT_CODES) {
+        const result = await connection.sendCommand({ command: `system "DSPEDTD EDTD(${code})"` });
+        const description = result.code === 0 ? parseEditDescriptionListing(result.stdout, code) : undefined;
+        if (description) {
+            descriptions[code] = description;
+        };
+    };
+    return descriptions;
 };

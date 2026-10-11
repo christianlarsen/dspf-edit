@@ -10,6 +10,7 @@ import { checkForEditorAndDocument, updateTreeProvider, applyWorkspaceEdit, appl
 import { getBackgroundColor, getDdsColorMap, getReferencedFieldColor } from '../dspf-edit.utils/dspf-edit.preview-colors';
 import { getDecimalSeparators } from '../dspf-edit.utils/dspf-edit.decimal-format';
 import { getDateSeparator } from '../dspf-edit.utils/dspf-edit.date-format';
+import { UserEditDescription, getUserEditDescription } from '../dspf-edit.utils/dspf-edit.user-edit-codes';
 import { getOverlaySubfilePair, getOverlayKeepOnSwitch } from '../dspf-edit.utils/dspf-edit.overlay-settings';
 import { DdsTreeProvider, DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { ExtensionState } from '../dspf-edit.states/state';
@@ -264,7 +265,8 @@ const EDIT_CODE_INFO: Record<string, { comma: boolean; sign: '' | '-' | 'CR'; si
 /**
  * Extracts a field's EDTCDE() code, if it carries one. Recognizes every IBM i edit code: 1-4, A-D,
  * J-Q (the comma/decimal/sign codes), W and Y (the date-slash codes), and X and Z (see
- * getEditingMask for their masks, confirmed against real STRSDA).
+ * getEditingMask for their masks, confirmed against real STRSDA) — plus the user-defined ones, 5-9
+ * (see getUserEditCodeMask).
  * @param attributes - The element's DDS attributes
  */
 function getEditCode(attributes: AttributeWithIndicators[] | undefined): string | null {
@@ -273,7 +275,7 @@ function getEditCode(attributes: AttributeWithIndicators[] | undefined): string 
         return null;
     };
 
-    return attr.value.match(/^EDTCDE\(\s*([1-4A-DJ-QWXYZ])/i)?.[1]?.toUpperCase() ?? null;
+    return attr.value.match(/^EDTCDE\(\s*([1-9A-DJ-QWXYZ])/i)?.[1]?.toUpperCase() ?? null;
 };
 
 /**
@@ -389,6 +391,61 @@ function getEditCodeMask(length: number, decimals: number, code: string): string
         mask += decimal + ' '.repeat(decimals);
     };
     mask = info.signLeading ? info.sign + mask : mask + info.sign;
+
+    return mask;
+};
+
+/** A literal blank inside a mask — a plain space there would mean "digit position" instead. */
+const MASK_LITERAL_BLANK = '\u00a0';
+
+/**
+ * Cuts a CRTEDTD integer or fraction mask down to the given number of digit positions, keeping the
+ * insert characters between them: an integer mask is consumed from its right end (so only the
+ * separators that fall between the field's own digits survive), a fraction mask from its left. In
+ * these masks a blank or a '0' is a digit position ('0' only marks where zero suppression stops,
+ * which a placeholder preview doesn't simulate), '&' is a literal blank and anything else is
+ * inserted as is. A field with more digits than the mask covers just gets plain digits beyond it.
+ * @param mask - The mask as defined in the edit description, null for *NONE
+ * @param digits - How many digit positions the field has on this side of the decimal point
+ * @param fromRight - True for an integer mask, false for a fraction mask
+ */
+function fitUserEditMask(mask: string | null, digits: number, fromRight: boolean): string {
+    const chars = (mask ?? '').split('');
+    const ordered = fromRight ? chars.reverse() : chars;
+    const fitted: string[] = [];
+    let remaining = digits;
+    for (const ch of ordered) {
+        if (remaining === 0) {
+            break;
+        };
+        const isDigit = ch === ' ' || ch === '0';
+        fitted.push(isDigit ? ' ' : ch === '&' ? MASK_LITERAL_BLANK : ch);
+        remaining -= isDigit ? 1 : 0;
+    };
+    fitted.push(...' '.repeat(remaining));
+
+    return (fromRight ? fitted.reverse() : fitted).join('');
+};
+
+/**
+ * Builds an EDTWRD-mask-shaped string for a field carrying a user-defined edit code, EDTCDE(5)
+ * through EDTCDE(9), from its edit description as fetched from the IBM i. Unlike the IBM i edit
+ * codes, these ignore QDECFMT: confirmed against real STRSDA, a 6,2 field with the IBM-supplied
+ * QEDIT5 shows "9,999.99CR" on a system where EDTCDE(A) shows "9.999,99CR".
+ * @param length - The field's digit length
+ * @param decimals - The field's decimal positions
+ * @param description - The edit description for this field's edit code
+ */
+function getUserEditCodeMask(length: number, decimals: number, description: UserEditDescription): string {
+    const literal = (text: string) => text.replace(/ /g, MASK_LITERAL_BLANK);
+    const statusWidth = Math.max(description.negativeStatus.length, description.positiveStatus.length);
+
+    let mask = literal(description.leftConstant) + literal(description.currencySymbol);
+    mask += fitUserEditMask(description.integerMask, Math.max(length - decimals, 1), true);
+    if (decimals > 0) {
+        mask += literal(description.decimalPoint) + fitUserEditMask(description.fractionMask, decimals, false);
+    };
+    mask += literal(description.negativeStatus.padEnd(statusWidth, ' ')) + literal(description.rightConstant);
 
     return mask;
 };
@@ -514,26 +571,28 @@ function getEditingMask(attributes: AttributeWithIndicators[] | undefined, type:
 
     const code = getEditCode(attributes);
     if (code) {
-        // Confirmed against real STRSDA: an EDTCDE's comma/sign/date-slash/currency decoration only
-        // ever shows on an output field — an input-capable (I/B) field always previews exactly as if
-        // it carried no EDTCDE at all, under the Y (numeric-only) shift EDTCDE forces on a blank
-        // Type (a decimal point reserved only when it actually has decimals; see
-        // getUneditedNumericMask). This holds for every code, including W/Y/X/Z.
-        const usageCode = (usage || '').trim().toUpperCase() || 'O';
-        if (usageCode === 'I' || usageCode === 'B') {
-            return getUneditedNumericMask('Y', usage, length, rawDecimals);
-        };
-
+        // Confirmed against real STRSDA: an EDTCDE previews the same on an input-capable (I/B)
+        // field as on an output one — a 6,2 B field shows "9.999,99" with EDTCDE(1), "9.999,99-"
+        // with EDTCDE(J), "9.999,99CR" with EDTCDE(A), "-9.999,99" with EDTCDE(N), "$9.999,99-"
+        // with EDTCDE(J $) and "99-99-99" with EDTCDE(Y).
         if (code === 'W' || code === 'Y') {
             return getDateEditCodeMask(length, code);
         };
-        // X's own output display is identical to an unedited field (no comma/sign, ever) — it only
-        // ever mattered for forcing the Y shift above. Z's own output display, confirmed against
-        // real STRSDA, has no comma or decimal point regardless of decimals (unlike every other
-        // code) and reserves no extra position either — it only changes the field's stored sign
-        // representation (hex F), never its display.
+        // Z adds no comma, sign or decimal point regardless of decimals or usage — confirmed
+        // against real STRSDA: a 6,2 field shows "666666" as output and "999999" as B. X is treated
+        // the same way; STRSDA itself rejects it as a nonexistent code, so there's nothing to
+        // mirror there.
         if (code === 'X' || code === 'Z') {
             return null;
+        };
+
+        // A user-defined code's editing only exists as an object on the IBM i (QEDIT5-QEDIT9), so
+        // until it's been fetched from there the field previews as unedited, under the Y shift.
+        if (/[5-9]/.test(code)) {
+            const description = getUserEditDescription(code);
+            return description
+                ? getUserEditCodeMask(length, decimals, description)
+                : getUneditedNumericMask('Y', usage, length, rawDecimals);
         };
 
         const baseMask = getEditCodeMask(length, decimals, code);
