@@ -38,7 +38,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
   - Drag fields/constants to reposition them directly on the preview.
   - "+ Field" / "+ Constant" buttons: click, then click a point on the screen to place a new field/constant there, using the same prompts as the tree's "Add field"/"Add constant" commands.
   - WINDOW records are drawn at their real screen position and can be resized/moved with the mouse; shows WDWTITLE if present. Supports windows shared via WINDOW(record-name).
-  - Click a window's title to edit it, or use its "⋮" actions menu / one-click "center horizontally" icon — all shown only while hovering over the window.
+  - Click a window's title to edit it, or use its "⋮" actions menu / one-click "center horizontally" icon — all shown only while hovering over the window. The "⋮" menu's "Align..." places the window left, center or right, and top, center or bottom on the screen.
   - Subfile (SFL/SFLCTL) records show all SFLPAG rows, together with their paired header/detail record; detail rows can't be dragged up over the header's own content.
   - Overlay any number of other records (dimmed) behind the one being previewed, picked from a checkbox list, to see how they compose. A subfile's header and detail always come together, and the record named in `WINDOW(record-name)` is always shown. Both that pairing and keeping the checked overlays when switching records can be turned off from the "⚙ Configuration" panel.
   - Simulate indicators on/off to preview conditional fields, constants, and attributes.
@@ -49,7 +49,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
   - The "Indicators" toggle and the selected display format persist when switching which record is previewed in the same panel.
   - Stays in sync with the schema tree selection in both directions.
   - "Focus" maximizes the preview so it fills the editing area, hiding the DDS source editor beside it; "Show code" brings the source back.
-  - Select a field or constant (or several, with Ctrl/Cmd+click) to get a "⋮ Actions" menu: add color/attribute, copy, or delete — applied to every selected element at once for a multi-selection. A single selected field or constant also gets Rename.../Edit Text..., Indicators..., and — for fields — Validity Checks..., Editing Keywords..., and Error Messages..., the same commands the tree's context menu offers, so most of what you'd do from the tree is also reachable straight from the preview.
+  - Select a field or constant (or several, with Ctrl/Cmd+click) to get a "⋮ Actions" menu: add color/attribute, copy, or delete — applied to every selected element at once for a multi-selection. A multi-selection can also be aligned left, center or right, each element keeping its own row. A single selected field or constant also gets Rename.../Edit Text..., Indicators..., and — for fields — Validity Checks..., Editing Keywords..., and Error Messages..., the same commands the tree's context menu offers, so most of what you'd do from the tree is also reachable straight from the preview.
   - Press `Delete`/`Backspace` with one or more fields/constants selected to delete them directly — same confirmation as the "⋮ Actions" menu's Delete.
   - Double-click a dimmed overlay record (a checked overlay, an SFL/SFLCTL header/detail, or a shared window's owner) to switch the preview to it, the same as picking it in the tree. Where several overlap, the one drawn on top wins.
   - Right-click a field or constant to open the "⋮ Actions" menu directly, instead of the browser's native Cut/Copy/Paste menu — selecting it first if it wasn't already selected.
@@ -162,12 +162,10 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.11.0** - 2026-10-11
-- Added: the Screen Preview now shows the user-defined edit codes, `EDTCDE(5)` to `EDTCDE(9)`, as STRSDA does. **Fetch from IBM i**, in the Decimal Format section of the Configuration panel, reads their edit descriptions (`QEDIT5` to `QEDIT9`) along with `QDECFMT`.
-- Changed: **Attributes** and **Colors** on a field or constant that already has some now list them with their indicators, with buttons to remove one or change its indicators, instead of the add more / replace all / remove all question. Their indicators can now be up to nine per condition, with several conditions joined with OR.
-- Fixed: removing an attribute or color conditioned over several lines no longer leaves indicator lines behind, and **Indicators** on a field's attribute no longer treats one on its own line as inline.
-- Fixed: an input-capable field (usage `I` or `B`) with `EDTCDE()` now previews edited, the same as an output field: thousands separators, sign, date separators and currency symbol. A 13,2 `B` field with `EDTCDE(M)` shows `99999999999,99-`.
-- Fixed: an input-capable field with decimals and `EDTCDE(Z)` no longer shows a decimal point.
+**1.12.0** - 2026-10-17
+- Added: align several selected fields and constants from the Screen Preview. With more than one selected, **⋮ Actions** has **Align...**: **Left**, **Center** or **Right**, within the columns they already cover between them. Each element keeps its own row.
+- Added: align a window on the screen. The window's **⋮** menu has **Align...**: horizontally (left, center or right) or vertically (top, center or bottom), keeping its size and its position on the other axis.
+- Fixed: **center horizontally** on a window now counts its border, and leaves the same space on both sides. Before, it was 2 columns right of center.
 
 ---
 

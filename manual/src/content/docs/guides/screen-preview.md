@@ -33,6 +33,7 @@ Click **+ Field** or **+ Constant**, then click a point on the screen to place t
 Select a field or constant — or several, with `Ctrl`/`Cmd`+click — to get a **⋮ Actions** menu:
 
 - **Add color/attribute**, **Copy**, or **Delete** — applied to every selected element at once when multiple are selected.
+- With **more than one** selected, **Align...** lines them up — see [Aligning a selection](#aligning-a-selection) below.
 - A **single** selected field or constant additionally gets **Rename.../Edit Text...**, **Indicators...**, and (for fields) **Validity Checks...**, **Editing Keywords...**, and **Error Messages...** — the same commands available from the tree's context menu, so most of what you'd do from the tree is also reachable straight from the preview.
 
 ![Multi-select actions menu in the preview](/dspf-edit/screenshots/captura6.png)
@@ -40,6 +41,23 @@ Select a field or constant — or several, with `Ctrl`/`Cmd`+click — to get a 
 With a selection active, pressing `Delete` or `Backspace` deletes it directly — same confirmation dialog as the menu's own **Delete**, without having to open the menu first.
 
 Right-clicking a field or constant opens this same **⋮ Actions** menu directly, instead of the browser's native context menu — selecting it first (replacing the current selection) if it wasn't already selected; right-clicking one that's already part of a multi-selection keeps the whole group.
+
+### Aligning a selection
+
+With two or more fields/constants selected, choose **Align...** in the **⋮ Actions** menu, and then **Left**, **Center** or **Right**. The elements are lined up within the columns they already cover between them, from the leftmost column where one of them starts to the rightmost column where one of them ends:
+
+- **Left** starts every element on that leftmost column.
+- **Right** ends every element on that rightmost column.
+- **Center** centers each element between those two columns. When the space left over is odd, the extra column goes to the right.
+
+Only columns change: each element stays on its own row. Since nothing is moved outside the columns the selection already covers, nothing can end up off the screen or outside its window. The whole alignment is a single undo step, the same as dragging the selection.
+
+For example, three 4-character constants starting at columns 4, 2 and 3 cover columns 2 to 7. **Left** starts all three at column 2, **Right** at column 4, and **Center** at column 3.
+
+Alignment isn't done, and a message says why, when:
+
+- Two of the selected elements are on the same row, since one would end up on top of the other.
+- **Center** or **Right** is chosen and one of them is a [referenced field](/dspf-edit/guides/referenced-fields/) whose real length isn't known yet. The preview shows it as a 1-character marker, so where it ends would be a guess. **Left** still works.
 
 ## Simulating indicators
 
@@ -72,7 +90,7 @@ Both the subfile pairing and keeping overlays when switching records can be turn
 `WINDOW` records are drawn at their real screen position and can be resized/moved directly with the mouse. The window's `WDWTITLE` is shown if present, including a second title on the bottom border (`*BOTTOM`). Windows shared via `WINDOW(record-name)` are supported.
 
 - Click a window's title to edit it.
-- Hovering a window reveals its "⋮" actions menu and a one-click "center horizontally" icon.
+- Hovering a window reveals its "⋮" actions menu and a one-click "center horizontally" icon. The menu's **Align...** places the window left, center or right, and top, center or bottom on the screen — see [Windows](/dspf-edit/guides/windows/#centering-and-aligning).
 
 An active `ERRMSG()` (or `ERRMSGID()` — see below) on a window shows on the window's own reserved message line (its last content row) when the window doesn't specify `*NOMSGLIN` — matching real DDS behavior — instead of always appearing at the bottom of the physical screen.
 

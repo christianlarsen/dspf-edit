@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.12.0] - 2026-10-17
+### Added
+- Screen Preview: align several selected fields and constants. With more than one selected, the **⋮ Actions** menu has **Align...**, which then asks how to align them: **Left**, **Center** or **Right**. They line the elements up within the columns they already cover between them: left moves each one to the leftmost start column, right moves each one so it ends on the rightmost end column, and center centers each one between those two columns. Each element keeps its own row, and the whole change is a single undo step. Elements that share a row can't be aligned, since one would end up on top of the other; and a referenced field whose real length isn't known yet can only be aligned to the left.
+- Screen Preview: align a window on the screen, horizontally and vertically. The window's **⋮** menu has **Align...**, which asks for the direction, horizontally or vertically, and then where: left, center or right, or top, center or bottom. The one the window already has is marked "current". Only the window's position on that axis changes; its size and its position on the other axis stay as they are. A window is never placed on row 1 and column 1 at the same time, the same as when dragging it.
+
+### Fixed
+- Screen Preview: **center horizontally** on a window left it 2 columns to the right of center. It didn't count the border, which adds 2 columns on each side of the window's content: a 40-column window on an 80-column screen ended up with 20 columns free on its left and 16 on its right. It now leaves 18 on each side.
+
 ## [1.11.0] - 2026-10-11
 ### Added
 - Screen Preview: the user-defined edit codes, `EDTCDE(5)` to `EDTCDE(9)`, are now previewed. Their editing is not part of DDS: it lives on each IBM i, in the edit descriptions `QEDIT5` to `QEDIT9`. **Fetch from IBM i**, in the **Decimal Format** section of the Configuration panel, now reads them along with `QDECFMT`, and the message it shows says which codes were read. A field using one of them then shows as STRSDA shows it, for example `9,999.99CR` for a 6,2 field with the IBM-supplied `EDTCDE(5)`. These codes do not follow the decimal format setting, since each edit description has its own decimal point and separators. **Reset to Default** forgets them. Until they are fetched, a field with one of these codes previews with no editing, as before. Tested on IBM i 7.5.

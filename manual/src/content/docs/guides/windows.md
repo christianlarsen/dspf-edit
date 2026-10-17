@@ -17,9 +17,29 @@ description: WINDOW records with real positioning, resizing, titles, and shared 
 - If the window has a `WDWTITLE`, it's shown in the preview. A window can have one title on the top border and another on the bottom border (`*BOTTOM`), and both are shown. When more than one `WDWTITLE` targets the same border, their parameters are combined, and the first one wins if a parameter is repeated.
 - Click a title directly in the preview to edit it, or right-click the record in the tree and choose **Change Window Title**. When the record declares more than one display size, the command targets the size currently being worked on. When the window has more than one title, the command edits the first `WDWTITLE` in the source.
 
-## Centering
+## Centering and aligning
 
 Hovering a window in the preview reveals a one-click "center horizontally" icon, alongside its "⋮" actions menu — both shown only while hovering.
+
+To place the window anywhere else on the screen, open the "⋮" menu and choose **Align...**. It first asks for the direction, and then where:
+
+- **Horizontally**: **Left**, **Center** or **Right**.
+- **Vertically**: **Top**, **Center** or **Bottom**.
+
+The alignment the window already has is marked "current". Only the window's position on that axis changes: its size, and its position on the other axis, stay as they are. As with any other change to the window from the preview, only the display size currently being previewed is affected.
+
+Alignment counts the window's whole frame, not just its content: the border adds 1 row above and below the content, and 2 columns on each side. So **Right** puts the right border on the screen's last column, **Bottom** puts the bottom border on its last row, and **Center** leaves the same space on both sides of the frame (when the space left over is odd, the extra row or column goes after the window). For example, with `WINDOW(5 10 8 40)` on a 24 x 80 screen:
+
+| Alignment | Result |
+| --- | --- |
+| Left | `WINDOW(5 1 8 40)` |
+| Center horizontally | `WINDOW(5 19 8 40)`: 18 columns free on each side |
+| Right | `WINDOW(5 37 8 40)` |
+| Top | `WINDOW(1 10 8 40)` |
+| Center vertically | `WINDOW(8 10 8 40)`: 7 rows free above and below |
+| Bottom | `WINDOW(15 10 8 40)` |
+
+A window can't start on row 1 and column 1 at the same time (STRSDA doesn't allow it either). When an alignment would put it there, it's moved one place along the direction you're aligning: **Left** on a window at row 1 starts it at column 2, and **Top** on a window at column 1 starts it at row 2.
 
 ## Shared windows
 

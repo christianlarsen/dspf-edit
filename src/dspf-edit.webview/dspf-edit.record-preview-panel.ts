@@ -24,6 +24,7 @@ import { addAttributeToMultipleElements } from '../dspf-edit.commands/dspf-edit.
 import { removeElements } from '../dspf-edit.commands/dspf-edit.remove-element';
 import { copyFieldToPosition } from '../dspf-edit.commands/dspf-edit.copy-field';
 import { copyConstantToPosition } from '../dspf-edit.commands/dspf-edit.copy-constant';
+import { HorizontalAlignment, WindowAlignment, WINDOW_ALIGNMENTS, computeAlignedColumns, computeWindowAlignedPosition } from '../dspf-edit.utils/dspf-edit.alignment';
 
 /**
  * Item sent to the webview for rendering (a single field or constant on the screen grid).
@@ -1277,6 +1278,9 @@ export class RecordPreviewPanel {
     private activeDisplayFormat: string | undefined;
     private lastRecordInfo: FieldsPerRecord | undefined;
     private lastSize: DdsSize | undefined;
+    /** The previewed record's own items as last sent to the webview, so actions on a selection
+     * (see `alignElements`) work from the exact positions and widths the user is looking at. */
+    private lastItems: PreviewItem[] = [];
     private focusModeActive = false;
     /** The field/constant node armed by the Actions menu's "Copy...", waiting for the webview to
      * report a canvas click (`copyElementAt`) to actually place it. Cleared once consumed. */
@@ -1535,6 +1539,7 @@ export class RecordPreviewPanel {
     private render(): void {
         const geometry = this.resolveActiveGeometry();
         if (!geometry) {
+            this.lastItems = [];
             this.panel.webview.postMessage({ type: 'notFound' });
             return;
         };
@@ -1552,6 +1557,7 @@ export class RecordPreviewPanel {
             const { visibleBase, repeats } = this.buildSubfileDisplayItems(items, this.recordName);
             items = [...visibleBase, ...repeats];
         };
+        this.lastItems = items;
 
         // Overlaid (background) records can be previewed on their own, whether or not they're
         // themselves windows, no matter what the record being previewed is. Indicator simulation
@@ -2375,8 +2381,11 @@ export class RecordPreviewPanel {
             return;
         };
 
-        if (message?.type === 'centerWindowHorizontally') {
-            await this.centerWindowHorizontally();
+        if (message?.type === 'alignWindow') {
+            const target = WINDOW_ALIGNMENTS.find(a => a.axis === message.axis && a.alignment === message.alignment);
+            if (target) {
+                await this.alignWindow(target);
+            };
             return;
         };
 
@@ -2861,14 +2870,14 @@ export class RecordPreviewPanel {
     };
 
     /**
-     * Shows the window's action menu, opened from the "⋮" button drawn in the frame's corner.
-     * Currently just offers "Change Title...", but is meant to grow: additional actions (e.g. a
-     * one-click "Center Horizontally") can be appended here, and/or given their own icon on the
-     * canvas later, following the same pattern as the title button.
+     * Shows the window's action menu, opened from the "⋮" button drawn in the frame's corner:
+     * "Change Title..." and "Align..." (every alignment; centering horizontally also has its own
+     * one-click icon next to the menu button).
      */
     private async showWindowMenu(): Promise<void> {
         const options: (vscode.QuickPickItem & { action: string })[] = [
-            { label: '$(edit) Change Title...', action: 'editTitle' }
+            { label: '$(edit) Change Title...', action: 'editTitle' },
+            { label: '$(arrow-both) Align...', action: 'align' }
         ];
 
         const selection = await vscode.window.showQuickPick(options, {
@@ -2882,31 +2891,110 @@ export class RecordPreviewPanel {
 
         if (selection.action === 'editTitle') {
             await this.editWindowTitle();
+        } else if (selection.action === 'align') {
+            await this.showWindowAlignMenu();
         };
     };
 
     /**
-     * Centers the window horizontally on the screen, keeping its row and size unchanged. A
-     * one-click action triggered from its own icon, bypassing the actions menu — the same
-     * centering math as the "Change Window Size" command's CENTERED option, for consistency.
+     * The window menu's "Align...": asks for the axis first, then where on it — marking the
+     * alignment the window already has, if any, as "current".
      */
-    private async centerWindowHorizontally(): Promise<void> {
+    private async showWindowAlignMenu(): Promise<void> {
+        const axisChoice = await vscode.window.showQuickPick([
+            { label: '$(arrow-both) Horizontally', axis: 'horizontal' as const },
+            { label: '$(arrow-swap) Vertically', axis: 'vertical' as const }
+        ], {
+            title: `Window '${this.recordName}' — Align`,
+            placeHolder: 'Select how to align the window',
+            ignoreFocusOut: true
+        });
+        if (!axisChoice) {
+            return;
+        };
+
+        const currentAlignments = this.resolveCurrentWindowAlignments();
+        const icons: Record<string, string> = { left: '$(arrow-left)', right: '$(arrow-right)', top: '$(arrow-up)', bottom: '$(arrow-down)' };
+        const options = WINDOW_ALIGNMENTS
+            .filter(target => target.axis === axisChoice.axis)
+            .map(target => ({
+                label: `${icons[target.alignment] ?? (target.axis === 'horizontal' ? '$(arrow-both)' : '$(arrow-swap)')} ${target.alignment[0].toUpperCase()}${target.alignment.slice(1)}`,
+                description: currentAlignments.some(a => a.axis === target.axis && a.alignment === target.alignment) ? 'current' : undefined,
+                target
+            }));
+
+        const choice = await vscode.window.showQuickPick(options, {
+            title: `Window '${this.recordName}' — Align ${axisChoice.axis === 'horizontal' ? 'Horizontally' : 'Vertically'}`,
+            placeHolder: 'Select where to align the window',
+            ignoreFocusOut: true
+        });
+        if (choice) {
+            await this.alignWindow(choice.target);
+        };
+    };
+
+    /**
+     * Where the window's border corner would go for each of the six alignments (see
+     * `computeWindowAlignedPosition`), on the screen size of the display format being previewed.
+     * Undefined when the record being previewed isn't a window.
+     */
+    private resolveWindowAlignmentTargets(): { windowRecordName: string; windowInfo: NonNullable<ReturnType<typeof findWindowAttribute>>; targets: Array<{ target: WindowAlignment; row: number; col: number }> } | undefined {
         const windowRecordName = this.resolveWindowRecordName();
         const windowInfo = findWindowAttribute(windowRecordName, this.activeDisplayFormat);
         if (!windowInfo) {
-            return;
+            return undefined;
         };
 
-        const defaultSize = this.activeDisplayFormat
+        const screen = this.activeDisplayFormat
             ? (getSizeForFormat(this.activeDisplayFormat) ?? getDefaultSize())
             : getDefaultSize();
+        const frame = {
+            rows: windowInfo.numRows + WINDOW_BORDER_TOP + WINDOW_BORDER_BOTTOM,
+            cols: windowInfo.numCols + WINDOW_BORDER_LEFT + WINDOW_BORDER_RIGHT
+        };
+        const current = { row: windowInfo.startRow, col: windowInfo.startCol };
 
-        const newStartCol = Math.max(1, Math.floor((defaultSize.cols - windowInfo.numCols) / 2) + 1);
-        if (newStartCol === windowInfo.startCol) {
+        return {
+            windowRecordName,
+            windowInfo,
+            targets: WINDOW_ALIGNMENTS.map(target => ({ target, ...computeWindowAlignedPosition(screen, frame, current, target) }))
+        };
+    };
+
+    /**
+     * The alignments the window already has: those whose target is exactly where it is now
+     * (several on the same axis when the window is as wide/tall as the screen). Drives the
+     * "current" mark in the Align menu.
+     */
+    private resolveCurrentWindowAlignments(): WindowAlignment[] {
+        const resolved = this.resolveWindowAlignmentTargets();
+        if (!resolved) {
+            return [];
+        };
+        return resolved.targets
+            .filter(t => t.row === resolved.windowInfo.startRow && t.col === resolved.windowInfo.startCol)
+            .map(t => t.target);
+    };
+
+    /**
+     * Aligns the window on the screen along one axis — left/center/right or top/center/bottom —
+     * keeping its size and its position on the other axis (see `computeWindowAlignedPosition`).
+     * Triggered from the window menu's "Align...", or from the frame's one-click "center
+     * horizontally" icon.
+     * @param target - Which axis to align on, and where
+     */
+    private async alignWindow(target: WindowAlignment): Promise<void> {
+        const resolved = this.resolveWindowAlignmentTargets();
+        if (!resolved) {
+            return;
+        };
+        const { windowRecordName, windowInfo, targets } = resolved;
+        const position = targets.find(t => t.target.axis === target.axis && t.target.alignment === target.alignment);
+        if (!position || (position.row === windowInfo.startRow && position.col === windowInfo.startCol)) {
             return;
         };
 
-        await this.rewriteWindowKeyword(windowRecordName, windowInfo.startRow, newStartCol, windowInfo.numRows, windowInfo.numCols);
+        await this.rewriteWindowKeyword(windowRecordName, position.row, position.col, windowInfo.numRows, windowInfo.numCols);
     };
 
     /**
@@ -2982,6 +3070,8 @@ export class RecordPreviewPanel {
                 { label: '$(symbol-boolean) Indicators...', command: 'add-indicators' },
                 { label: '$(copy) Copy...', command: 'copy' }
             );
+        } else {
+            options.push({ label: '$(arrow-both) Align...', command: 'align' });
         };
         options.push({ label: '$(trash) Delete...', command: 'delete' });
 
@@ -2998,6 +3088,23 @@ export class RecordPreviewPanel {
         if (selection.command === 'copy') {
             this.pendingCopySource = nodes[0];
             this.panel.webview.postMessage({ type: 'startCopyPlacement', kind: nodes[0].ddsElement.kind });
+            return;
+        };
+
+        if (selection.command === 'align') {
+            const alignmentOptions: (vscode.QuickPickItem & { alignment: HorizontalAlignment })[] = [
+                { label: '$(arrow-left) Left', alignment: 'left' },
+                { label: '$(arrow-both) Center', alignment: 'center' },
+                { label: '$(arrow-right) Right', alignment: 'right' }
+            ];
+            const alignmentChoice = await vscode.window.showQuickPick(alignmentOptions, {
+                title: `${nodes.length} elements — Align`,
+                placeHolder: 'Select how to align them',
+                ignoreFocusOut: true
+            });
+            if (alignmentChoice) {
+                await this.alignElements(nodes.map(n => n.ddsElement.lineIndex), alignmentChoice.alignment);
+            };
             return;
         };
 
@@ -3022,6 +3129,62 @@ export class RecordPreviewPanel {
         if (editor) {
             this.forceReparse(editor.document);
         };
+    };
+
+    /**
+     * Aligns the selected fields/constants horizontally (the "⋮ Actions" menu's Align..., offered
+     * for a multi-selection only, then Left/Center/Right), within the span they already cover between them —
+     * see `computeAlignedColumns`. Only columns change; every element keeps its own row. Works from
+     * the positions and widths last shown in the preview (`lastItems`), so the result lines up
+     * exactly as it looks there, and writes them back through `moveElements`, the same path (and
+     * single undo step) as dragging the group.
+     * Refused, with a message, when two of the elements share a row (aligning them would put one
+     * on top of the other), or, for center/right, when one is a referenced field whose real width
+     * isn't known yet (it's shown as a 1-character marker, so lining up its end would be a guess).
+     * @param lineIndices - Zero-based source line indices of the fields/constants to align
+     * @param alignment - Which edge (or the middle) to line them up on
+     */
+    private async alignElements(lineIndices: number[], alignment: HorizontalAlignment): Promise<void> {
+        // A CNTFLD-wrapped field (or a selection field with its choices) is drawn as several items
+        // sharing one source line; its position is that of its first (topmost, then leftmost) one.
+        const anchors = new Map<number, PreviewItem>();
+        for (const item of this.lastItems) {
+            if (!item.isInteractive || !lineIndices.includes(item.lineIndex)) {
+                continue;
+            };
+            const existing = anchors.get(item.lineIndex);
+            if (!existing || item.row < existing.row || (item.row === existing.row && item.col < existing.col)) {
+                anchors.set(item.lineIndex, item);
+            };
+        };
+        const elements = [...anchors.values()];
+        if (elements.length < 2) {
+            return;
+        };
+
+        const rows = new Set(elements.map(e => e.row));
+        if (rows.size < elements.length) {
+            vscode.window.showWarningMessage('Cannot align the elements: some of them are on the same row, and aligning them would put one on top of the other.');
+            return;
+        };
+
+        if (alignment !== 'left' && elements.some(e => e.isReferenced)) {
+            vscode.window.showWarningMessage(`Cannot align the elements to the ${alignment}: the real length of a referenced field is not known yet. Resolve the referenced fields first, or align them to the left.`);
+            return;
+        };
+
+        const newCols = computeAlignedColumns(
+            elements.map(e => ({ col: e.col, width: Math.max(e.length, e.text.length, 1) })),
+            alignment
+        );
+        const moves = elements
+            .map((e, i) => ({ lineIndex: e.lineIndex, newRow: e.row, newCol: newCols[i], rowOffset: e.rowOffset, colOffset: e.colOffset }))
+            .filter((move, i) => move.newCol !== elements[i].col);
+        if (moves.length === 0) {
+            return;
+        };
+
+        await this.moveElements(moves);
     };
 
     /**
@@ -4052,8 +4215,8 @@ export class RecordPreviewPanel {
             const menuY = (currentOuterFrame.row - 1) * CHAR_H + (CHAR_H - MENU_ICON_SIZE) / 2;
             currentMenuIconRect = drawIconButton(menuX, menuY, '⋮', 'Window actions');
 
-            // "Center horizontally" button, a one-click action next to it (no menu needed) — the
-            // pattern any future direct-action icon can follow.
+            // "Center horizontally" button, a one-click action next to it (no menu needed). The
+            // window's other alignments (left/right, top/center/bottom) are in the menu's "Align...".
             const centerX = menuX - MENU_ICON_SIZE - 2;
             const centerY = menuY;
             currentCenterIconRect = drawIconButton(centerX, centerY, '↔', 'Center horizontally');
@@ -4419,7 +4582,7 @@ export class RecordPreviewPanel {
         }
 
         if (isOverCenterIcon(ev)) {
-            vscode.postMessage({ type: 'centerWindowHorizontally' });
+            vscode.postMessage({ type: 'alignWindow', axis: 'horizontal', alignment: 'center' });
             return;
         }
 
