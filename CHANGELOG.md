@@ -8,6 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.13.0] - 2026-10-18
+### Added
+- Screen Preview: select fields and constants by dragging a rectangle over them. Turn on **⬚ Area** in the toolbar, then drag anywhere on the screen: every field and constant the rectangle touches is selected, without having to cover it whole. Hold `Ctrl`/`Cmd` while dragging to add them to the current selection, and press `Escape` while dragging to cancel and get back the previous one.
+  - Only the record being previewed is selected: dimmed overlays and elements that aren't visible are left out.
+  - While **⬚ Area** is on, clicking an element doesn't select or move it, and the resize handles don't show, so nothing is moved by accident. Right-clicking an element that is part of the selection still opens **⋮ Actions** for the whole selection.
+  - Turning it on clears the current selection. Turning it off keeps what the rectangle selected, ready to be moved, aligned or deleted.
+  - Inside a window the rectangle works too; the window is moved by dragging its border.
+- Screen Preview: see where the elements that aren't visible are. Turn on **◌ Hidden** in the toolbar to show, as a dotted outline with faded text, every field and constant that isn't on the screen right now: the ones conditioned on indicators that are off, and the ones with an active `DSPATR(ND)`. Hovering one says why it's hidden, for example `shown on 61 N62`, or `DSPATR(ND)`.
+  - Which ones are hidden follows the **Indicators** being simulated: turning on indicator 61 shows the elements conditioned on 61 normally, and hides the ones conditioned on `N61`.
+  - Where a hidden element shares its place with a visible one, as an alternate on `61` / `N61` usually does, only its outline is drawn, so the visible one stays readable.
+  - Elements hidden by their indicators can't be selected. One with `DSPATR(ND)` can still be clicked, as before.
+
+### Fixed
+- Screen Preview: clicking a field or constant brought back the Side Bar with the DSPF Structure view, even after hiding it with `Ctrl`/`Cmd`+`B` to work with the preview alone. The view is now left as it is. The clicked element is selected in it the next time it is shown.
+- Screen Preview: clicking the second or a later line of a field that spans several lines (`CNTFLD()`, or a field too long for its line) could move the field as soon as the mouse moved by one pixel, as if it had been dragged. It now stays where it is unless it's really dragged.
+
 ## [1.12.0] - 2026-10-17
 ### Added
 - Screen Preview: align several selected fields and constants. With more than one selected, the **⋮ Actions** menu has **Align...**, which then asks how to align them: **Left**, **Center** or **Right**. They line the elements up within the columns they already cover between them: left moves each one to the leftmost start column, right moves each one so it ends on the rightmost end column, and center centers each one between those two columns. Each element keeps its own row, and the whole change is a single undo step. Elements that share a row can't be aligned, since one would end up on top of the other; and a referenced field whose real length isn't known yet can only be aligned to the left.

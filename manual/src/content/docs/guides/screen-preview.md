@@ -17,6 +17,9 @@ A single, compact toolbar sits above the preview with:
 - Overlay list (see [Overlay](#overlay)).
 - Indicators toggle (see [Simulating indicators](#simulating-indicators)).
 - "+ Field" / "+ Constant" add buttons.
+- **⋅ Grid**, a dot in every empty character cell.
+- **◌ Hidden** (see [Showing hidden elements](#showing-hidden-elements)).
+- **⬚ Area** (see [Selecting with a rectangle](#selecting-with-a-rectangle)).
 
 ![Screen Preview toolbar](/dspf-edit/screenshots/captura5.png)
 
@@ -30,7 +33,7 @@ Click **+ Field** or **+ Constant**, then click a point on the screen to place t
 
 ## Multi-select and actions
 
-Select a field or constant — or several, with `Ctrl`/`Cmd`+click — to get a **⋮ Actions** menu:
+Select a field or constant — or several, with `Ctrl`/`Cmd`+click or with [a rectangle](#selecting-with-a-rectangle) — to get a **⋮ Actions** menu:
 
 - **Add color/attribute**, **Copy**, or **Delete** — applied to every selected element at once when multiple are selected.
 - With **more than one** selected, **Align...** lines them up — see [Aligning a selection](#aligning-a-selection) below.
@@ -41,6 +44,23 @@ Select a field or constant — or several, with `Ctrl`/`Cmd`+click — to get a 
 With a selection active, pressing `Delete` or `Backspace` deletes it directly — same confirmation dialog as the menu's own **Delete**, without having to open the menu first.
 
 Right-clicking a field or constant opens this same **⋮ Actions** menu directly, instead of the browser's native context menu — selecting it first (replacing the current selection) if it wasn't already selected; right-clicking one that's already part of a multi-selection keeps the whole group.
+
+### Selecting with a rectangle
+
+Turn on **⬚ Area** in the toolbar to select several elements at once by dragging a rectangle over them. Every field and constant the rectangle touches is selected; it doesn't need to cover it whole. The selection updates while you drag.
+
+- Hold `Ctrl`/`Cmd` while dragging to add the elements to the current selection instead of replacing it.
+- Press `Escape` while dragging to cancel and get back the selection you had.
+- Only the record being previewed is selected. Dimmed overlays, and elements that aren't visible (hidden by their indicators or by `DSPATR(ND)`), are left out.
+- Inside a window the rectangle works too. The window is still moved by dragging its border.
+
+While **⬚ Area** is on, the mouse only selects with the rectangle, so nothing is moved by accident:
+
+- Clicking or dragging on an element doesn't select or move it: it starts a rectangle there.
+- The resize handles of a selected element don't show.
+- Right-clicking an element that is part of the selection opens **⋮ Actions** for the whole selection. Right-clicking any other element does nothing.
+
+Turning **⬚ Area** on clears the current selection. Turning it off keeps what the rectangle selected, so you can then drag it, align it or use **⋮ Actions** on it.
 
 ### Aligning a selection
 
@@ -66,6 +86,16 @@ Toggle **Indicators** in the toolbar to simulate indicators on/off and preview c
 The Indicators toggle, and the selected display format, persist when you switch which record is being previewed in the same panel.
 
 ![Simulating indicators in the preview](/dspf-edit/screenshots/captura7.png)
+
+## Showing hidden elements
+
+Some fields and constants are in the record but not on the screen: the ones conditioned on indicators that are off, and the ones with an active `DSPATR(ND)`. Turn on **◌ Hidden** in the toolbar to see where they are. Each one shows as a dotted outline with its text faded, and turning **◌ Hidden** off again hides them.
+
+- Hovering one says why it's hidden: the condition it shows on, as it reads in DDS (`shown on 61 N62`, with OR'd conditions joined by `or`), or `DSPATR(ND)`.
+- Which elements are hidden follows the [simulated indicators](#simulating-indicators). Turning on indicator 61 shows the elements conditioned on 61 normally, and hides the ones conditioned on `N61`. With the **Indicators** toggle off, every indicator counts as off.
+- Where a hidden element shares its place with a visible one, as an alternate on `61` / `N61` usually does, only its outline is drawn, so the visible one stays readable.
+- Elements hidden by their indicators can't be selected, either by clicking or with [a rectangle](#selecting-with-a-rectangle). One with `DSPATR(ND)` can still be clicked, so it can be moved or edited from the preview.
+- Only the record being previewed shows them: not its overlays, nor a subfile's repeated rows.
 
 ## Overlay
 
@@ -143,3 +173,5 @@ An output-capable (`O`/`B`) field carrying an active `DFTVAL('value')` previews 
 ## Staying in sync
 
 The preview stays in sync with the schema tree selection in both directions: selecting an element in the tree highlights it in the preview, and vice versa.
+
+If you hide the Side Bar (`Ctrl`/`Cmd`+`B`) to work with the preview alone, clicking an element doesn't bring it back. The clicked element is selected in the tree the next time you show it.

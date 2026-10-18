@@ -24,3 +24,5 @@ In the [Schema Tree](/dspf-edit/guides/schema-tree/), an OR'd condition is group
 ## Simulating indicators in the preview
 
 The [Screen Preview](/dspf-edit/guides/screen-preview/)'s **Indicators** toggle lets you turn indicators on/off and see which fields, constants, and attributes become visible or hidden — without compiling or connecting to a 5250 session. This setting persists when switching which record is being previewed in the same panel.
+
+The preview's **◌ Hidden** toggle shows the fields and constants hidden by their indicators as dotted outlines, and hovering one shows the condition it needs — see [Showing hidden elements](/dspf-edit/guides/screen-preview/#showing-hidden-elements).
