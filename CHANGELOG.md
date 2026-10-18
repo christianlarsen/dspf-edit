@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.13.1] - 2026-10-18
+### Changed
+- Screen Preview: what is selected (for example `3 fields/constants selected`, or a field's name, length and position) now shows to the right of the **Indicators** toggle, on the same row, instead of on the button row. The buttons no longer move to a row of their own when something is selected, so selecting or deselecting no longer moves the screen up or down. A long text is cut short with `…`; hovering it shows it whole.
+
+### Fixed
+- Screen Preview: right-clicking an element of a multi-selection opened **⋮ Actions** for the whole group, but the selection was reduced to that one element as soon as the mouse button was released. The whole group now stays selected.
+- Screen Preview: with **⬚ Area** on, right-clicking an element of the selection replaced it with only that element, so **⋮ Actions** didn't offer **Align...**. Right-clicking no longer changes the selection, and **Align...** is offered for everything the rectangle selected.
+- Screen Preview: on macOS, `Ctrl`+click, used to add an element to the selection, could also open the **⋮ Actions** menu, since macOS treats it as a right-click. It now only changes the selection.
+
 ## [1.13.0] - 2026-10-18
 ### Added
 - Screen Preview: select fields and constants by dragging a rectangle over them. Turn on **⬚ Area** in the toolbar, then drag anywhere on the screen: every field and constant the rectangle touches is selected, without having to cover it whole. Hold `Ctrl`/`Cmd` while dragging to add them to the current selection, and press `Escape` while dragging to cancel and get back the previous one.

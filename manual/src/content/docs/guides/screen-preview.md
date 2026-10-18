@@ -41,9 +41,11 @@ Select a field or constant — or several, with `Ctrl`/`Cmd`+click or with [a re
 
 ![Multi-select actions menu in the preview](/dspf-edit/screenshots/captura6.png)
 
+What is selected shows to the right of the **Indicators** toggle: how many elements, or, for a single one, its name, length and position. A long text is cut short with `…`; hover it to see it whole.
+
 With a selection active, pressing `Delete` or `Backspace` deletes it directly — same confirmation dialog as the menu's own **Delete**, without having to open the menu first.
 
-Right-clicking a field or constant opens this same **⋮ Actions** menu directly, instead of the browser's native context menu — selecting it first (replacing the current selection) if it wasn't already selected; right-clicking one that's already part of a multi-selection keeps the whole group.
+Right-clicking a field or constant opens this same **⋮ Actions** menu directly, instead of the browser's native context menu — selecting it first (replacing the current selection) if it wasn't already selected; right-clicking one that's already part of a multi-selection keeps the whole group. On macOS, `Ctrl`+click only adds to or removes from the selection; it doesn't open the menu.
 
 ### Selecting with a rectangle
 
