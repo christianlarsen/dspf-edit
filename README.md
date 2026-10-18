@@ -42,6 +42,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
   - Subfile (SFL/SFLCTL) records show all SFLPAG rows, together with their paired header/detail record; detail rows can't be dragged up over the header's own content.
   - Overlay any number of other records (dimmed) behind the one being previewed, picked from a checkbox list, to see how they compose. A subfile's header and detail always come together, and the record named in `WINDOW(record-name)` is always shown. Both that pairing and keeping the checked overlays when switching records can be turned off from the "⚙ Configuration" panel.
   - Simulate indicators on/off to preview conditional fields, constants, and attributes.
+  - "◌ Hidden" shows the fields and constants that aren't visible right now — conditioned on indicators that are off, or with `DSPATR(ND)` — as dotted outlines, so you know something is there. Hovering one says why it's hidden.
   - A function-key legend (`F3`, `F12`, ...) shows every command key available to the record being previewed (file-level + record-level CAxx/CFxx); a key still shows even when its indicator condition isn't currently met (so you can see it's defined), switching to solid/inverted styling when it's actually active.
   - An active `ERRMSG()` on a window shows on the window's own reserved message line (its last content row) when the window doesn't specify `*NOMSGLIN`, matching real DDS behavior, instead of always at the bottom of the physical screen.
   - A subfile's `SFLMSG()` also shows on the message line when its indicator is active and `SFLDSP` is in effect, the same way `ERRMSG()` does (which still takes priority over it, matching the DDS reference).
@@ -49,7 +50,8 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
   - The "Indicators" toggle and the selected display format persist when switching which record is previewed in the same panel.
   - Stays in sync with the schema tree selection in both directions.
   - "Focus" maximizes the preview so it fills the editing area, hiding the DDS source editor beside it; "Show code" brings the source back.
-  - Select a field or constant (or several, with Ctrl/Cmd+click) to get a "⋮ Actions" menu: add color/attribute, copy, or delete — applied to every selected element at once for a multi-selection. A multi-selection can also be aligned left, center or right, each element keeping its own row. A single selected field or constant also gets Rename.../Edit Text..., Indicators..., and — for fields — Validity Checks..., Editing Keywords..., and Error Messages..., the same commands the tree's context menu offers, so most of what you'd do from the tree is also reachable straight from the preview.
+  - "⬚ Area" selects every field and constant a rectangle dragged over the screen touches (Ctrl/Cmd adds to the selection). While it's on, clicking an element never selects or moves it.
+  - Select a field or constant (or several, with Ctrl/Cmd+click or "⬚ Area") to get a "⋮ Actions" menu: add color/attribute, copy, or delete — applied to every selected element at once for a multi-selection. A multi-selection can also be aligned left, center or right, each element keeping its own row. A single selected field or constant also gets Rename.../Edit Text..., Indicators..., and — for fields — Validity Checks..., Editing Keywords..., and Error Messages..., the same commands the tree's context menu offers, so most of what you'd do from the tree is also reachable straight from the preview.
   - Press `Delete`/`Backspace` with one or more fields/constants selected to delete them directly — same confirmation as the "⋮ Actions" menu's Delete.
   - Double-click a dimmed overlay record (a checked overlay, an SFL/SFLCTL header/detail, or a shared window's owner) to switch the preview to it, the same as picking it in the tree. Where several overlap, the one drawn on top wins.
   - Right-click a field or constant to open the "⋮ Actions" menu directly, instead of the browser's native Cut/Copy/Paste menu — selecting it first if it wasn't already selected.
@@ -162,10 +164,11 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.12.0** - 2026-10-17
-- Added: align several selected fields and constants from the Screen Preview. With more than one selected, **⋮ Actions** has **Align...**: **Left**, **Center** or **Right**, within the columns they already cover between them. Each element keeps its own row.
-- Added: align a window on the screen. The window's **⋮** menu has **Align...**: horizontally (left, center or right) or vertically (top, center or bottom), keeping its size and its position on the other axis.
-- Fixed: **center horizontally** on a window now counts its border, and leaves the same space on both sides. Before, it was 2 columns right of center.
+**1.13.0** - 2026-10-18
+- Added: select fields and constants in the Screen Preview by dragging a rectangle over them. Turn on **⬚ Area** in the toolbar; while it's on, clicking an element doesn't select or move it.
+- Added: **◌ Hidden** in the toolbar shows, as dotted outlines, the fields and constants that aren't visible right now: conditioned on indicators that are off, or with `DSPATR(ND)`. Hovering one says why it's hidden.
+- Fixed: clicking an element in the preview no longer brings back a hidden Side Bar.
+- Fixed: clicking a later line of a field that spans several lines no longer moves the field.
 
 ---
 

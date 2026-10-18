@@ -111,6 +111,13 @@ interface PreviewItem {
      * (e.g. "VALUES(0 2 4 5 7 8)"), for display in the preview's selection bar. Undefined when the
      * field has none, or for a constant. */
     validityChecks?: string;
+    /**
+     * Only set on an item sent in the render message's `hiddenItems` list (one whose conditioning
+     * indicators aren't satisfied right now, so it isn't on the screen): the condition it would
+     * show on, as it reads in DDS (e.g. "shown on 61 N62", ORed groups joined by "or"). The preview
+     * draws these as dotted, non-selectable "ghosts" only while its "Hidden" toggle is on.
+     */
+    hiddenReason?: string;
 };
 
 /** A rectangle in the coordinates of the canvas being drawn (the full display size). */
@@ -1285,6 +1292,11 @@ export class RecordPreviewPanel {
     /** The field/constant node armed by the Actions menu's "Copy...", waiting for the webview to
      * report a canvas click (`copyElementAt`) to actually place it. Cleared once consumed. */
     private pendingCopySource: DdsNode | undefined;
+    /** The field/constant last clicked in the preview while the tree view was hidden: its tree
+     * selection is synced only once the tree is shown again (see syncTreeSelection), since revealing
+     * a node in a hidden tree would bring the whole Side Bar back on its own. */
+    private pendingTreeSyncLine: number | undefined;
+    private treeVisibilitySubscription: vscode.Disposable | undefined;
 
     private constructor(recordName: string) {
         this.recordName = recordName;
@@ -1308,6 +1320,7 @@ export class RecordPreviewPanel {
 
         this.panel.onDidDispose(() => {
             this.treeSubscription?.dispose();
+            this.treeVisibilitySubscription?.dispose();
             if (RecordPreviewPanel.current === this) {
                 RecordPreviewPanel.current = undefined;
                 ExtensionState.previewDisplayFormat = undefined;
@@ -1552,9 +1565,17 @@ export class RecordPreviewPanel {
 
         const canvasSize = isWindow ? { rows: defaultSize.rows, cols: defaultSize.cols } : { rows: size.rows, cols: size.cols };
 
-        let items = this.buildItems(recordInfo, rowOffset, colOffset, false, size.cols);
+        let hiddenItems: PreviewItem[] = [];
+        let items = this.buildItems(recordInfo, rowOffset, colOffset, false, size.cols, hiddenItems);
         if (isSflRecordInfo(recordInfo)) {
             const { visibleBase, repeats } = this.buildSubfileDisplayItems(items, this.recordName);
+            // A truncated subfile only shows its template's first row, the rest of the screen being
+            // taken by repeats — so a ghost from one of the template's other rows would land on top
+            // of those. Ghosts are only ever drawn for the real (first) instance, never repeated.
+            if (visibleBase !== items) {
+                const visibleRows = new Set(visibleBase.map(item => item.row));
+                hiddenItems = hiddenItems.filter(item => visibleRows.has(item.row));
+            };
             items = [...visibleBase, ...repeats];
         };
         this.lastItems = items;
@@ -1654,6 +1675,7 @@ export class RecordPreviewPanel {
             activeDisplayFormat: this.activeDisplayFormat ?? null,
             minDetailRow,
             items,
+            hiddenItems,
             backgroundItems,
             functionKeys,
             subfileExpanded: this.resolveSubfileExpanded(),
@@ -1760,8 +1782,11 @@ export class RecordPreviewPanel {
      * @param isBackground - Whether these items belong to the record overlaid behind a window
      * @param rowWidth - The record's own display width (window content width, or full screen width otherwise),
      * used to auto-wrap a field too long to fit on one line when it carries no CNTFLD() of its own
+     * @param hiddenItems - When given, the fields/constants whose own indicators aren't satisfied are
+     * built anyway (marked with `hiddenReason`, non-interactive) and collected here instead of being
+     * skipped, so the preview can show them as ghosts; they never reach the returned items
      */
-    private buildItems(recordInfo: FieldsPerRecord, rowOffset: number, colOffset: number, isBackground: boolean, rowWidth: number): PreviewItem[] {
+    private buildItems(recordInfo: FieldsPerRecord, rowOffset: number, colOffset: number, isBackground: boolean, rowWidth: number, hiddenItems?: PreviewItem[]): PreviewItem[] {
         const items: PreviewItem[] = [];
 
         // Indicator toggling only applies to the record being actively previewed; an overlaid
@@ -1774,9 +1799,12 @@ export class RecordPreviewPanel {
             if (this.activeDisplayFormat && field.displayFormat && field.displayFormat !== this.activeDisplayFormat) {
                 continue;
             };
-            if (!this.isItemDisplayed(field.indicators, useLiveIndicators)) {
+            // A field hidden by its indicators is either skipped, or built into hiddenItems instead.
+            const target = this.isItemDisplayed(field.indicators, useLiveIndicators) ? items : hiddenItems;
+            if (!target) {
                 continue;
             };
+            const hiddenReason = target === items ? undefined : this.formatShownOnCondition(field.indicators);
 
             const trueRow = field.row;
             const trueCol = field.col;
@@ -1842,7 +1870,8 @@ export class RecordPreviewPanel {
                     rowOffset,
                     colOffset,
                     isBackground,
-                    isInteractive: !isBackground,
+                    isInteractive: !isBackground && !hiddenReason,
+                    hiddenReason,
                     isInputCapable,
                     hasDefaultUnderline: isInputCapable && !this.isDefaultUnderlineSuppressed(recordInfo, field),
                     isReferenced,
@@ -1868,22 +1897,22 @@ export class RecordPreviewPanel {
                     const chunkCount = Math.ceil(text.length / continuedWidth);
                     for (let chunk = 0; chunk < chunkCount; chunk++) {
                         const chunkText = text.substr(chunk * continuedWidth, continuedWidth);
-                        items.push({ ...baseItem, text: chunkText, row: trueRow + rowOffset + chunk, length: chunkText.length, isResizable: false });
+                        target.push({ ...baseItem, text: chunkText, row: trueRow + rowOffset + chunk, length: chunkText.length, isResizable: false });
                     };
                 } else if (remainingOnFirstLine > 0 && text.length > remainingOnFirstLine) {
                     const firstChunkText = text.substr(0, remainingOnFirstLine);
-                    items.push({ ...baseItem, text: firstChunkText, row: trueRow + rowOffset, col: trueCol + colOffset, length: firstChunkText.length, isResizable: false });
+                    target.push({ ...baseItem, text: firstChunkText, row: trueRow + rowOffset, col: trueCol + colOffset, length: firstChunkText.length, isResizable: false });
 
                     let consumed = remainingOnFirstLine;
                     let chunk = 1;
                     while (consumed < text.length) {
                         const chunkText = text.substr(consumed, rowWidth);
-                        items.push({ ...baseItem, text: chunkText, row: trueRow + rowOffset + chunk, col: 1 + colOffset, length: chunkText.length, isResizable: false });
+                        target.push({ ...baseItem, text: chunkText, row: trueRow + rowOffset + chunk, col: 1 + colOffset, length: chunkText.length, isResizable: false });
                         consumed += chunkText.length;
                         chunk++;
                     };
                 } else {
-                    items.push({ ...baseItem, text, row: trueRow + rowOffset, length: text.length });
+                    target.push({ ...baseItem, text, row: trueRow + rowOffset, length: text.length });
                 };
 
                 // SNGCHCFLD/MLTCHCFLD: confirmed against STRSDA — the field's own input box
@@ -1915,7 +1944,7 @@ export class RecordPreviewPanel {
                         const rowIndex = columnMajor ? index % fillSize : Math.floor(index / fillSize);
                         const colIndex = columnMajor ? Math.floor(index / fillSize) : index % fillSize;
                         const label = `${option.number}. ${option.text}`;
-                        items.push({
+                        target.push({
                             ...baseItem,
                             name: `${field.name}_CHOICE_${option.number}`,
                             text: label,
@@ -1940,9 +1969,11 @@ export class RecordPreviewPanel {
             if (this.activeDisplayFormat && constant.displayFormat && constant.displayFormat !== this.activeDisplayFormat) {
                 continue;
             };
-            if (!this.isItemDisplayed(constant.indicators, useLiveIndicators)) {
+            const target = this.isItemDisplayed(constant.indicators, useLiveIndicators) ? items : hiddenItems;
+            if (!target) {
                 continue;
             };
+            const hiddenReason = target === items ? undefined : this.formatShownOnCondition(constant.indicators);
 
             const trueRow = constant.row;
             const trueCol = constant.col;
@@ -1954,7 +1985,7 @@ export class RecordPreviewPanel {
                 const systemConstantText = getSystemConstantText(constant.name, activeAttrs);
                 const isSystemConstant = systemConstantText !== undefined;
                 const text = systemConstantText ?? constant.name;
-                items.push({
+                target.push({
                     kind: 'constant',
                     name: constant.name,
                     text,
@@ -1972,7 +2003,8 @@ export class RecordPreviewPanel {
                     rowOffset,
                     colOffset,
                     isBackground,
-                    isInteractive: !isBackground,
+                    isInteractive: !isBackground && !hiddenReason,
+                    hiddenReason,
                     isInputCapable: false,
                     hasDefaultUnderline: false,
                     // A constant has no LENGTH keyword of its own in DDS — its width *is* its quoted
@@ -1992,6 +2024,18 @@ export class RecordPreviewPanel {
         // items (or ones whose conditions aren't perfectly complementary) could still land on the
         // exact same spot — keep only the first-defined one so they don't render stacked.
         return this.dedupByPosition(items);
+    };
+
+    /**
+     * Describes the indicator condition a hidden field/constant would show on, as it reads in DDS
+     * ("61 N62"; ORed groups joined by "or"), for the preview's tooltip on its ghost.
+     * @param indicators - The item's own indicators
+     */
+    private formatShownOnCondition(indicators: DdsIndicator[] | undefined): string {
+        const groups = groupIndicatorsByCondition(indicators).map(group =>
+            group.map(ind => (ind.active ? '' : 'N') + String(ind.number).padStart(2, '0')).join(' ')
+        );
+        return 'shown on ' + groups.join(' or ');
     };
 
     /**
@@ -2525,15 +2569,42 @@ export class RecordPreviewPanel {
         const position = new vscode.Position(lineIndex, 0);
         await RecordPreviewPanel.revealInSourceEditor(editor, position);
 
+        await this.syncTreeSelection(lineIndex);
+    };
+
+    /**
+     * Selects the given field/constant's node in the tree view — but only while the tree is
+     * actually visible. TreeView.reveal() opens its containing view when it's hidden, so someone who
+     * hid the Side Bar (Ctrl/Cmd+B) to work in the preview alone would get it back on every click.
+     * Instead, the line is remembered and synced as soon as the tree is shown again, by whatever
+     * means the user chooses to show it.
+     * @param lineIndex - Zero-based source line index of the field/constant to select
+     */
+    private async syncTreeSelection(lineIndex: number): Promise<void> {
         const treeView = this.treeProvider?.getTreeView();
-        if (this.treeProvider && treeView) {
-            const node = await this.treeProvider.findFieldOrConstantNode(lineIndex);
-            if (node) {
-                try {
-                    await treeView.reveal(node, { select: true, focus: false, expand: true });
-                } catch {
-                    // Ignore reveal errors (e.g. the item is currently filtered out of the tree).
+        if (!this.treeProvider || !treeView) {
+            return;
+        };
+
+        if (!treeView.visible) {
+            this.pendingTreeSyncLine = lineIndex;
+            this.treeVisibilitySubscription ??= treeView.onDidChangeVisibility(event => {
+                if (event.visible && this.pendingTreeSyncLine !== undefined) {
+                    const pending = this.pendingTreeSyncLine;
+                    this.pendingTreeSyncLine = undefined;
+                    void this.syncTreeSelection(pending);
                 };
+            });
+            return;
+        };
+
+        this.pendingTreeSyncLine = undefined;
+        const node = await this.treeProvider.findFieldOrConstantNode(lineIndex);
+        if (node) {
+            try {
+                await treeView.reveal(node, { select: true, focus: false, expand: true });
+            } catch {
+                // Ignore reveal errors (e.g. the item is currently filtered out of the tree).
             };
         };
     };
@@ -3643,6 +3714,8 @@ export class RecordPreviewPanel {
         <button id="addFieldBtn" title="Click, then click a point in the screen to place a new field there">+ Field</button>
         <button id="addConstantBtn" title="Click, then click a point in the screen to place a new constant there">+ Constant</button>
         <button id="gridDotsBtn" title="Show a dot in every empty character cell, to see spacing between fields/constants">⋅ Grid</button>
+        <button id="hiddenBtn" title="Show the elements that aren't visible right now (conditioned on indicators that are off, or DSPATR(ND)) as dotted outlines. They can't be selected">◌ Hidden</button>
+        <button id="areaSelectBtn" title="Drag a rectangle to select every field/constant it touches (Ctrl/Cmd adds to the current selection). While on, clicking an element doesn't select or move it, and a window is moved by dragging its border">⬚ Area</button>
         <button id="selectionCenterBtn" title="Center horizontally" disabled>↔ Center</button>
         <button id="selectionMenuBtn" title="More actions (color, attributes, copy, delete...)" disabled>⋮ Actions</button>
     </span>
@@ -3680,6 +3753,8 @@ export class RecordPreviewPanel {
     const addConstantBtn = document.getElementById('addConstantBtn');
     const addFieldBtn = document.getElementById('addFieldBtn');
     const gridDotsBtn = document.getElementById('gridDotsBtn');
+    const areaSelectBtn = document.getElementById('areaSelectBtn');
+    const hiddenBtn = document.getElementById('hiddenBtn');
     const actionBar = document.getElementById('actionBar');
     const toolbarRow3 = document.getElementById('toolbarRow3');
     const toolbarRowDisplaced = document.getElementById('toolbarRowDisplaced');
@@ -3726,6 +3801,9 @@ export class RecordPreviewPanel {
     const WINDOW_BORDER_RIGHT = 2;
 
     let currentItems = [];
+    // Fields/constants hidden by their indicators right now (see PreviewItem.hiddenReason): never
+    // part of currentItems, so nothing can click/select/drag them; only drawn as ghosts.
+    let currentHiddenItems = [];
     let currentBackgroundItems = [];
     let currentSize = null;
     let currentWindowFrame = null;
@@ -3751,6 +3829,11 @@ export class RecordPreviewPanel {
     let currentRecordName = null;
     let placingKind = null; // null | 'constant' | 'field'
     let showGridDots = false;
+    let areaSelectMode = false;
+    let showHidden = false;
+    // Rectangle ("marquee") selection in progress: the anchor cell, the cell under the cursor, and
+    // the selection it started from — kept so a Ctrl/Cmd marquee adds to it, and Escape restores it.
+    let marqueeState = null;
 
     function clamp(value, min, max) {
         return Math.min(Math.max(value, min), max);
@@ -3773,8 +3856,58 @@ export class RecordPreviewPanel {
         return { row, col };
     }
 
+    // An element that isn't on the screen right now (DSPATR(ND), or hidden by its indicators), drawn
+    // only while "Hidden" is on: a dotted outline with its text faded way down. Where it shares
+    // cells with an element that *is* visible (typically the 61/N61 alternate at the same spot),
+    // only the outline is drawn, so the visible one's text stays readable.
+    function drawGhost(item, fontFamily, moveDelta) {
+        const { row, col } = resolveItemRowCol(item, moveDelta);
+        const width = Math.max(item.length, item.text.length, 1);
+        const x = (col - 1) * CHAR_W;
+        const y = (row - 1) * CHAR_H;
+        const w = width * CHAR_W;
+
+        const overlapsVisible = currentItems.some(other => {
+            if (other === item || other.nonDisplay) {
+                return false;
+            }
+            const otherPos = resolveItemRowCol(other, moveDelta);
+            const otherWidth = Math.max(other.length, other.text.length, 1);
+            return otherPos.row === row && otherPos.col < col + width && otherPos.col + otherWidth > col;
+        });
+
+        ctx.save();
+        if (!overlapsVisible) {
+            ctx.globalAlpha = 0.35;
+            ctx.font = (CHAR_H - 4) + 'px ' + fontFamily;
+            ctx.fillStyle = item.color;
+            const text = item.text.length > item.length ? item.text.substring(0, item.length) : item.text;
+            ctx.textAlign = 'center';
+            for (let i = 0; i < text.length; i++) {
+                ctx.fillText(text[i], x + i * CHAR_W + CHAR_W / 2, y + CHAR_H / 2);
+            }
+            ctx.textAlign = 'start';
+        }
+        ctx.globalAlpha = 0.85;
+        ctx.strokeStyle = '#9a9a9a';
+        ctx.setLineDash([1, 2]);
+        ctx.strokeRect(x + 0.5, y + 0.5, w - 1, CHAR_H - 1);
+        ctx.restore();
+
+        // A DSPATR(ND) element can still be clicked (see findItemAt), so it keeps its selection box.
+        if (selectedLineIndices.has(item.lineIndex) && !item.hiddenReason) {
+            ctx.save();
+            ctx.strokeStyle = '#ffffff';
+            ctx.strokeRect(x - 1.5, y - 1.5, w + 2, CHAR_H + 2);
+            ctx.restore();
+        }
+    }
+
     function drawItem(item, fontFamily, moveDelta) {
         if (item.nonDisplay) {
+            if (showHidden && !item.isBackground) {
+                drawGhost(item, fontFamily, moveDelta);
+            }
             return;
         }
         if (item.blink && !blinkOn) {
@@ -4034,6 +4167,12 @@ export class RecordPreviewPanel {
             ctx.restore();
         }
 
+        if (showHidden) {
+            for (const item of currentHiddenItems) {
+                drawGhost(item, fontFamily, moveDelta);
+            }
+        }
+
         for (const item of items) {
             // Field/constant resize preview: while dragging its handle, the element's own text
             // stretches/shrinks live to the currently-dragged length — nothing is actually written
@@ -4063,7 +4202,7 @@ export class RecordPreviewPanel {
             }
         }
 
-        drawGridDots(size, items, currentBackgroundItems, moveDelta, currentOuterFrame, currentWindowFrame);
+        drawGridDots(size, showHidden ? items.concat(currentHiddenItems) : items, currentBackgroundItems, moveDelta, currentOuterFrame, currentWindowFrame);
 
         // Element resize handles: shown only while exactly one resizable field/constant is selected —
         // a small grip just past its right edge (outside its own text, so it never overlaps it even
@@ -4074,7 +4213,9 @@ export class RecordPreviewPanel {
         // would otherwise go stale (it's computed from the item's un-dragged base length/column).
         currentElementHandleRect = null;
         currentElementHandleRectLeft = null;
-        if (selectedLineIndices.size === 1) {
+        // None in "Area" mode, where the mouse only ever draws selection rectangles — a stray click
+        // there must never resize (or move) an element.
+        if (selectedLineIndices.size === 1 && !areaSelectMode) {
             const selectedLineIndex = [...selectedLineIndices][0];
             const isDraggingLeft = elementResizeState && elementResizeState.side === 'left';
             const isDraggingRight = elementResizeState && elementResizeState.side !== 'left';
@@ -4222,6 +4363,21 @@ export class RecordPreviewPanel {
             currentCenterIconRect = drawIconButton(centerX, centerY, '↔', 'Center horizontally');
         }
 
+        if (marqueeState) {
+            const area = marqueeArea();
+            const mx = (area.minCol - 1) * CHAR_W;
+            const my = (area.minRow - 1) * CHAR_H;
+            const mw = (area.maxCol - area.minCol + 1) * CHAR_W;
+            const mh = (area.maxRow - area.minRow + 1) * CHAR_H;
+            ctx.save();
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+            ctx.fillRect(mx, my, mw, mh);
+            ctx.strokeStyle = '#ffffff';
+            ctx.setLineDash([4, 3]);
+            ctx.strokeRect(mx + 0.5, my + 0.5, mw - 1, mh - 1);
+            ctx.restore();
+        }
+
         updateSelectionBar();
     }
 
@@ -4300,6 +4456,25 @@ export class RecordPreviewPanel {
         const col = Math.floor((ev.clientX - rect.left) / CHAR_W) + 1;
         const row = Math.floor((ev.clientY - rect.top) / CHAR_H) + 1;
         return { row, col };
+    }
+
+    // Hover tooltip: the element under the cursor's name — plus, while "Hidden" is on, every ghost
+    // there too and why it isn't on the screen, since a ghost may well share its cells with a
+    // visible element (or another ghost).
+    function hoverTitleAt(ev, hit) {
+        const lines = [];
+        if (hit) {
+            lines.push(hit.nonDisplay && showHidden ? hit.name + ' — hidden (DSPATR(ND))' : hit.name);
+        }
+        if (showHidden) {
+            const { row, col } = cellAt(ev);
+            for (const ghost of currentHiddenItems) {
+                if (row === ghost.row && col >= ghost.col && col < ghost.col + Math.max(ghost.length, ghost.text.length, 1)) {
+                    lines.push(ghost.name + ' — hidden (' + ghost.hiddenReason + ')');
+                }
+            }
+        }
+        return lines.join('\\n');
     }
 
     function findItemAt(ev) {
@@ -4395,6 +4570,46 @@ export class RecordPreviewPanel {
                col >= currentOuterFrame.col && col < currentOuterFrame.col + currentOuterFrame.cols;
     }
 
+    // The window's writable content area only (inside the border), as opposed to isOverWindowFrame,
+    // which also counts the border itself.
+    function isOverWindowContent(ev) {
+        if (!currentWindowFrame) {
+            return false;
+        }
+        const { row, col } = cellAt(ev);
+        return row >= currentWindowFrame.row && row < currentWindowFrame.row + currentWindowFrame.rows &&
+               col >= currentWindowFrame.col && col < currentWindowFrame.col + currentWindowFrame.cols;
+    }
+
+    function marqueeArea() {
+        return {
+            minRow: Math.min(marqueeState.startRow, marqueeState.endRow),
+            maxRow: Math.max(marqueeState.startRow, marqueeState.endRow),
+            minCol: Math.min(marqueeState.startCol, marqueeState.endCol),
+            maxCol: Math.max(marqueeState.startCol, marqueeState.endCol)
+        };
+    }
+
+    // The marquee's selection: whatever it started from (only non-empty for a Ctrl/Cmd marquee) plus
+    // every interactive item the rectangle touches — touching is enough, it doesn't need to cover
+    // the whole item. Background (overlaid/dimmed) items are never picked up, same as a click, and
+    // neither are non-display (DSPATR(ND)) ones: nothing is drawn for them, so sweeping over what
+    // looks like empty space mustn't quietly select them.
+    function applyMarqueeSelection() {
+        const area = marqueeArea();
+        const selection = new Set(marqueeState.baseSelection);
+        for (const item of currentItems) {
+            if (!item.isInteractive || item.nonDisplay) {
+                continue;
+            }
+            const lastCol = item.col + Math.max(item.length, item.text.length, 1) - 1;
+            if (item.row >= area.minRow && item.row <= area.maxRow && item.col <= area.maxCol && lastCol >= area.minCol) {
+                selection.add(item.lineIndex);
+            }
+        }
+        selectedLineIndices = selection;
+    }
+
     function isOverTitle(ev) {
         const rect = canvas.getBoundingClientRect();
         const px = ev.clientX - rect.left;
@@ -4454,6 +4669,29 @@ export class RecordPreviewPanel {
         setPlacingKind(placingKind === 'field' ? null : 'field');
     });
 
+    hiddenBtn.addEventListener('click', () => {
+        showHidden = !showHidden;
+        hiddenBtn.classList.toggle('active', showHidden);
+        if (currentSize) {
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
+        }
+    });
+
+    areaSelectBtn.addEventListener('click', () => {
+        areaSelectMode = !areaSelectMode;
+        areaSelectBtn.classList.toggle('active', areaSelectMode);
+        // Turning it on starts from a clean slate: whatever was selected by clicking is dropped, so
+        // only what the rectangles pick up counts. Turning it off keeps the rectangle's selection,
+        // ready to be moved or acted on.
+        if (areaSelectMode) {
+            selectedLineIndices.clear();
+        }
+        // Also shows/hides the selected element's resize handles, which "Area" mode turns off.
+        if (currentSize) {
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
+        }
+    });
+
     gridDotsBtn.addEventListener('click', () => {
         showGridDots = !showGridDots;
         gridDotsBtn.classList.toggle('active', showGridDots);
@@ -4495,6 +4733,12 @@ export class RecordPreviewPanel {
     document.addEventListener('keydown', (ev) => {
         if (ev.key === 'Escape' && placingKind) {
             setPlacingKind(null);
+            return;
+        }
+        if (ev.key === 'Escape' && marqueeState) {
+            selectedLineIndices = marqueeState.baseSelection;
+            marqueeState = null;
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
             return;
         }
 
@@ -4591,6 +4835,24 @@ export class RecordPreviewPanel {
             return;
         }
 
+        // "Area" mode: the mouse only selects by rectangle — pressing anywhere (on an element or
+        // on empty space alike) starts one, so an element is never clicked, selected or dragged by
+        // accident. The window's border is the one exception: it's still how the window gets moved.
+        if (areaSelectMode && currentSize && (isOverWindowContent(ev) || !isOverWindowFrame(ev))) {
+            const { row, col } = cellAt(ev);
+            const additive = ev.ctrlKey || ev.metaKey;
+            marqueeState = {
+                startRow: row,
+                startCol: col,
+                endRow: row,
+                endCol: col,
+                baseSelection: additive ? new Set(selectedLineIndices) : new Set()
+            };
+            applyMarqueeSelection();
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
+            return;
+        }
+
         const hit = findItemAt(ev);
 
         // Ctrl/Cmd+click toggles an item in/out of a multi-selection, without starting a drag —
@@ -4620,6 +4882,11 @@ export class RecordPreviewPanel {
             dragState = {
                 items: draggedItems.map(i => ({ item: i, startRow: i.row, startCol: i.col })),
                 primaryLineIndex: hit.lineIndex,
+                // The exact rendered item that was grabbed, not just its lineIndex: a CNTFLD-wrapped
+                // field (or a selection field with its choices) is several items sharing one
+                // lineIndex, each at its own row/col, and the grab offsets below are relative to
+                // this one specifically.
+                primaryItem: hit,
                 grabRowOffset: row - hit.row,
                 grabColOffset: col - hit.col,
                 rowDelta: 0,
@@ -4671,6 +4938,11 @@ export class RecordPreviewPanel {
         if (!hit) {
             return;
         }
+        // In "Area" mode, a right-click can't change the selection either: it opens the Actions for
+        // the rectangle's selection when made on one of its elements, and does nothing otherwise.
+        if (areaSelectMode && !selectedLineIndices.has(hit.lineIndex)) {
+            return;
+        }
         if (!selectedLineIndices.has(hit.lineIndex)) {
             selectedLineIndices = new Set([hit.lineIndex]);
             draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
@@ -4690,6 +4962,19 @@ export class RecordPreviewPanel {
     window.addEventListener('mousemove', (ev) => {
         if (placingKind) {
             canvas.style.cursor = 'crosshair';
+            return;
+        }
+
+        if (marqueeState) {
+            const { row, col } = cellAt(ev);
+            const endRow = clamp(row, 1, currentSize.rows);
+            const endCol = clamp(col, 1, currentSize.cols);
+            if (endRow !== marqueeState.endRow || endCol !== marqueeState.endCol) {
+                marqueeState.endRow = endRow;
+                marqueeState.endCol = endCol;
+                applyMarqueeSelection();
+                draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
+            }
             return;
         }
 
@@ -4794,13 +5079,18 @@ export class RecordPreviewPanel {
                     return;
                 }
             }
+            if (areaSelectMode && (isOverWindowContent(ev) || !isOverWindowFrame(ev))) {
+                canvas.style.cursor = 'crosshair';
+                canvas.title = hoverTitleAt(ev, hit);
+                return;
+            }
             canvas.style.cursor = (!hit && isOverWindowFrame(ev)) ? 'move' : 'default';
-            canvas.title = hit ? hit.name : '';
+            canvas.title = hoverTitleAt(ev, hit);
             return;
         }
 
         const { row, col } = cellAt(ev);
-        const primary = dragState.items.find(d => d.item.lineIndex === dragState.primaryLineIndex);
+        const primary = dragState.items.find(d => d.item === dragState.primaryItem);
         const desiredRowDelta = (row - dragState.grabRowOffset) - primary.startRow;
         const desiredColDelta = (col - dragState.grabColOffset) - primary.startCol;
 
@@ -4843,6 +5133,12 @@ export class RecordPreviewPanel {
     });
 
     window.addEventListener('mouseup', () => {
+        if (marqueeState) {
+            marqueeState = null;
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
+            return;
+        }
+
         if (elementResizeState) {
             const { item, newLength, startLength, side } = elementResizeState;
             elementResizeState = null;
@@ -5163,6 +5459,7 @@ export class RecordPreviewPanel {
             currentErrorMessage = message.errorMessage || null;
             currentErrorMessageFrame = message.errorMessageFrame || null;
             currentWindowBorder = message.windowBorder || null;
+            currentHiddenItems = message.hiddenItems || [];
             draw(message.size, message.items, message.backgroundItems, message.windowFrame, message.windowTitles, message.outerFrame);
         } else if (message.type === 'notFound') {
             info.textContent = 'Record no longer exists.';
