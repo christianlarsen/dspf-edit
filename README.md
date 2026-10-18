@@ -164,11 +164,10 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.13.0** - 2026-10-18
-- Added: select fields and constants in the Screen Preview by dragging a rectangle over them. Turn on **⬚ Area** in the toolbar; while it's on, clicking an element doesn't select or move it.
-- Added: **◌ Hidden** in the toolbar shows, as dotted outlines, the fields and constants that aren't visible right now: conditioned on indicators that are off, or with `DSPATR(ND)`. Hovering one says why it's hidden.
-- Fixed: clicking an element in the preview no longer brings back a hidden Side Bar.
-- Fixed: clicking a later line of a field that spans several lines no longer moves the field.
+**1.13.1** - 2026-10-18
+- Changed: what is selected in the Screen Preview now shows next to the **Indicators** toggle, so selecting something no longer moves the screen down.
+- Fixed: right-clicking a multi-selection, or a selection made with **⬚ Area**, no longer reduces it to one element, so **Align...** is offered for all of them.
+- Fixed: on macOS, `Ctrl`+click adds to the selection without also opening the **⋮ Actions** menu.
 
 ---
 

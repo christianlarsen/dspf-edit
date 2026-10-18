@@ -3474,11 +3474,13 @@ export class RecordPreviewPanel {
         margin-bottom: 6px;
         font-size: 12px;
     }
-    /* toolbarRowDisplaced only ever holds actionBar while it's away from toolbarRow3 (see
-       updateSelectionBar) — collapse it to nothing rather than leaving an empty row/gap when it's
-       not currently hosting anything. */
-    .toolbar-row:empty {
-        display: none;
+    /* The Indicators checkbox and the selection label share this row, and it always keeps the
+       height of one line, even when neither is showing: selecting or deselecting something must
+       never push the preview below it up or down. A long label is cut short with an ellipsis
+       (the full text is in its tooltip) instead of wrapping onto a second line. */
+    #toolbarRow4 {
+        flex-wrap: nowrap;
+        min-height: 18px;
     }
     #info {
         opacity: 0.7;
@@ -3592,10 +3594,12 @@ export class RecordPreviewPanel {
     }
     #selectionLabel {
         opacity: 0.7;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
-    /* Empty (no selection) — hide it entirely rather than leaving a zero-width flex item, whose
-       column-gap before actionBar would otherwise shift the buttons right of where the row above
-       (e.g. "Format:") starts, even though nothing visible is actually there. */
+    /* Empty (no selection) — hide it entirely rather than leaving a zero-width flex item. */
     #selectionLabel:empty {
         display: none;
     }
@@ -3709,7 +3713,6 @@ export class RecordPreviewPanel {
     </span>
 </div>
 <div id="toolbarRow3" class="toolbar-row">
-    <span id="selectionLabel"></span>
     <span id="actionBar">
         <button id="addFieldBtn" title="Click, then click a point in the screen to place a new field there">+ Field</button>
         <button id="addConstantBtn" title="Click, then click a point in the screen to place a new constant there">+ Constant</button>
@@ -3720,9 +3723,9 @@ export class RecordPreviewPanel {
         <button id="selectionMenuBtn" title="More actions (color, attributes, copy, delete...)" disabled>⋮ Actions</button>
     </span>
 </div>
-<div id="toolbarRowDisplaced" class="toolbar-row"></div>
 <div id="toolbarRow4" class="toolbar-row">
     <label id="indicatorBar"><input type="checkbox" id="indicatorsToggle"> Indicators</label>
+    <span id="selectionLabel"></span>
 </div>
 <div id="indicatorList"></div>
 <div id="functionKeyList"></div>
@@ -3755,9 +3758,6 @@ export class RecordPreviewPanel {
     const gridDotsBtn = document.getElementById('gridDotsBtn');
     const areaSelectBtn = document.getElementById('areaSelectBtn');
     const hiddenBtn = document.getElementById('hiddenBtn');
-    const actionBar = document.getElementById('actionBar');
-    const toolbarRow3 = document.getElementById('toolbarRow3');
-    const toolbarRowDisplaced = document.getElementById('toolbarRowDisplaced');
     const selectionLabel = document.getElementById('selectionLabel');
     const selectionCenterBtn = document.getElementById('selectionCenterBtn');
     const selectionMenuBtn = document.getElementById('selectionMenuBtn');
@@ -3826,6 +3826,8 @@ export class RecordPreviewPanel {
     let currentElementHandleRect = null;
     let currentElementHandleRectLeft = null;
     let selectedLineIndices = new Set();
+    // Set by a Ctrl+click toggle (see the canvas 'mousedown' handler), cleared by the next mousedown.
+    let suppressNextContextMenu = false;
     let currentRecordName = null;
     let placingKind = null; // null | 'constant' | 'field'
     let showGridDots = false;
@@ -4421,25 +4423,15 @@ export class RecordPreviewPanel {
             }
             selectionLabel.textContent = label;
         }
+        // The label lives on the Indicators row, which is never allowed to wrap (see #toolbarRow4),
+        // so a long one gets cut short there — the tooltip keeps the full text reachable.
+        selectionLabel.title = selectionLabel.textContent;
 
         // Center only makes sense for exactly one selected element; Actions applies to one or
-        // several. Both stay visible but disabled rather than hidden when they don't apply — and
-        // both live inside actionBar itself, so they always move together with the rest of the buttons.
+        // several. Both stay visible but disabled rather than hidden when they don't apply, so the
+        // button row never changes shape as the selection changes.
         selectionCenterBtn.disabled = !hasSelection || multi;
         selectionMenuBtn.disabled = !hasSelection;
-
-        // All the buttons (+Field/+Constant/Grid/Center/Actions) share row 3 with the
-        // selection label when nothing is selected; once something is, the label needs that room,
-        // so the whole button group moves into its own dedicated row (toolbarRowDisplaced) as one
-        // unit until the selection is cleared again. That row sits between row 3 and the Indicators
-        // row, and collapses to nothing when empty (see the ".toolbar-row:empty" rule), so the
-        // Indicators row always ends up directly below wherever the buttons currently are, on its
-        // own line, rather than sharing a line with them.
-        if (hasSelection) {
-            toolbarRowDisplaced.appendChild(actionBar);
-        } else {
-            toolbarRow3.appendChild(actionBar);
-        }
     }
 
     setInterval(() => {
@@ -4757,6 +4749,15 @@ export class RecordPreviewPanel {
     });
 
     canvas.addEventListener('mousedown', (ev) => {
+        suppressNextContextMenu = false;
+        // Only the main button selects, drags or draws a rectangle. A right-click is left entirely
+        // to the 'contextmenu' handler: treating its mousedown as a click would collapse a
+        // multi-selection to the item under the cursor on mouseup (or, in "Area" mode, start a new
+        // rectangle that replaces it), right while its Actions menu is open for the whole group.
+        if (ev.button !== 0) {
+            return;
+        }
+
         if (placingKind) {
             const { row, col } = cellAt(ev);
             const messageType = placingKind === 'field' ? 'addFieldAt'
@@ -4858,6 +4859,9 @@ export class RecordPreviewPanel {
         // Ctrl/Cmd+click toggles an item in/out of a multi-selection, without starting a drag —
         // the standard desktop convention for building up a selection one item at a time.
         if (hit && (ev.ctrlKey || ev.metaKey)) {
+            // On macOS, Ctrl+click also fires 'contextmenu' right after this — it's a selection
+            // gesture here, so that menu must not open on top of it.
+            suppressNextContextMenu = ev.ctrlKey;
             if (selectedLineIndices.has(hit.lineIndex)) {
                 selectedLineIndices.delete(hit.lineIndex);
             } else {
@@ -4934,6 +4938,10 @@ export class RecordPreviewPanel {
         // multi-selection keeps the whole group (same as a plain left-click there); right-clicking
         // any other item — selected or not — replaces the selection with just that one first.
         ev.preventDefault();
+        if (suppressNextContextMenu) {
+            suppressNextContextMenu = false;
+            return;
+        }
         const hit = findItemAt(ev);
         if (!hit) {
             return;
