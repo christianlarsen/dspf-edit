@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from './../dspf-edit.providers/dspf-edit.providers';
 import { findElementInsertionPoint, checkForEditorAndDocument, applyWorkspaceEdit, formatIndicatorCondition } from './../dspf-edit.utils/dspf-edit.helper';
-import { KeywordValue, showKeywordValueMenu, removeKeywordValue, removeWholeKeyword, changeKeywordValueIndicators } from './dspf-edit.conditioned-keywords';
+import { KeywordValue, KeywordValueSpec, manageKeywordValues, removeWholeKeyword } from './dspf-edit.conditioned-keywords';
 import { fieldsPerRecords, DdsIndicator } from '../dspf-edit.model/dspf-edit.model';
 
 // INTERFACES AND TYPES
@@ -62,74 +62,9 @@ async function handleAddAttributeCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        // Get current attributes from the element (both inline and separate lines)
-        const currentAttributes = getCurrentAttributesForElement(node.ddsElement);
-
-        // Get available attributes (excluding current ones)
-        const availableAttributes = getAvailableAttributes(currentAttributes.map(a => a.attribute));
-
-        // Show a summary menu — one row per attribute the element already has, with its
-        // indicators, changeable/removable individually (see dspf-edit.conditioned-keywords.ts).
-        if (currentAttributes.length > 0) {
-            const elementName = node.ddsElement.name;
-            const values = currentAttributes.map(toKeywordValue);
-            const choice = await showKeywordValueMenu(values, {
-                title: `Attributes for ${elementName}`,
-                placeholder: 'Select an attribute to change its indicators, use its buttons, or add more',
-                addLabel: availableAttributes.length > 0 ? 'Add attributes...' : undefined,
-                removeAllLabel: 'Remove all attributes',
-                describe: code => ATTRIBUTE_NAMES[code] ? `${code} — ${ATTRIBUTE_NAMES[code]}` : code
-            });
-            if (!choice) return;
-
-            if (choice.action === 'removeAll') {
-                if (!(await removeAttributesFromElement(editor, node.ddsElement))) {
-                    return;
-                };
-                await nudgeCursor();
-                vscode.window.showInformationMessage(`Removed all attributes from ${elementName}.`);
-                return;
-            };
-
-            if (choice.action === 'remove') {
-                const existing = values[choice.valueIndex];
-                if (!(await removeKeywordValue(editor, node.ddsElement, existing))) {
-                    return;
-                };
-                await nudgeCursor();
-                vscode.window.showInformationMessage(`Removed attribute ${existing.code} from ${elementName}.`);
-                return;
-            };
-
-            if (choice.action === 'edit') {
-                await changeKeywordValueIndicators(editor, node.ddsElement, values[choice.valueIndex]);
-                return;
-            };
-            // choice.action === 'addNew' falls through to the add flow below
-        };
-
-        // Collect new attributes to add
-        const selectedAttributes = await collectAttributesWithIndicatorsFromUser(availableAttributes);
-
-        if (selectedAttributes.length === 0) {
-            vscode.window.showInformationMessage('No attributes selected.');
-            return;
-        };
-
-        // Apply the selected attributes to the element
-        if (!(await addAttributesToElement(editor, node.ddsElement, selectedAttributes))) {
-            return;
-        };
-        await vscode.commands.executeCommand('cursorRight');
-        await vscode.commands.executeCommand('cursorLeft');
-
-        const attributesSummary = selectedAttributes.map(a =>
-            `${a.attribute}${a.indicators.length > 0 ? `(${a.indicators.join(',')})` : ''}`
-        ).join(', ');
-
-        vscode.window.showInformationMessage(
-            `Added attributes ${attributesSummary} to ${node.ddsElement.name}.`
-        );
+        // One window for everything: check/uncheck attributes, set each one's indicators, remove
+        // them (see dspf-edit.conditioned-keywords.ts).
+        await manageKeywordValues(editor, node.ddsElement, ATTRIBUTE_SPEC);
 
     } catch (error) {
         console.error('Error managing attributes:', error);
@@ -137,7 +72,7 @@ async function handleAddAttributeCommand(node: DdsNode): Promise<void> {
     };
 };
 
-// ATTRIBUTES SUMMARY MENU
+// ATTRIBUTES WINDOW
 
 const ATTRIBUTE_NAMES: Record<string, string> = {
     HI: 'High intensity',
@@ -150,13 +85,7 @@ const ATTRIBUTE_NAMES: Record<string, string> = {
     PR: 'Protect'
 };
 
-/** Nudges the cursor so the tree and preview pick up the edit, as every command here does. */
-async function nudgeCursor(): Promise<void> {
-    await vscode.commands.executeCommand('cursorRight');
-    await vscode.commands.executeCommand('cursorLeft');
-};
-
-/** An existing attribute, as the shared summary menu and its edits take it. */
+/** An existing attribute, as the shared window and its edits take it. */
 function toKeywordValue(attr: AttributeWithIndicators): KeywordValue {
     return {
         code: attr.attribute,
@@ -165,6 +94,17 @@ function toKeywordValue(attr: AttributeWithIndicators): KeywordValue {
         lastLineIndex: attr.lastLineIndex ?? attr.lineIndex!,
         conditionText: attr.conditionText ?? ''
     };
+};
+
+const ATTRIBUTE_SPEC: KeywordValueSpec = {
+    keyword: 'DSPATR',
+    codes: Object.keys(ATTRIBUTE_NAMES),
+    noun: 'attribute',
+    nounPlural: 'attributes',
+    describe: code => ATTRIBUTE_NAMES[code] ? `${code} — ${ATTRIBUTE_NAMES[code]}` : code,
+    read: element => getCurrentAttributesForElement(element).map(toKeywordValue),
+    add: (editor, element, codes) => addAttributesToElement(editor, element, codes.map(attribute => ({ attribute, indicators: [] }))),
+    removeAll: removeAttributesFromElement
 };
 
 // ATTRIBUTES EXTRACTION FUNCTIONS
@@ -245,86 +185,6 @@ function getNumberOfAttributesForElement(element: any): number | undefined {
 function getAvailableAttributes(currentAttributes: string[]): string[] {
     const allAttributes: string[] = ['HI', 'RI', 'CS', 'BL', 'ND', 'UL', 'PC', 'PR'];
     return allAttributes.filter(attribute => !currentAttributes.includes(attribute));
-};
-
-// USER INTERACTION FUNCTIONS
-
-/**
- * Collects attributes with indicators from user through interactive selection.
- * @param availableAttributes - Array of attributes available for selection
- * @returns Array of selected attributes with indicators
- */
-async function collectAttributesWithIndicatorsFromUser(availableAttributes: string[]): Promise<AttributeWithIndicators[]> {
-    const selectedAttributes: AttributeWithIndicators[] = [];
-    let remainingAttributes = [...availableAttributes];
-
-    while (remainingAttributes.length > 0) {
-        const selectedAttribute = await vscode.window.showQuickPick(
-            remainingAttributes,
-            {
-                title: `Add Attribute (${selectedAttributes.length} selected) - Press ESC to finish`,
-                placeHolder: 'Select attribute from list'
-            }
-        );
-
-        if (!selectedAttribute) break;
-
-        // Collect indicators for this attribute
-        const indicators = await collectIndicatorsForAttribute(selectedAttribute);
-
-        selectedAttributes.push({
-            attribute: selectedAttribute,
-            indicators: indicators
-        });
-
-        remainingAttributes = remainingAttributes.filter(c => c !== selectedAttribute);
-    };
-
-    return selectedAttributes;
-};
-
-/**
- * Collects conditioning indicators for a specific attribute.
- * @param attribute - The attribute code (e.g., 'HI', 'RI')
- * @returns Array of indicator codes (max 3)
- */
-async function collectIndicatorsForAttribute(attribute: string): Promise<string[]> {
-    const indicators: string[] = [];
-
-    while (indicators.length < 3) {
-        const indicatorInput = await vscode.window.showInputBox({
-            title: `Indicators for DSPATR(${attribute}) - ${indicators.length}/3 added`,
-            prompt: `Enter indicator ${indicators.length + 1} (e.g., '50', 'N50', or leave empty to finish)`,
-            placeHolder: 'Indicator (1-99, optional N prefix)',
-            validateInput: (value: string) => {
-                if (!value.trim()) return null; // Empty is OK to finish
-                if (!/^N?[0-9]{1,2}$/.test(value.trim())) {
-                    return 'Invalid indicator format. Use format like: 50, N50, 5, N99';
-                }
-                const num = parseInt(value.replace('N', ''));
-                if (num < 1 || num > 99) {
-                    return 'Indicator number must be between 1 and 99';
-                }
-                return null;
-            }
-        });
-
-        if (indicatorInput === undefined) {
-            // User cancelled
-            return [];
-        };
-
-        const trimmedInput = indicatorInput.trim();
-        if (!trimmedInput) {
-            // User finished entering indicators
-            break;
-        };
-
-        // Validate and add indicator
-        indicators.push(trimmedInput.toUpperCase());
-    };
-
-    return indicators;
 };
 
 // DDS MODIFICATION FUNCTIONS

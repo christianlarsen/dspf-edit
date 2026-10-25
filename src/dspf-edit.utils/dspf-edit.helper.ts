@@ -1156,27 +1156,59 @@ async function rewriteKeywordArea(
         return applyWorkspaceEdit(workspaceEdit, 'delete the attribute');
     };
 
-    // Re-paginate the remaining text: up to 35 characters per continued line (leaving room for a
-    // trailing '-'), and up to 36 on the final line (no continuation needed).
-    const chunks: string[] = [];
-    let rest = remaining;
-    while (rest.length > 36) {
-        chunks.push(rest.substring(0, 35) + '-');
-        rest = rest.substring(35);
-    };
-    chunks.push(rest);
+    const chunks = paginateKeywordText(remaining);
 
     const prefix = document.lineAt(lineIndex).text.substring(0, 44);
-    for (let i = 0; i < chunks.length; i++) {
+    for (let i = 0; i < Math.min(chunks.length, lineCount); i++) {
         const newText = (prefix + chunks[i]).replace(/\s+$/, '');
         workspaceEdit.replace(uri, document.lineAt(lineIndex + i).range, newText);
     };
 
     if (chunks.length < lineCount) {
         deleteLineRange(workspaceEdit, document, uri, lineIndex + chunks.length, lastLineIndex);
+    } else if (chunks.length > lineCount) {
+        // Grown (a replacement longer than what it replaced): the extra continuation lines go in
+        // right below the last one, never over whatever line follows it.
+        const extra = chunks.slice(lineCount).map(chunk => ('     A'.padEnd(44, ' ') + chunk).replace(/\s+$/, ''));
+        workspaceEdit.insert(uri, document.lineAt(lastLineIndex).range.end, extra.map(line => '\n' + line).join(''));
     };
 
     return applyWorkspaceEdit(workspaceEdit, 'delete the attribute');
+};
+
+/**
+ * Splits keyword text into the parts that go in positions 45-80 of consecutive lines: up to 35
+ * characters per continued line (leaving room for a trailing '-'), and up to 36 on the final line.
+ * A line is cut right after a blank when it has one, so that names aren't split in two; a '-'
+ * continuation keeps that blank, as it keeps everything before it.
+ * @param text - The keyword area's whole text, e.g. "RTNCSRLOC(&CSRRCD &CSRFLD &CSRPOS)"
+ */
+export function paginateKeywordText(text: string): string[] {
+    const chunks: string[] = [];
+    let rest = text;
+    while (rest.length > 36) {
+        const blank = rest.lastIndexOf(' ', 34);
+        const cut = blank > 0 ? blank + 1 : 35;
+        chunks.push(rest.substring(0, cut) + '-');
+        rest = rest.substring(cut);
+    };
+    chunks.push(rest);
+    return chunks;
+};
+
+/**
+ * Inserts an unconditioned keyword on line(s) of its own at `insertionPoint`, continued with '-'
+ * when it doesn't fit in positions 45-80.
+ * @param editor - The active text editor
+ * @param insertionPoint - The line it goes in at (see findElementInsertionPoint)
+ * @param keywordText - The keyword, e.g. "RTNCSRLOC(&CSRRCD &CSRFLD)"
+ */
+export async function insertKeywordLines(editor: vscode.TextEditor, insertionPoint: number, keywordText: string): Promise<boolean> {
+    const lines = paginateKeywordText(keywordText).map(chunk => '     A'.padEnd(44, ' ') + chunk).join('\n');
+    const workspaceEdit = new vscode.WorkspaceEdit();
+    const atEnd = insertionPoint >= editor.document.lineCount;
+    workspaceEdit.insert(editor.document.uri, new vscode.Position(insertionPoint, 0), atEnd ? `\n${lines}` : `${lines}\n`);
+    return applyWorkspaceEdit(workspaceEdit, `add ${keywordText}`);
 };
 
 /** Deletes a contiguous range of whole lines (inclusive), handling end-of-document edge cases. */

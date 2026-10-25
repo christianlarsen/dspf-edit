@@ -888,6 +888,10 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode>, vscode
 }
 
 /** Whether a tree element is a record carrying an SFLCTL() keyword (a subfile control record). */
+function isSflElement(ddsElement: DdsElement): boolean {
+	return ddsElement.kind === 'record' && (ddsElement.attributes?.some(attr => attr.value.trim().toUpperCase() === 'SFL') ?? false);
+};
+
 function isSflCtlElement(ddsElement: DdsElement): boolean {
 	return ddsElement.kind === 'record' && (ddsElement.attributes?.some(attr => attr.value.toUpperCase().startsWith('SFLCTL(')) ?? false);
 };
@@ -939,7 +943,7 @@ export class DdsNode extends vscode.TreeItem {
 		this.iconPath = this.getIconPath(ddsElement, label);
 		this.contextValue = ddsElement.kind === 'group' && ddsElement.attribute === '' && label === 'Records'
 			? 'group:records'
-			: isSflCtlElement(ddsElement) ? 'record sflctl' : `${ddsElement.kind}${referencedFieldContextSuffix(ddsElement)}${fieldUsageContextSuffix(ddsElement)}`;
+			: isSflCtlElement(ddsElement) ? 'record sflctl' : isSflElement(ddsElement) ? 'record sfl' : `${ddsElement.kind}${referencedFieldContextSuffix(ddsElement)}${fieldUsageContextSuffix(ddsElement)}`;
 
 		if (this.shouldHaveNavigationCommand(ddsElement)) {
 			this.command = { command: 'ddsEdit.goToLine', title: `Go to ${ddsElement.kind}`, arguments: [ddsElement.lineIndex + 1] };

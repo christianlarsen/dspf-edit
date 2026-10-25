@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { findElementInsertionPoint, checkForEditorAndDocument, applyWorkspaceEdit, formatIndicatorCondition } from '../dspf-edit.utils/dspf-edit.helper';
-import { KeywordValue, showKeywordValueMenu, removeKeywordValue, removeWholeKeyword, changeKeywordValueIndicators } from './dspf-edit.conditioned-keywords';
+import { KeywordValue, KeywordValueSpec, manageKeywordValues, removeWholeKeyword } from './dspf-edit.conditioned-keywords';
 import { fieldsPerRecords, DdsIndicator } from '../dspf-edit.model/dspf-edit.model';
 
 // INTERFACES AND TYPES
@@ -58,76 +58,10 @@ async function handleAddColorCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        // Get current colors from the element (both inline and separate lines)
-        const currentColors = getCurrentColorsForElement(node.ddsElement);
-        
-        // Get available colors (excluding current ones)
-        const availableColors = getAvailableColors(currentColors.map(c => c.color));
-
-        // Show a summary menu — one row per color the element already has, with its indicators,
-        // changeable/removable individually (see dspf-edit.conditioned-keywords.ts). An element
-        // can well have several colors, each one applying under its own indicators.
-        if (currentColors.length > 0) {
-            const elementName = node.ddsElement.name;
-            const values = currentColors.map(toKeywordValue);
-            const choice = await showKeywordValueMenu(values, {
-                title: `Colors for ${elementName}`,
-                placeholder: 'Select a color to change its indicators, use its buttons, or add more',
-                addLabel: availableColors.length > 0 ? 'Add colors...' : undefined,
-                removeAllLabel: 'Remove all colors',
-                describe: code => COLOR_NAMES[code] ? `${code} — ${COLOR_NAMES[code]}` : code
-            });
-            if (!choice) return;
-
-            if (choice.action === 'removeAll') {
-                if (!(await removeColorsFromElement(editor, node.ddsElement))) {
-                    return;
-                };
-                await nudgeCursor();
-                vscode.window.showInformationMessage(`Removed all colors from ${elementName}.`);
-                return;
-            };
-
-            if (choice.action === 'remove') {
-                const existing = values[choice.valueIndex];
-                if (!(await removeKeywordValue(editor, node.ddsElement, existing))) {
-                    return;
-                };
-                await nudgeCursor();
-                vscode.window.showInformationMessage(`Removed color ${existing.code} from ${elementName}.`);
-                return;
-            };
-
-            if (choice.action === 'edit') {
-                await changeKeywordValueIndicators(editor, node.ddsElement, values[choice.valueIndex]);
-                return;
-            };
-            // choice.action === 'addNew' falls through to the add flow below
-        };
-
-        // Collect new colors to add
-        const selectedColors = await collectColorsWithIndicatorsFromUser(availableColors);
-        
-        if (selectedColors.length === 0) {
-            vscode.window.showInformationMessage('No colors selected.');
-            return;
-        };
-
-        // Apply the selected colors to the element
-        if (!(await addColorsToElement(editor, node.ddsElement, selectedColors))) {
-            return;
-        };
-        await vscode.commands.executeCommand('cursorRight');
-        await vscode.commands.executeCommand('cursorLeft');
-        
-        
-        const colorsSummary = selectedColors.map(c => 
-            `${c.color}${c.indicators.length > 0 ? `(${c.indicators.join(',')})` : ''}`
-        ).join(', ');
-        
-        vscode.window.showInformationMessage(
-            `Added colors ${colorsSummary} to ${node.ddsElement.name}.`
-        );
+        // One window for everything: check/uncheck colors, set each one's indicators, remove them
+        // (see dspf-edit.conditioned-keywords.ts). An element can well have several colors, each
+        // one applying under its own indicators.
+        await manageKeywordValues(editor, node.ddsElement, COLOR_SPEC);
 
     } catch (error) {
         console.error('Error managing colors:', error);
@@ -135,7 +69,7 @@ async function handleAddColorCommand(node: DdsNode): Promise<void> {
     };
 };
 
-// COLORS SUMMARY MENU
+// COLORS WINDOW
 
 const COLOR_NAMES: Record<string, string> = {
     BLU: 'Blue',
@@ -147,13 +81,7 @@ const COLOR_NAMES: Record<string, string> = {
     YLW: 'Yellow'
 };
 
-/** Nudges the cursor so the tree and preview pick up the edit, as every command here does. */
-async function nudgeCursor(): Promise<void> {
-    await vscode.commands.executeCommand('cursorRight');
-    await vscode.commands.executeCommand('cursorLeft');
-};
-
-/** An existing color, as the shared summary menu and its edits take it. */
+/** An existing color, as the shared window and its edits take it. */
 function toKeywordValue(color: ColorWithIndicators): KeywordValue {
     return {
         code: color.color,
@@ -162,6 +90,17 @@ function toKeywordValue(color: ColorWithIndicators): KeywordValue {
         lastLineIndex: color.lastLineIndex ?? color.lineIndex!,
         conditionText: color.conditionText ?? ''
     };
+};
+
+const COLOR_SPEC: KeywordValueSpec = {
+    keyword: 'COLOR',
+    codes: Object.keys(COLOR_NAMES),
+    noun: 'color',
+    nounPlural: 'colors',
+    describe: code => COLOR_NAMES[code] ? `${code} — ${COLOR_NAMES[code]}` : code,
+    read: element => getCurrentColorsForElement(element).map(toKeywordValue),
+    add: (editor, element, codes) => addColorsToElement(editor, element, codes.map(color => ({ color, indicators: [] }))),
+    removeAll: removeColorsFromElement
 };
 
 // COLOR EXTRACTION FUNCTIONS
@@ -211,88 +150,6 @@ function getCurrentColorsForElement(element: any): ColorWithIndicators[] {
 function getAvailableColors(currentColors: string[]): string[] {
     const allColors: string[] = ['BLU', 'GRN', 'PNK', 'RED', 'TRQ', 'WHT', 'YLW'];
     return allColors.filter(color => !currentColors.includes(color));
-};
-
-// USER INTERACTION FUNCTIONS
-
-/**
- * Collects colors with indicators from user through interactive selection.
- * @param availableColors - Array of colors available for selection
- * @returns Array of selected colors with indicators
- */
-async function collectColorsWithIndicatorsFromUser(availableColors: string[]): Promise<ColorWithIndicators[]> {
-    const selectedColors: ColorWithIndicators[] = [];
-    let remainingColors = [...availableColors];
-
-    while (remainingColors.length > 0) {
-        const selectedColor = await vscode.window.showQuickPick(
-            remainingColors,
-            {
-                title: `Add Color (${selectedColors.length} selected) - Press ESC to finish`,
-                placeHolder: 'Select color from list',
-                ignoreFocusOut: true
-            }
-        );
-
-        if (!selectedColor) break;
-
-        // Collect indicators for this color
-        const indicators = await collectIndicatorsForColor(selectedColor);
-        
-        selectedColors.push({
-            color: selectedColor,
-            indicators: indicators
-        });
-        
-        remainingColors = remainingColors.filter(c => c !== selectedColor);
-    };
-
-    return selectedColors;
-};
-
-/**
- * Collects conditioning indicators for a specific color.
- * @param color - The color code (e.g., 'BLU', 'RED')
- * @returns Array of indicator codes (max 3)
- */
-async function collectIndicatorsForColor(color: string): Promise<string[]> {
-    const indicators: string[] = [];
-    
-    while (indicators.length < 3) {
-        const indicatorInput = await vscode.window.showInputBox({
-            title: `Indicators for COLOR(${color}) - ${indicators.length}/3 added`,
-            prompt: `Enter indicator ${indicators.length + 1} (e.g., '50', 'N50', or leave empty to finish)`,
-            placeHolder: 'Indicator (1-99, optional N prefix)',
-            ignoreFocusOut: true,
-            validateInput: (value: string) => {
-                if (!value.trim()) return null; // Empty is OK to finish
-                if (!/^N?[0-9]{1,2}$/.test(value.trim())) {
-                    return 'Invalid indicator format. Use format like: 50, N50, 5, N99';
-                }
-                const num = parseInt(value.replace('N', ''));
-                if (num < 1 || num > 99) {
-                    return 'Indicator number must be between 1 and 99';
-                }
-                return null;
-            }
-        });
-
-        if (indicatorInput === undefined) {
-            // User cancelled
-            return [];
-        };
-
-        const trimmedInput = indicatorInput.trim();
-        if (!trimmedInput) {
-            // User finished entering indicators
-            break;
-        };
-
-        // Validate and add indicator
-        indicators.push(trimmedInput.toUpperCase());
-    };
-
-    return indicators;
 };
 
 // DDS MODIFICATION FUNCTIONS

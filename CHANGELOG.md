@@ -8,6 +8,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.14.0] - 2026-10-25
+### Added
+- Records: **Overlay** adds `OVERLAY` to a record, so it is shown without erasing the screen first: always, or under indicators. On a record that already has it, it changes its indicators or removes it, also when it's written on the record's own `R` line. Offered on every record except subfile records (`SFL`).
+- Records: **Return Cursor Location** manages `RTNCSRLOC`, which returns where the cursor is to the program. It lists the keyword's two formats, each with a ✏️ button to set or change it and a 🗑️ button to remove it: the record and field the cursor is on (`RTNCSRLOC(&record &field [&position])`), and its row and column (`RTNCSRLOC(*WINDOW|*MOUSE &row &column [&row2 [&column2]])`). A record can have both. Offered on every record except subfile records (`SFL`).
+  - It asks for the name of each parameter's hidden field, and keeps those fields in step with the keyword. Missing ones are created with the definition the DDS reference requires: `10A H` for the record and field, `4S 0 H` for the position, `3S 0 H` for rows and columns. Renaming a parameter renames its field too, so changing `&WSNOMCAM` to `&CSRFLD` changes both the keyword and the field's definition. Fields the keyword no longer uses can be deleted; it asks first, since the program may still use them.
+  - A name already used by another parameter, or by a field of the record defined differently (for example `5A B` where `10A H` is needed), is rejected.
+  - A keyword that doesn't fit in positions 45-80 is continued on the next line.
+  - On a subfile control record (`SFLCTL`), the same menu also manages `SFLCSRRRN(&field)`, which returns the relative record number of the subfile record the cursor is on, in a `5S 0 H` field, kept in step the same way.
+  - New hidden fields are added after the hidden fields that follow the record's keywords, so they stay together, as they usually are in the source.
+- Subfiles: **Subfile Record Number** manages `SFLRCDNBR` on a field of a subfile control record (`SFLCTL`), which says which record's page is shown: with no options, `CURSOR` (the cursor goes on that record), `*TOP` (that record is shown first on the page) or both. It asks for the field: a name no field has yet creates it as a hidden `4S 0` field, with the keyword on its own line (`NBR01W 4S 0H SFLRCDNBR(CURSOR)`), and an existing field must be signed numeric, up to 4 digits, with no decimals, and used as output, both or hidden. On a record that already has it, it changes the options, moves it to another field (or renames its field, when given a name no field has), or removes it; a hidden field left without it can then be deleted.
+- Subfiles: **Subfile End** manages `SFLEND` on a subfile control record (`SFLCTL`): what shows that there are more records (`*PLUS`, `*MORE`, or `*SCRBAR` with what displays without graphics show instead) and its indicators. It can also be removed. `SFLEND` needs an indicator (STRSDA says `Condition indicator is not specified with keyword SFLEND` without one), so it isn't added without one, and changing its indicators never leaves it with none: its only condition has no 🗑️ button, there's no **Remove all**, and emptying that condition is refused. To take its indicators off, remove the keyword.
+
+### Changed
+- Attributes and Colors: on a single field or constant, **Attributes** and **Colors** now open one window listing every attribute or color with a checkbox, like the one used for several selected elements. The ones the element already has are checked and show the indicators that condition them. Check or uncheck them and press `Enter` to add or remove them, all at once.
+  - Each row has a ✏️ button to set its indicators. On an attribute or color the element doesn't have yet, it asks for the indicators first and adds it with them, with the same menu as **Indicators**: up to nine indicators per condition. Before, adding one asked for up to three indicators, one by one.
+  - Each row the element has also has a 🗑️ button to remove it, and the 🗑️ button in the title bar removes them all.
+  - After ✏️ or 🗑️, the window opens again, up to date, keeping the checkboxes not applied yet. `Escape` closes it.
+- Keywords continued on the next line (with `-`) are now cut after a blank where possible, instead of in the middle of a name.
+
+### Fixed
+- Replacing a keyword with a longer one that needs more continuation lines than it had wrote the extra lines over the lines that followed it. They are now inserted below it.
+
 ## [1.13.1] - 2026-10-18
 ### Changed
 - Screen Preview: what is selected (for example `3 fields/constants selected`, or a field's name, length and position) now shows to the right of the **Indicators** toggle, on the same row, instead of on the button row. The buttons no longer move to a row of their own when something is selected, so selecting or deselecting no longer moves the screen up or down. A long text is cut short with `…`; hovering it shows it whole.
