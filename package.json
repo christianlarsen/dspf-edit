@@ -8,7 +8,7 @@
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "1.13.1",
+  "version": "1.14.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
@@ -133,6 +133,22 @@
       {
         "command": "dspf-edit.add-sfldrop-sflfold",
         "title": "Subfile Drop/Fold"
+      },
+      {
+        "command": "dspf-edit.subfile-end",
+        "title": "Subfile End"
+      },
+      {
+        "command": "dspf-edit.subfile-record-number",
+        "title": "Subfile Record Number"
+      },
+      {
+        "command": "dspf-edit.overlay",
+        "title": "Overlay"
+      },
+      {
+        "command": "dspf-edit.cursor-location",
+        "title": "Return Cursor Location"
       },
       {
         "command": "dspf-edit.add-chginpdft",
@@ -364,6 +380,26 @@
           "command": "dspf-edit.add-sfldrop-sflfold",
           "when": "view == dspf-edit.schema-view && viewItem =~ /\\bsflctl\\b/",
           "group": "records_navigation2@3"
+        },
+        {
+          "command": "dspf-edit.subfile-end",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\bsflctl\\b/",
+          "group": "records_navigation2@4"
+        },
+        {
+          "command": "dspf-edit.subfile-record-number",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\bsflctl\\b/",
+          "group": "records_navigation2@5"
+        },
+        {
+          "command": "dspf-edit.overlay",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /^record\\b(?!.*\\bsfl\\b)/",
+          "group": "records_navigation3@3"
+        },
+        {
+          "command": "dspf-edit.cursor-location",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /^record\\b(?!.*\\bsfl\\b)/",
+          "group": "records_navigation3@4"
         },
         {
           "command": "dspf-edit.add-key",

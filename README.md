@@ -90,6 +90,9 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
     - Assign command keys — a key number already used at the other level (file vs. record) is excluded, so you can't end up with the same key defined as both CA and CF.
     - Add / Remove / Change indicators.
     - Change Input Default: manages a parameterless `CHGINPDFT` for this record — removes the automatic underline input-capable fields otherwise get by default. Warns if the file already has one at file level.
+    - Overlay: adds `OVERLAY` (always or under indicators), changes its indicators or removes it. Not on subfile records.
+    - Return Cursor Location: manages both formats of `RTNCSRLOC` — the record and field the cursor is on, and its row and column — and, on `SFLCTL` records, `SFLCSRRRN`, creating, renaming and deleting their hidden fields along with the keyword. Not on subfile records.
+    - Subfile Drop/Fold, Subfile End and Subfile Record Number (`SFLCTL` records): `SFLDROP`/`SFLFOLD`, `SFLEND` with its type (`*PLUS`, `*MORE`, `*SCRBAR`) and indicator, and `SFLRCDNBR` on a field. On these records, Return Cursor Location also manages `SFLCSRRRN`.
     - Resizing (if window record) — aware of every declared display size, resizing all of them at once.
     - Change Window Title (if window record) — targets the size being worked on when the record declares more than one.
     - Sort elements.
@@ -164,10 +167,12 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.13.1** - 2026-10-18
-- Changed: what is selected in the Screen Preview now shows next to the **Indicators** toggle, so selecting something no longer moves the screen down.
-- Fixed: right-clicking a multi-selection, or a selection made with **⬚ Area**, no longer reduces it to one element, so **Align...** is offered for all of them.
-- Fixed: on macOS, `Ctrl`+click adds to the selection without also opening the **⋮ Actions** menu.
+**1.14.0** - 2026-10-25
+- Added: **Overlay** on records, to add `OVERLAY` (always or under indicators), change its indicators or remove it.
+- Added: **Return Cursor Location** on records manages both formats of `RTNCSRLOC` and keeps their hidden fields in step: creates the missing ones, renames a field when its parameter is renamed, and offers to delete the ones no longer used.
+- Added: **Subfile End** on `SFLCTL` records sets `SFLEND` (`*PLUS`, `*MORE` or `*SCRBAR`) with its indicator, changes it or removes it; it can't be left without an indicator.
+- Added: on `SFLCTL` records, **Return Cursor Location** also manages `SFLCSRRRN`, and **Subfile Record Number** sets `SFLRCDNBR` (`CURSOR`, `*TOP`) on a field, creating it as a hidden `4S 0` field when needed.
+- Changed: **Attributes** and **Colors** on a single field or constant open one window with a checkbox per attribute or color: check or uncheck them and press `Enter`. Each row has ✏️ to set its indicators (adding it if needed) and 🗑️ to remove it, and the title bar has 🗑️ to remove them all.
 
 ---
 

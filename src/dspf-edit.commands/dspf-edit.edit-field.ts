@@ -1625,7 +1625,7 @@ function validateNumericRange(value: string, min: number, max: number, fieldName
 /**
  * Validates field name format (shared between edit and add)
  */
-function validateFieldNameFormat(value: string): string | null {
+export function validateFieldNameFormat(value: string): string | null {
     const trimmedValue = value.trim();
     
     if (trimmedValue === '') {

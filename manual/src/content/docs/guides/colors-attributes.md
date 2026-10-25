@@ -7,28 +7,32 @@ Fields and constants can carry display attributes — color and `DSPATR`-style f
 
 ## Applying colors and attributes
 
-Right-click a field or constant and choose **Colors** or **Attributes** to add one. From the [Screen Preview](/dspf-edit/guides/screen-preview/), the same actions are available from the **⋮ Actions** menu on a selection — including a multi-selection, so you can apply a color or attribute to several elements at once.
+Right-click a field or constant and choose **Colors** or **Attributes**. From the [Screen Preview](/dspf-edit/guides/screen-preview/), the same actions are available from the **⋮ Actions** menu on a selection — including a multi-selection, so you can apply a color or attribute to several elements at once.
 
 ## Managing the attributes and colors of an element
 
-When the field or constant already has attributes, **Attributes** opens a list of them, each with the indicators that condition it. **Colors** does the same for its colors: an element can have several, each applying under its own indicators.
+For a single field or constant, **Attributes** and **Colors** open one window that lists every attribute or color, each with a checkbox. The ones the element already has are checked, with the indicators that condition them. An element can have several colors, each applying under its own indicators.
 
-- Pick a row, or its ✏️ button, to change that attribute's or color's indicators — see [Conditioning an attribute](#conditioning-an-attribute).
-- The 🗑️ button removes just that one. If an attribute shares a keyword with others, as `HI` does in `DSPATR(UL HI)`, the others stay.
-- **Add attributes...** / **Add colors...** adds more, asking for up to three indicators for each.
-- **Remove all attributes** / **Remove all colors** clears them.
+- Check the ones to add and uncheck the ones to remove, then press `Enter`. Added ones get no indicators.
+- The ✏️ button of a row sets its indicators — see [Conditioning an attribute](#conditioning-an-attribute). On one the element doesn't have yet, it asks for the indicators first and then adds it with them; if you enter none, nothing is added.
+- The 🗑️ button of a row removes just that one. If an attribute shares a keyword with others, as `HI` does in `DSPATR(UL HI)`, the others stay.
+- The 🗑️ button in the window's title bar removes them all.
+
+The ✏️ and 🗑️ buttons apply their change at once, and the window then opens again, up to date, so you can go on. Checkboxes you changed but didn't apply yet are kept. `Escape` closes the window.
+
+When several elements are selected in the Screen Preview, the window only adds: check the attributes or colors to add to all of them, without indicators.
 
 ## Conditioning an attribute
 
 Each attribute can itself be conditioned by indicators, with the same AND/OR support as fields and constants — see [Indicators and Conditions](/dspf-edit/guides/indicators/). This lets an attribute (e.g. highlighting a field in red) apply only when a given indicator is on.
 
-To set or change the condition, open **Attributes** or **Colors** and use the ✏️ button of the row. It opens the same menu as **Indicators** on a field: up to nine indicators per condition, and up to nine conditions joined with OR.
+To set or change the condition, open **Attributes** or **Colors** and use the ✏️ button of the row. On one the element already has, it opens the same menu as **Indicators** on a field: up to nine indicators per condition, and up to nine conditions joined with OR.
 
 Indicators condition a whole source line. If the attribute or color shares its line with something else — the field's own line, another keyword, or other attributes in the same `DSPATR()` — it is first moved to a line of its own, keeping the condition it had, so that nothing else changes.
 
 ## Removing an attribute
 
-Right-click the attribute node under a field or constant in the [Schema Tree](/dspf-edit/guides/schema-tree/) and choose **Delete**, or use the 🗑️ button in the **Attributes** list described above.
+Right-click the attribute node under a field or constant in the [Schema Tree](/dspf-edit/guides/schema-tree/) and choose **Delete**, or use the 🗑️ button in the **Attributes** window described above.
 
 ## Default underline on input-capable fields
 

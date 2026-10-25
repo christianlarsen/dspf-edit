@@ -34,6 +34,34 @@ To see the truncated form or try the toggle, preview the header record rather th
 
 Right-click a `SFLCTL` record and choose **Subfile Drop/Fold** for a summary menu listing `SFLDROP` and `SFLFOLD`, each showing its current command key (and any conditioning indicator) or "(not set)" — same menu style as [Editing Keywords](/dspf-edit/guides/fields/#editing-keywords). Pick a row (or its change button) to assign it to a `CAnn`/`CFnn` key, optionally conditioned by an indicator, or use its own remove button to take it off entirely.
 
+## Subfile end (SFLEND)
+
+Right-click a `SFLCTL` record and choose **Subfile End** to manage `SFLEND`, which shows the user that there are more records:
+
+- **`*PLUS`**: a plus sign (`+`) at the bottom right of the subfile.
+- **`*MORE`**: `More...` below the subfile, or `Bottom` on its last page. It takes one more line.
+- **`*SCRBAR`**: a scroll bar on the last 3 columns of the subfile. It then asks what displays without graphics show instead: the scroll bar too (the default), `*PLUS` or `*MORE`.
+
+The DDS reference requires an option indicator on `SFLEND`, so it asks for one after the type and doesn't add the keyword without it, for example `N80 SFLEND(*MORE)`. On a record that already has `SFLEND`, the same command changes how it shows (keeping its indicators), changes its indicators, or removes it. Changing its indicators never leaves it with none: when it has a single condition, that condition has no 🗑️ button, there's no **Remove all**, and removing its last indicator is refused. To take its indicators off, remove the keyword.
+
+## Cursor and record number (SFLCSRRRN, SFLRCDNBR)
+
+These two usually go with `RTNCSRLOC` in the `SFLCTL` record, all with hidden fields right after the record's keywords:
+
+```
+     A                                      RTNCSRLOC(&WSNOMREG &WSNOMCAM)
+     A                                      SFLCSRRRN(&WSCURSOR01)
+     A            WSNOMREG      10A  H
+     A            WSNOMCAM      10A  H
+     A            WSCURSOR01     5S 0H
+     A            NBR01W         4S 0H      SFLRCDNBR(CURSOR)
+```
+
+- **`SFLCSRRRN`** returns the relative record number of the subfile record the cursor is on. It's managed from **Return Cursor Location**, whose menu on a `SFLCTL` record has a third row, **Subfile record the cursor is on**, along with `RTNCSRLOC` — see [Return Cursor Location](/dspf-edit/guides/records/#return-cursor-location). Its field (`5S 0 H`) is created, renamed or deleted along with the keyword.
+- **`SFLRCDNBR`** goes on a field: the page shown is the one with the record whose relative record number is in that field. Right-click a `SFLCTL` record and choose **Subfile Record Number**:
+  - To add it, give the field's name and pick the options: none, `CURSOR` (the cursor goes on that record), `*TOP` (that record is shown first on the page), or both. A name no field has yet creates a hidden `4S 0` field with the keyword on its line. An existing field must be signed numeric (`S`), up to 4 digits, with no decimals, used as output, both or hidden, and without `SFLROLVAL`.
+  - On a record that already has it, **Change options...** changes the options, **Change field...** renames its field (with a name no field has) or moves the keyword to another field, and **Remove** takes it off. A hidden field left without it can then be deleted; it asks first.
+
 ## Adding a commands record
 
 Right-click a `SFLCTL` record and choose **Add Commands Record** to create a new, empty record right after it for the subfile's function-key legend (e.g. "F3=Exit", "F12=Cancel") — conventionally kept separate from the `SFLCTL` itself.

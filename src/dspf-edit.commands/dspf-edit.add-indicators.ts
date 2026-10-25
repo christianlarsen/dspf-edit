@@ -122,20 +122,24 @@ async function handleAddIndicatorsCommand(node: DdsNode): Promise<void> {
  * @param editor - The active text editor
  * @param element - The element or keyword; only its `lineIndex` is used
  * @param elementName - How to name it in the menu's title and in messages
+ * @param requireCondition - True for a keyword DDS doesn't allow without indicators, such as
+ * SFLEND: the menu then never removes its last condition, and taking all its indicators off means
+ * removing the keyword itself
  */
-export async function manageLineCondition(editor: vscode.TextEditor, element: { lineIndex: number }, elementName: string): Promise<void> {
+export async function manageLineCondition(editor: vscode.TextEditor, element: { lineIndex: number }, elementName: string, requireCondition: boolean = false): Promise<void> {
     // Read the element's full condition: every OR'd AND-group, including continuation lines
     const { groups } = findIndicatorConditionBlock(editor, element.lineIndex);
+    const applyGroups = (newGroups: IndicatorAssignment[][]) => applyConditionGroups(editor, element, newGroups, elementName, requireCondition);
 
     // Show a summary menu — one row per existing OR'd condition, editable/removable
     // individually — instead of the old flat "Add AND/Add OR/Modify/Remove a group/Replace
     // all/Remove all" 6-choice picker.
     if (groups.length > 0) {
-        const choice = await showIndicatorMenu(buildIndicatorMenuItems(groups), elementName);
+        const choice = await showIndicatorMenu(buildIndicatorMenuItems(groups, requireCondition), elementName);
         if (!choice) return;
 
         if (choice.action === 'removeAll') {
-            if (!(await applyGroupsToElement(editor, element, []))) {
+            if (!(await applyGroups([]))) {
                 return;
             };
             await refreshEditorView();
@@ -145,7 +149,7 @@ export async function manageLineCondition(editor: vscode.TextEditor, element: { 
 
         if (choice.action === 'remove') {
             const remaining = groups.filter((_, i) => i !== choice.groupIndex);
-            if (!(await applyGroupsToElement(editor, element, remaining))) {
+            if (!(await applyGroups(remaining))) {
                 return;
             };
             await refreshEditorView();
@@ -154,7 +158,7 @@ export async function manageLineCondition(editor: vscode.TextEditor, element: { 
         };
 
         if (choice.action === 'edit') {
-            if (!(await modifyGroup(editor, element, groups, choice.groupIndex))) {
+            if (!(await modifyGroup(groups, choice.groupIndex, applyGroups))) {
                 return;
             };
             await refreshEditorView();
@@ -194,6 +198,25 @@ export async function manageLineCondition(editor: vscode.TextEditor, element: { 
 };
 
 /**
+ * Sets a line's condition, as applyGroupsToElement does — unless that would leave a keyword that
+ * requires a condition with none, which is refused with a message instead.
+ * @returns False when refused or when the edit couldn't be applied
+ */
+async function applyConditionGroups(
+    editor: vscode.TextEditor,
+    element: { lineIndex: number },
+    groups: IndicatorAssignment[][],
+    elementName: string,
+    requireCondition: boolean
+): Promise<boolean> {
+    if (requireCondition && groups.every(group => group.length === 0)) {
+        vscode.window.showWarningMessage(`${elementName} needs at least one indicator. To take it off, remove the keyword itself.`);
+        return false;
+    };
+    return applyGroupsToElement(editor, element, groups);
+};
+
+/**
  * Copies the whole indicator condition of one line onto another line that has none — its own
  * indicators and marker, plus every continuation line above it.
  * @param editor - The active text editor
@@ -225,6 +248,32 @@ export async function removeLineCondition(editor: vscode.TextEditor, lineIndex: 
     return (await applyGroupsToElement(editor, { lineIndex }, [])) ? startLine : undefined;
 };
 
+/**
+ * Adds a keyword on a line of its own, right at `insertionPoint`, conditioned by a fresh AND-group
+ * asked for first — the Attributes and Colors windows' pencil on a value the element doesn't have
+ * yet. Nothing is added when no indicators are entered.
+ * @param editor - The active text editor
+ * @param insertionPoint - The line the keyword's line goes in at (see findElementInsertionPoint)
+ * @param keywordText - The keyword, e.g. 'COLOR(RED)'
+ * @returns True when the keyword was added
+ */
+export async function addConditionedKeywordLine(editor: vscode.TextEditor, insertionPoint: number, keywordText: string): Promise<boolean> {
+    const newGroup = await collectIndicatorsFromUser(MAX_AND_INDICATORS);
+    if (newGroup.length === 0) {
+        return false;
+    };
+
+    const newLine = '     A'.padEnd(44, ' ') + keywordText;
+    const workspaceEdit = new vscode.WorkspaceEdit();
+    const atEnd = insertionPoint >= editor.document.lineCount;
+    workspaceEdit.insert(editor.document.uri, new vscode.Position(insertionPoint, 0), atEnd ? `\n${newLine}` : `${newLine}\n`);
+    if (!(await applyWorkspaceEdit(workspaceEdit, `add ${keywordText}`))) {
+        return false;
+    };
+
+    return applyGroupsToElement(editor, { lineIndex: Math.min(insertionPoint, editor.document.lineCount - 1) }, [newGroup]);
+};
+
 // SMALL SHARED HELPERS
 
 /** Refreshes the tree/preview after an edit — the cheapest way to force a re-parse of the document. */
@@ -247,19 +296,21 @@ const REMOVE_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon(
  * Builds the indicators summary menu's rows: one per existing OR'd AND-group (formatted as e.g.
  * "51, N61, 53", with edit + trash buttons), plus an "Add OR condition..." row, plus a "Remove all"
  * row when there's more than one group (with just one, its own trash button already does the same
- * thing).
+ * thing). When a condition is required, the only condition left has no trash button and there's
+ * no "Remove all" row.
  * @param groups - The element's current OR'd AND-groups, from `findIndicatorConditionBlock`
+ * @param requireCondition - See manageLineCondition
  */
-function buildIndicatorMenuItems(groups: IndicatorAssignment[][]): IndicatorMenuItem[] {
+function buildIndicatorMenuItems(groups: IndicatorAssignment[][], requireCondition: boolean): IndicatorMenuItem[] {
     const items: IndicatorMenuItem[] = groups.map((group, index) => ({
         groupIndex: index,
         label: groups.length > 1 ? `Condition ${index + 1}: ${formatIndicatorsSummary(group)}` : formatIndicatorsSummary(group),
-        buttons: [EDIT_BUTTON, REMOVE_BUTTON]
+        buttons: requireCondition && groups.length === 1 ? [EDIT_BUTTON] : [EDIT_BUTTON, REMOVE_BUTTON]
     }));
 
     items.push({ groupIndex: -1, action: 'addOr', label: '$(add) Add OR condition...' });
 
-    if (groups.length > 1) {
+    if (groups.length > 1 && !requireCondition) {
         items.push({ groupIndex: -1, action: 'removeAll', label: '$(trash) Remove all indicators' });
     };
 
@@ -626,16 +677,14 @@ async function collectIndicatorsFromUser(maxIndicators: number = MAX_AND_INDICAT
  * Modifies one of an element's OR'd AND-groups — which one is already chosen (its summary menu
  * row), so this goes straight to the per-indicator flow: add a new indicator, change or remove an
  * existing one, or clear the whole group and start over.
- * @param editor - The active text editor
- * @param element - The DDS element
  * @param groups - The element's current OR'd AND-groups
  * @param groupIndex - Which group to modify
+ * @param applyGroups - Sets the element's whole condition (see applyConditionGroups)
  */
 async function modifyGroup(
-    editor: vscode.TextEditor,
-    element: any,
     groups: IndicatorAssignment[][],
-    groupIndex: number
+    groupIndex: number,
+    applyGroups: (groups: IndicatorAssignment[][]) => Promise<boolean>
 ): Promise<boolean> {
     const currentIndicators = groups[groupIndex];
     const indicatorChoices = currentIndicators.map((indicator, index) =>
@@ -658,7 +707,7 @@ async function modifyGroup(
         const updatedGroups = newIndicatorsForGroup.length > 0
             ? groups.map((g, i) => i === groupIndex ? newIndicatorsForGroup : g)
             : groups.filter((_, i) => i !== groupIndex);
-        return applyGroupsToElement(editor, element, updatedGroups);
+        return applyGroups(updatedGroups);
     };
 
     if (selectedIndicator === 'Clear all and start over') {
