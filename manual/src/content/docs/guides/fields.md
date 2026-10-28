@@ -47,6 +47,8 @@ A numeric field can have up to 63 digits.
 
 **Add editing keywords** applies DDS edit keywords (e.g. `EDTCDE()`/`EDTWRD()`) that control how the field's value is formatted for display. The [Screen Preview](/dspf-edit/guides/screen-preview/) renders `EDTCDE()`-edited numeric fields using the decimal convention configured in [Configuration](/dspf-edit/guides/configuration/). The user-defined edit codes (`5` to `9`) are previewed once fetched from the IBM i, from that same section.
 
+To give other numeric fields the same editing, use **Copy Format...** and **Paste Format** in the Screen Preview — see [Copying the format of an element](/dspf-edit/guides/colors-attributes/#copying-the-format-of-an-element).
+
 ## Error messages
 
 **Add error messages** attaches a DDS error-message keyword (e.g. `ERRMSG()`) to the field, shown in the preview per the same message-line rules as window `ERRMSG()` — see [Screen Preview](/dspf-edit/guides/screen-preview/#windows). Unlike validity checks, a field can carry several `ERRMSG()`s at once, each gated by its own indicator — the menu lists them all, letting you change or remove one individually, add another, or clear them all.

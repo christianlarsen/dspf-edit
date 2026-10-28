@@ -24,6 +24,7 @@ import { addAttributeToMultipleElements } from '../dspf-edit.commands/dspf-edit.
 import { removeElements } from '../dspf-edit.commands/dspf-edit.remove-element';
 import { copyFieldToPosition } from '../dspf-edit.commands/dspf-edit.copy-field';
 import { copyConstantToPosition } from '../dspf-edit.commands/dspf-edit.copy-constant';
+import { copyFormat, pasteFormat, getCopiedFormat } from '../dspf-edit.commands/dspf-edit.copy-format';
 import { HorizontalAlignment, WindowAlignment, WINDOW_ALIGNMENTS, computeAlignedColumns, computeWindowAlignedPosition } from '../dspf-edit.utils/dspf-edit.alignment';
 
 /**
@@ -3139,10 +3140,15 @@ export class RecordPreviewPanel {
             options.push(
                 editOption,
                 { label: '$(symbol-boolean) Indicators...', command: 'add-indicators' },
-                { label: '$(copy) Copy...', command: 'copy' }
+                { label: '$(copy) Copy...', command: 'copy' },
+                { label: '$(wand) Copy Format...', command: 'copy-format' }
             );
         } else {
             options.push({ label: '$(arrow-both) Align...', command: 'align' });
+        };
+        const copiedFormat = getCopiedFormat();
+        if (copiedFormat) {
+            options.push({ label: `$(wand) Paste Format of ${copiedFormat.sourceName}`, command: 'paste-format' });
         };
         options.push({ label: '$(trash) Delete...', command: 'delete' });
 
@@ -3159,6 +3165,16 @@ export class RecordPreviewPanel {
         if (selection.command === 'copy') {
             this.pendingCopySource = nodes[0];
             this.panel.webview.postMessage({ type: 'startCopyPlacement', kind: nodes[0].ddsElement.kind });
+            return;
+        };
+
+        if (selection.command === 'copy-format') {
+            await copyFormat(nodes[0].ddsElement);
+            return;
+        };
+
+        if (selection.command === 'paste-format') {
+            await this.pasteFormatOn(nodes.map(n => n.ddsElement.lineIndex));
             return;
         };
 
@@ -3294,6 +3310,22 @@ export class RecordPreviewPanel {
         if (editor) {
             this.forceReparse(editor.document);
         };
+    };
+
+    /**
+     * Pastes the format copied with "Copy Format..." onto the selected fields/constants — the
+     * Actions menu's "Paste Format".
+     * @param lineIndices - Zero-based source line indices of the fields/constants
+     */
+    private async pasteFormatOn(lineIndices: number[]): Promise<void> {
+        const nodes = await this.resolveElementNodes(lineIndices);
+        const { editor } = checkForEditorAndDocument();
+        if (nodes.length === 0 || !editor) {
+            return;
+        };
+
+        await pasteFormat(editor, nodes.map(n => n.ddsElement));
+        this.forceReparse(editor.document);
     };
 
     /**

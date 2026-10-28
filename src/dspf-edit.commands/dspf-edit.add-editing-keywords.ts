@@ -870,7 +870,7 @@ function upgradeSignedTypeChar(line: string): string {
  * @param uri - The document URI
  * @param element - The DDS field element
  */
-function upgradeSignedTypeOnFieldLine(
+export function upgradeSignedTypeOnFieldLine(
     document: vscode.TextDocument,
     workspaceEdit: vscode.WorkspaceEdit,
     uri: vscode.Uri,

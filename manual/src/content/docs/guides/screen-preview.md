@@ -37,6 +37,7 @@ Select a field or constant — or several, with `Ctrl`/`Cmd`+click or with [a re
 
 - **Add color/attribute**, **Copy**, or **Delete** — applied to every selected element at once when multiple are selected.
 - With **more than one** selected, **Align...** lines them up — see [Aligning a selection](#aligning-a-selection) below.
+- With a **single** one selected, **Copy Format...** copies its colors, attributes, indicators and/or number editing; then **Paste Format of NAME** applies them to the selection, one element or several — see [Copying the format of an element](/dspf-edit/guides/colors-attributes/#copying-the-format-of-an-element).
 - A **single** selected field or constant additionally gets **Rename.../Edit Text...**, **Indicators...**, and (for fields) **Validity Checks...**, **Editing Keywords...**, and **Error Messages...** — the same commands available from the tree's context menu, so most of what you'd do from the tree is also reachable straight from the preview.
 
 ![Multi-select actions menu in the preview](/dspf-edit/screenshots/captura6.png)

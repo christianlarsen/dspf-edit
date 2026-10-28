@@ -30,6 +30,42 @@ To set or change the condition, open **Attributes** or **Colors** and use the �
 
 Indicators condition a whole source line. If the attribute or color shares its line with something else — the field's own line, another keyword, or other attributes in the same `DSPATR()` — it is first moved to a line of its own, keeping the condition it had, so that nothing else changes.
 
+## Copying the format of an element
+
+To give other fields or constants the same look as one you already have, copy its format and paste it, from the **⋮ Actions** menu of the [Screen Preview](/dspf-edit/guides/screen-preview/#multi-select-and-actions):
+
+1. Select the field or constant to copy from and choose **Copy Format...**.
+2. Check what to copy. Each row shows what the element has:
+   - **Colors**
+   - **Display attributes**
+   - **Indicators of NAME itself**: the indicators that condition the element.
+   - **Number editing (edit code, edit word, edit mask)**: only for fields. Checked only when the field has some.
+   - **Keep the indicators of colors and attributes**: uncheck it to paste them without condition.
+3. Select one or several elements and choose **Paste Format of NAME**.
+
+What was copied stays available until you copy something else, so you can paste it again later, also in other records or files.
+
+Pasting **replaces** what each element has of every part copied, so it ends up looking like the source. A part the source doesn't have is removed: copying the colors of a field with no colors takes the colors off the elements you paste onto.
+
+### Colors and attributes
+
+With their indicators, colors and attributes keep their whole condition, more than three indicators and OR'd conditions included. Without them, only the first color is pasted, since two colors with no condition would both apply, and the attributes are merged into one `DSPATR()`, each once.
+
+Attributes the element can't take are left out: `MDT`, `OID`, `PR` and `SP` only go on input-capable fields (usage `I`/`B`), and `DSPATR(&field)` only goes on a field whose record has that P field.
+
+### Number editing
+
+Number editing is pasted only where the DDS reference allows it:
+
+- On numeric fields with `Y`, `S` or blank (with decimal positions) in position 35. An `S` field becomes `Y`, as STRSDA does when an edit code is added. A referenced field has to be [resolved](/dspf-edit/guides/referenced-fields/) first.
+- Not on fields with `DFT` or `DFTVAL`.
+- Edit codes `W` and `Y` only on the field lengths they allow, and an edit word only on fields with as many digits as its digit positions.
+- The edit mask only on input-capable fields (`I`/`B`) with the same length and decimals as the field it was copied from, since it has to match the edited field character by character, and not with `CHECK(AB MF RB RZ RLTB)`.
+
+A field that can't take the editing keeps its own. The message shown after pasting says what was left out, and why.
+
+Each element is changed with several edits, so undoing a paste may take more than one `Ctrl`+`Z`.
+
 ## Removing an attribute
 
 Right-click the attribute node under a field or constant in the [Schema Tree](/dspf-edit/guides/schema-tree/) and choose **Delete**, or use the 🗑️ button in the **Attributes** window described above.
