@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.15.0] - 2026-10-28
+### Added
+- Screen Preview: **Copy Format...** and **Paste Format** in the **⋮ Actions** menu copy the format of a field or constant onto others. Select one element and choose **Copy Format...**, then select one or several elements and choose **Paste Format of NAME**. What was copied stays available until something else is copied, so it can be pasted again, also in other records or files.
+  - **Copy Format...** opens a window with a checkbox for each part, showing what the element has: **Colors**, **Display attributes**, the **Indicators** of the element itself, **Number editing** (edit code, edit word, edit mask; only for fields), and **Keep the indicators of colors and attributes**. Number editing is checked only when the field has some.
+  - Pasting replaces what each target has of every part copied, so it ends up looking like the source: a part the source doesn't have is removed from the targets.
+  - Colors and attributes keep their whole condition, more than three indicators and OR'd conditions included. Without their indicators, only the first color is pasted (two unconditioned colors would both apply), and the attributes are merged into one `DSPATR`, each once.
+  - Attributes a target can't take are left out: `MDT`, `OID`, `PR` and `SP` on constants and output fields, and `DSPATR(&field)` when the target's record has no such P field.
+  - Number editing goes only on numeric fields with `Y`, `S` or blank (with decimals) in position 35, as the DDS reference requires; an `S` field becomes `Y`, as STRSDA does. It's left out on fields with `DFT`/`DFTVAL`, when edit code `W` or `Y` doesn't allow the field's length, or when the edit word's digit positions don't match it, and on referenced fields not resolved yet. The edit mask goes only on input-capable fields (`I`/`B`) with the same length and decimals as the source, and not with `CHECK(AB MF RB RZ RLTB)`. A target that can't take the editing keeps its own.
+  - The message shown after pasting says what was left out, and why.
+
 ## [1.14.0] - 2026-10-25
 ### Added
 - Records: **Overlay** adds `OVERLAY` to a record, so it is shown without erasing the screen first: always, or under indicators. On a record that already has it, it changes its indicators or removes it, also when it's written on the record's own `R` line. Offered on every record except subfile records (`SFL`).

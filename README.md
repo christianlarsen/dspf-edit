@@ -52,6 +52,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
   - "Focus" maximizes the preview so it fills the editing area, hiding the DDS source editor beside it; "Show code" brings the source back.
   - "⬚ Area" selects every field and constant a rectangle dragged over the screen touches (Ctrl/Cmd adds to the selection). While it's on, clicking an element never selects or moves it.
   - Select a field or constant (or several, with Ctrl/Cmd+click or "⬚ Area") to get a "⋮ Actions" menu: add color/attribute, copy, or delete — applied to every selected element at once for a multi-selection. A multi-selection can also be aligned left, center or right, each element keeping its own row. A single selected field or constant also gets Rename.../Edit Text..., Indicators..., and — for fields — Validity Checks..., Editing Keywords..., and Error Messages..., the same commands the tree's context menu offers, so most of what you'd do from the tree is also reachable straight from the preview.
+  - "Copy Format..." in the "⋮ Actions" menu copies a field or constant's colors, attributes, indicators and/or number editing (edit code, edit word, edit mask); "Paste Format" applies them to one or several selected elements, replacing what they had. Colors and attributes keep their indicators (optionally), and whatever a target can't take is left out.
   - Press `Delete`/`Backspace` with one or more fields/constants selected to delete them directly — same confirmation as the "⋮ Actions" menu's Delete.
   - Double-click a dimmed overlay record (a checked overlay, an SFL/SFLCTL header/detail, or a shared window's owner) to switch the preview to it, the same as picking it in the tree. Where several overlap, the one drawn on top wins.
   - Right-click a field or constant to open the "⋮ Actions" menu directly, instead of the browser's native Cut/Copy/Paste menu — selecting it first if it wasn't already selected.
@@ -167,12 +168,10 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.14.0** - 2026-10-25
-- Added: **Overlay** on records, to add `OVERLAY` (always or under indicators), change its indicators or remove it.
-- Added: **Return Cursor Location** on records manages both formats of `RTNCSRLOC` and keeps their hidden fields in step: creates the missing ones, renames a field when its parameter is renamed, and offers to delete the ones no longer used.
-- Added: **Subfile End** on `SFLCTL` records sets `SFLEND` (`*PLUS`, `*MORE` or `*SCRBAR`) with its indicator, changes it or removes it; it can't be left without an indicator.
-- Added: on `SFLCTL` records, **Return Cursor Location** also manages `SFLCSRRRN`, and **Subfile Record Number** sets `SFLRCDNBR` (`CURSOR`, `*TOP`) on a field, creating it as a hidden `4S 0` field when needed.
-- Changed: **Attributes** and **Colors** on a single field or constant open one window with a checkbox per attribute or color: check or uncheck them and press `Enter`. Each row has ✏️ to set its indicators (adding it if needed) and 🗑️ to remove it, and the title bar has 🗑️ to remove them all.
+**1.15.0** - 2026-10-28
+- Added: **Copy Format...** and **Paste Format** in the Screen Preview's **⋮ Actions** menu. Copy the colors, attributes, indicators and/or number editing (edit code, edit word, edit mask) of a field or constant, and paste them onto one or several selected elements, replacing what they had.
+- Colors and attributes are pasted with their indicators, OR'd conditions included, or without them.
+- Whatever a target can't take is left out, and the message after pasting says so: `PR` on a constant, an edit code on an alphanumeric field, an edit mask on a field of another length... An `S` field receiving an edit code becomes `Y`, as in STRSDA.
 
 ---
 

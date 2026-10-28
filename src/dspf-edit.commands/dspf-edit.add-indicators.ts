@@ -7,6 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { DdsIndicator, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
 
 // INTERFACES AND TYPES
 
@@ -272,6 +273,41 @@ export async function addConditionedKeywordLine(editor: vscode.TextEditor, inser
     };
 
     return applyGroupsToElement(editor, { lineIndex: Math.min(insertionPoint, editor.document.lineCount - 1) }, [newGroup]);
+};
+
+/**
+ * Sets a line's whole indicator condition from parsed indicators (see `DdsIndicator.group`),
+ * replacing whatever condition it had — an empty array removes it. What Paste Format uses to give
+ * a field or constant the indicators of the one its format was copied from.
+ * @param editor - The active text editor
+ * @param lineIndex - The line the condition applies to
+ * @param indicators - The condition, as the parser reads it
+ * @returns False when the edit couldn't be applied
+ */
+export async function setLineCondition(editor: vscode.TextEditor, lineIndex: number, indicators: DdsIndicator[]): Promise<boolean> {
+    return applyGroupsToElement(editor, { lineIndex }, toAssignmentGroups(indicators));
+};
+
+/**
+ * The lines a keyword needs to sit on a line of its own under a given condition: the indicator
+ * continuation lines (more than three ANDed indicators, or OR'd conditions) and then the keyword's
+ * own line, carrying the condition's last indicators.
+ * @param keywordText - The keyword, e.g. 'COLOR(RED)'
+ * @param indicators - Its condition, as the parser reads it; empty for none
+ */
+export function buildConditionedKeywordLines(keywordText: string, indicators: DdsIndicator[]): string[] {
+    const specs = flattenGroupsIntoLineSpecs(toAssignmentGroups(indicators));
+    const terminalSpec = specs.pop();
+    const keywordLine = setIndicatorsOnLine('     A'.padEnd(44, ' ') + keywordText, terminalSpec?.indicators ?? [], terminalSpec?.marker ?? ' ');
+    return [...specs.map(spec => createIndicatorContinuationLine(spec.indicators, spec.marker)), keywordLine];
+};
+
+/** Parsed indicators as the OR'd AND-groups this file edits. */
+function toAssignmentGroups(indicators: DdsIndicator[]): IndicatorAssignment[][] {
+    return groupIndicatorsByCondition(indicators).map(group => group.map((ind, i) => {
+        const value = ind.number.toString().padStart(2, '0');
+        return { position: (i % INDICATORS_PER_LINE) + 1, indicator: (ind.active ? '' : 'N') + value, isNegated: !ind.active, value };
+    }));
 };
 
 // SMALL SHARED HELPERS
@@ -550,7 +586,7 @@ function createIndicatorContinuationLine(indicators: IndicatorAssignment[], mark
  * style any hand-written continuation line follows in practice.
  * @param lineText - The line's raw text
  */
-function isPureIndicatorContinuationLine(lineText: string): boolean {
+export function isPureIndicatorContinuationLine(lineText: string): boolean {
     // A short/blank line's substring(16) is just '', same as a longer line with nothing but
     // trailing blanks past column 16 — no separate length check needed (see parseIndicatorsFromLine).
     if (lineText[6] === '*') return false;
