@@ -51,9 +51,18 @@ To give other numeric fields the same editing, use **Copy Format...** and **Past
 
 ## Error messages
 
-**Add error messages** attaches a DDS error-message keyword (e.g. `ERRMSG()`) to the field, shown in the preview per the same message-line rules as window `ERRMSG()` — see [Screen Preview](/dspf-edit/guides/screen-preview/#windows). Unlike validity checks, a field can carry several `ERRMSG()`s at once, each gated by its own indicator — the menu lists them all, letting you change or remove one individually, add another, or clear them all.
+**Error Messages** (on input-capable fields, usage `I` or `B`) opens a window listing the field's error messages: its own text (`ERRMSG`) or one from a message file (`ERRMSGID`). Unlike validity checks, a field can have several at once; their indicators choose which one shows. Each row shows the message, the indicators that show it and its response indicator.
 
-The preview also recognizes an existing `ERRMSGID()` on a field the same way it does `ERRMSG()`: while active, the field shows in reverse image, and the message line shows a placeholder naming the message ID and file (its real text lives in an external message file this extension can't read). This menu itself still only creates `ERRMSG()` with inline text.
+- Select a row, or click its ✏️ button, to change the message. It stays where it is, with its indicators.
+- The indicators button changes its indicators, with the same menu as [Indicators and Conditions](/dspf-edit/guides/indicators/): several indicators per condition, and OR'd conditions.
+- The 🗑️ button removes a message, with its indicator lines; the 🗑️ button in the title bar removes them all.
+- **Add error message...** asks for the text and the response indicator. **Add error message from a message file...** asks for the message ID (e.g. `USR0001`), the message file (`MYMSGF` or `MYLIB/MYMSGF`), the response indicator and the field the message data comes from. Then both ask for the indicators that show the message; it isn't added without them, since it would show on every output of the record.
+
+The response indicator is optional; DDS turns it off once the message is shown, so it's usually the same indicator that shows the message. A single quote in the text is written twice (`''`), as DDS requires. A long message is continued on the next lines.
+
+The window opens again after each change; `Escape` closes it.
+
+In the preview, while a message is active, the field shows in reverse image and the message line shows its text — see [Screen Preview](/dspf-edit/guides/screen-preview/#windows). For `ERRMSGID`, it shows a placeholder naming the message ID and file, since its real text lives in the message file.
 
 ## Indicators
 

@@ -71,7 +71,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
   - View display file attributes (e.g., display size, command keys).
   - Right-click options:
     - Create new records.
-    - Assign command keys — a key number already used at the other level (file vs. record) is excluded, so you can't end up with the same key defined as both CA and CF.
+    - Command keys: lists the file-level keys, to add, change, remove or condition them with indicators. Catches keys that won't compile: the same key as CA in one place and CF in another, or at both file and record level.
     - Add Display Size: adds a second standard screen size (*DS3/*DS4) to a file that currently declares only one.
     - Change Input Default: manages a parameterless `CHGINPDFT` — removes the automatic underline input-capable fields otherwise get by default.
     - Reference File: adds, changes or removes the file-level `REF`, the database file referenced fields take their definition from when their own `REFFLD()` names no file.
@@ -88,7 +88,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
     - Remove field.
     - Copy/Delete record.
     - Add "buttons" (constants for record commands).
-    - Assign command keys — a key number already used at the other level (file vs. record) is excluded, so you can't end up with the same key defined as both CA and CF.
+    - Command keys: lists the record's keys, to add, change, remove or condition them with indicators. Catches keys that won't compile: the same key as CA in one place and CF in another, or at both file and record level.
     - Add / Remove / Change indicators.
     - Change Input Default: manages a parameterless `CHGINPDFT` for this record — removes the automatic underline input-capable fields otherwise get by default. Warns if the file already has one at file level.
     - Overlay: adds `OVERLAY` (always or under indicators), changes its indicators or removes it. Not on subfile records.
@@ -123,7 +123,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
     - Apply colors/attributes.
     - Add validity checks.
     - Add editing keywords.
-    - Add error messages.
+    - Error messages: lists the field's messages, own text (`ERRMSG`) or from a message file (`ERRMSGID`), to add, change, remove or condition them with indicators.
     - Add / Remove / Change indicators, including more than 3 ANDed indicators (up to DDS's limit of 9, spilling onto continuation lines automatically) and OR'd conditions (add/remove whole OR'd groups, or edit indicators within one).
     - Resolve Referenced Field (for referenced fields only): fetches the real type/length/decimals from the connected IBM i, via the [Code for i](https://marketplace.visualstudio.com/items?itemName=HalcyonTechLtd.code-for-ibmi) extension — or, for a field referencing another field of the same source (`*SRC`), straight from the source, with no connection. The field's own length/decimals/type overrides (e.g. `+4`) are applied on top. Also available as "Resolve All Referenced Fields" from the status bar, for every pending referenced field in the document at once.
 
@@ -168,10 +168,10 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.15.0** - 2026-10-28
-- Added: **Copy Format...** and **Paste Format** in the Screen Preview's **⋮ Actions** menu. Copy the colors, attributes, indicators and/or number editing (edit code, edit word, edit mask) of a field or constant, and paste them onto one or several selected elements, replacing what they had.
-- Colors and attributes are pasted with their indicators, OR'd conditions included, or without them.
-- Whatever a target can't take is left out, and the message after pasting says so: `PR` on a constant, an edit code on an alphanumeric field, an edit mask on a field of another length... An `S` field receiving an edit code becomes `Y`, as in STRSDA.
+**1.16.0** - 2026-11-02
+- Changed: **Error Messages** and **Command Keys** now open one window listing what the field or record has, like **Attributes** and **Colors**: change, set the indicators of (AND/OR conditions included) or remove each one, or add a new one.
+- Error messages from a message file (`ERRMSGID`) can now be added, changed and removed too.
+- Command keys that won't compile are caught: a key that is CA in one place and CF in another, or that is at both file and record level. STRSDA doesn't check either; CRTDSPF fails.
 
 ---
 

@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, applyWorkspaceEdit, insertKeywordLines } from '../dspf-edit.utils/dspf-edit.helper';
 import { DdsIndicator, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
 
 // INTERFACES AND TYPES
@@ -264,15 +264,12 @@ export async function addConditionedKeywordLine(editor: vscode.TextEditor, inser
         return false;
     };
 
-    const newLine = '     A'.padEnd(44, ' ') + keywordText;
-    const workspaceEdit = new vscode.WorkspaceEdit();
-    const atEnd = insertionPoint >= editor.document.lineCount;
-    workspaceEdit.insert(editor.document.uri, new vscode.Position(insertionPoint, 0), atEnd ? `\n${newLine}` : `${newLine}\n`);
-    if (!(await applyWorkspaceEdit(workspaceEdit, `add ${keywordText}`))) {
+    // Continued onto more lines when it doesn't fit in one; the condition goes on its first line.
+    if (!(await insertKeywordLines(editor, insertionPoint, keywordText))) {
         return false;
     };
 
-    return applyGroupsToElement(editor, { lineIndex: Math.min(insertionPoint, editor.document.lineCount - 1) }, [newGroup]);
+    return applyGroupsToElement(editor, { lineIndex: insertionPoint }, [newGroup]);
 };
 
 /**
