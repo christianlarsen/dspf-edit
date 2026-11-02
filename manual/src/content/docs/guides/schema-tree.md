@@ -14,7 +14,7 @@ Shows the display file's own attributes — display size, command keys defined a
 Right-click the file node for:
 
 - **Create new records.**
-- **Assign command keys** — see [Command Keys](/dspf-edit/guides/command-keys/). A key number already used at the other level (file vs. record) is excluded, so you can't end up with the same key defined as both `CA` and `CF`.
+- **Command keys** — lists the file-level keys, to add, change, remove or condition them with indicators. Keys that won't compile are refused or flagged; see [Command Keys](/dspf-edit/guides/command-keys/).
 - **Add Display Size** — adds a second standard screen size (`*DS3`/`*DS4`) to a file that currently declares only one. See [Multiple Display Sizes](/dspf-edit/guides/display-sizes/).
 - **Reference File** — adds, changes, or removes the file-level `REF` keyword. See [Referenced Fields](/dspf-edit/guides/referenced-fields/#reference-file-ref).
 
@@ -29,7 +29,7 @@ Each record node shows its own record-level attributes, and lists its constants 
 - **Add constant** / **Add field** / **Remove field**
 - **Copy record** / **Delete record**
 - **Add buttons** — constants that trigger record commands. See [Records](/dspf-edit/guides/records/#add-buttons).
-- **Assign command keys** — same exclusion rule as at file level, see [Command Keys](/dspf-edit/guides/command-keys/).
+- **Command keys** — the same window for the record's keys, see [Command Keys](/dspf-edit/guides/command-keys/).
 - **Add / Remove / Change indicators** — see [Indicators and Conditions](/dspf-edit/guides/indicators/).
 - **Resizing** (window records only) — aware of every declared display size, resizing all of them at once.
 - **Change Window Title** (window records only) — targets the size currently being worked on, when the record declares more than one.
@@ -63,7 +63,7 @@ Right-click a field for:
 - **Apply colors/attributes.**
 - **Add validity checks.**
 - **Add editing keywords.**
-- **Add error messages.**
+- **Error messages** — lists the field's messages, own text (`ERRMSG`) or from a message file (`ERRMSGID`); see [Fields](/dspf-edit/guides/fields/#error-messages).
 - **Add / Remove / Change indicators** — same AND/OR support as constants. See [Indicators and Conditions](/dspf-edit/guides/indicators/).
 - **Resolve Referenced Field** (referenced fields only) — see [Referenced Fields](/dspf-edit/guides/referenced-fields/).
 

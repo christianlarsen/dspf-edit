@@ -6,23 +6,63 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { attributesFileLevel, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
+import { attributesFileLevel, fieldsPerRecords, DdsAttribute } from '../dspf-edit.model/dspf-edit.model';
+import { parseDocument } from '../dspf-edit.parser/dspf-edit.parser';
 import {
-    isAttributeLine, findElementInsertionPointRecordFirstLine, findElementInsertionPointFileFirstLine,
-    handleDspsizWorkflow, DspsizConfig,
     checkForEditorAndDocument,
-    groupConsecutiveLines,
-    applyWorkspaceEdit
+    handleDspsizWorkflow,
+    findElementInsertionPoint,
+    formatIndicatorCondition,
+    insertKeywordLines,
+    replaceKeywordTextInLines
 } from '../dspf-edit.utils/dspf-edit.helper';
+import { KeywordValue, removeWholeKeyword, changeKeywordValueIndicators, nudgeCursor } from './dspf-edit.conditioned-keywords';
+import { addConditionedKeywordLine } from './dspf-edit.add-indicators';
 
 // INTERFACES AND TYPES
 
-interface KeyCommandWithIndicators {
-    type: 'CA' | 'CF';
+type KeyType = 'CA' | 'CF';
+
+/** A command key keyword: CAnn[(response-indicator ['text'])] or CFnn[(...)]. */
+interface KeyCommandContent {
+    type: KeyType;
+    /** '01' to '24'. */
     keyNumber: string;
-    description: string;
-    indicators: string[];
+    responseIndicator?: string;
+    text?: string;
 };
+
+/** One command key a record (or the file) has, and where its keyword sits in the source. */
+interface KeyCommand {
+    content: KeyCommandContent;
+    value: KeywordValue;
+};
+
+/** A command key anywhere in the display file, for checking a key isn't CA in one place and CF in another. */
+interface KeyUse extends KeyCommandContent {
+    /** 'file level' or 'record NAME'. */
+    where: string;
+    lineIndex: number;
+};
+
+/** What the window manages: one record's command keys, or the file-level ones. */
+interface KeyScope {
+    /** The record, or for the file a stand-in whose lineIndex (-1) no source line has, so nothing
+     * is taken for its definition line and new keys go in before the first record. */
+    element: any;
+    /** 'file level' or 'record NAME', as KeyUse.where. */
+    where: string;
+};
+
+/** One row of the window: a key the scope has (`keyIndex` into its keys), or the add row (-1). */
+interface KeyCommandItem extends vscode.QuickPickItem {
+    keyIndex: number;
+};
+
+type KeyWindowOutcome =
+    | { action: 'edit' | 'indicators' | 'remove'; keyIndex: number }
+    | { action: 'add' }
+    | { action: 'removeAll' };
 
 // COMMAND REGISTRATION
 
@@ -42,9 +82,8 @@ export function addKeyCommand(context: vscode.ExtensionContext): void {
 // COMMAND HANDLER
 
 /**
- * Handles the add key command for a DDS record.
- * Manages existing key commands with indicators and allows adding/removing commands.
- * @param node - The DDS node containing the record
+ * Handles the add key command for a DDS record or the file.
+ * @param node - The DDS node containing the record, or the file
  */
 async function handleAddKeyCommandCommand(node: DdsNode): Promise<void> {
     try {
@@ -60,688 +99,440 @@ async function handleAddKeyCommandCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        // Handle DSPSIZ specification if needed (only for file-level operations)
-        let dspsizConfig: DspsizConfig | null = null;
+        let scope: KeyScope;
         if (node.ddsElement.kind === 'file') {
-            dspsizConfig = await handleDspsizWorkflow(editor, 'key command addition');
+            // Handle DSPSIZ specification if needed (only for file-level operations)
+            const dspsizConfig = await handleDspsizWorkflow(editor, 'key command addition');
             if (dspsizConfig === undefined) {
-                // User cancelled DSPSIZ configuration
                 return;
             };
+            scope = { element: { kind: 'file', lineIndex: -1 }, where: 'file level' };
+        } else {
+            scope = { element: node.ddsElement, where: `record ${node.ddsElement.name}` };
         };
 
-        let currentKeyCommands: KeyCommandWithIndicators[] = [];
-        // Key numbers already assigned "on the other side" (the file, when working on a record; every
-        // record, when working on the file) — a new key here can't reuse one of these, since a record's
-        // effective key set is the union of its own and the file's, and DDS won't compile the same key
-        // number assigned twice (whether as CA+CF or the same type repeated) within that effective set.
-        let crossLevelKeyNumbers: string[] = [];
+        await manageKeyCommands(editor, scope);
 
-        switch (node.ddsElement.kind) {
-            case 'record':
-                // Get current key commands from the record
-                currentKeyCommands = getCurrentKeyCommandsForRecord(node.ddsElement);
-                crossLevelKeyNumbers = getCurrentKeyCommandsForFile().map(k => k.keyNumber);
-                break;
-            case 'file':
-                // Get current key commands from the file
-                currentKeyCommands = getCurrentKeyCommandsForFile();
-                crossLevelKeyNumbers = getAllRecordKeyNumbers();
-                break;
-        };
-
-
-        // Get available key numbers (excluding current ones, and any already reserved on the other level)
-        let availableKeys = getAvailableKeyNumbers([
-            ...currentKeyCommands.map(k => k.keyNumber),
-            ...crossLevelKeyNumbers
-        ]);
-
-        // Show current key commands if any exist
-        if (currentKeyCommands.length > 0) {
-            const currentCommandsList = currentKeyCommands.map(k =>
-                `${k.type}${k.keyNumber}${k.indicators.length > 0 ? `(${k.indicators.join(',')})` : ''} - ${k.description}`
-            ).join('; ');
-
-            const action = await vscode.window.showQuickPick(
-                ['Add more key commands', 'Replace all key commands', 'Remove all key commands'],
-                {
-                    title: `Current key commands: ${currentCommandsList}`,
-                    placeHolder: 'Choose how to manage key commands'
-                }
-            );
-
-            if (!action) return;
-
-            if (action === 'Remove all key commands') {
-                let removed = true;
-                switch (node.ddsElement.kind) {
-                    case 'record':
-                        removed = await removeKeyCommandsFromRecord(editor, node.ddsElement);
-                        break;
-                    case 'file':
-                        removed = await removeKeyCommandsFromFile(editor);
-                        break;
-                };
-                if (!removed) {
-                    return;
-                };
-                return;
-            };
-
-            if (action === 'Replace all key commands') {
-                let removed = true;
-                switch (node.ddsElement.kind) {
-                    case 'record':
-                        removed = await removeKeyCommandsFromRecord(editor, node.ddsElement);
-                        break;
-                    case 'file':
-                        removed = await removeKeyCommandsFromFile(editor);
-                        break;
-                };
-                if (!removed) {
-                    return;
-                };
-                // Continue to add new key commands — still excluding whatever's reserved on the other level
-                availableKeys = getAvailableKeyNumbers(crossLevelKeyNumbers);
-
-            }
-            // If "Add more key commands", continue with current logic
-        };
-
-        // Collect new key commands to add
-        const selectedKeyCommands = await collectKeyCommandsWithIndicatorsFromUser(availableKeys);
-
-        if (selectedKeyCommands.length === 0) {
-            vscode.window.showInformationMessage('No key commands selected.');
-            return;
-        };
-
-        let added = true;
-        switch (node.ddsElement.kind) {
-            case 'record':
-                // Apply the selected key commands to the record
-                added = await addKeyCommandsToRecord(editor, node.ddsElement, selectedKeyCommands);
-                break;
-            case 'file':
-                // Apply the selected key commands to the file
-                added = await addKeyCommandsToFile(editor, selectedKeyCommands);
-                break;
-        };
-        if (!added) {
-            return;
-        };
-        await vscode.commands.executeCommand('cursorRight');
-        await vscode.commands.executeCommand('cursorLeft');
-
-        const commandsSummary = selectedKeyCommands.map(k =>
-            `${k.type}${k.keyNumber}${k.indicators.length > 0 ? `(${k.indicators.join(',')})` : ''}`
-        ).join(', ');
-
-        // Create success message
-        let successMessage: string;
-        switch (node.ddsElement.kind) {
-            case 'record':
-                successMessage = `Added key commands ${commandsSummary} to record ${node.ddsElement.name}.`;
-                break;
-            case 'file':
-                const dspsizMessage = dspsizConfig ? ' (with DSPSIZ specification)' : '';
-                successMessage = `Added key commands ${commandsSummary} to file${dspsizMessage}.`;
-                break;
-            default:
-                successMessage = `Added key commands ${commandsSummary}.`;
-        };
     } catch (error) {
         console.error('Error managing key commands:', error);
         vscode.window.showErrorMessage('An error occurred while managing key commands.');
     };
 };
 
-// KEY COMMANDS EXTRACTION FUNCTIONS
+// THE WINDOW
+
+const EDIT_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('edit'), tooltip: 'Change key' };
+const INDICATORS_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('symbol-boolean'), tooltip: 'Change indicators' };
+const REMOVE_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('trash'), tooltip: 'Remove' };
 
 /**
- * Extracts current key commands from a DDS record.
- * @param element - The DDS record element
- * @returns Array of current key commands
+ * Manages a record's (or the file's) command keys from one window, as the Error Messages window
+ * does: one row per key it has, then a row to add one. Picking a row or its pencil changes the key,
+ * the indicators button changes its indicators with the same menu a field's own use, the trash
+ * removes it, and the title bar's trash removes them all. Each is applied at once and the window
+ * comes back.
+ * A key can't be CA in one place of the display file and CF in another — CRTDSPF rejects it, and
+ * STRSDA doesn't check it. So a key is offered with the type it already has elsewhere, the other
+ * type is refused, and keys that already clash are flagged.
+ * @param editor - The active text editor
+ * @param scope - The record, or the file
  */
-function getCurrentKeyCommandsForRecord(element: any): KeyCommandWithIndicators[] {
-    // Find the record in the fieldsPerRecords data
-    const recordInfo = fieldsPerRecords.find(r => r.record === element.name);
-    return extractKeyCommandsFromAttributes(recordInfo?.attributes);
-};
+async function manageKeyCommands(editor: vscode.TextEditor, scope: KeyScope): Promise<void> {
+    let focusKeyword: string | undefined;
 
-/**
- * Extracts current key commands from a DDS file (file level).
- * @returns Array of current key commands
- */
-function getCurrentKeyCommandsForFile(): KeyCommandWithIndicators[] {
-    return extractKeyCommandsFromAttributes(attributesFileLevel);
-};
+    while (true) {
+        const keys = readScopeKeys(scope);
+        const uses = readKeyUses();
+        const items = buildKeyItems(keys, uses, scope);
+        const title = `Command keys for ${scope.where === 'file level' ? 'the file' : scope.where}`;
+        const outcome = await showKeyWindow(items, keys.length > 0, title,
+            items.find(item => item.keyIndex >= 0 && keys[item.keyIndex].value.keywordText === focusKeyword));
+        if (!outcome) return;
 
-/**
- * Parses CAxx()/CFxx() key command lines out of an arbitrary attribute list (a record's own, or
- * the file's). Shared by every "current key commands" lookup so they all agree on the same format.
- * @param attributes - Attribute lines to scan (a record's own, or the file's)
- */
-function extractKeyCommandsFromAttributes(attributes: any[] | undefined): KeyCommandWithIndicators[] {
-    const keyCommands: KeyCommandWithIndicators[] = [];
+        const key = 'keyIndex' in outcome ? keys[outcome.keyIndex] : undefined;
+        focusKeyword = key?.value.keywordText;
 
-    (attributes ?? []).forEach(attr => {
-        const attribute = attr.value;
-
-        // Match CA or CF commands: CA03(03 'End of program') or CF12(12 'Cancel'). The description
-        // is capped at 25 chars only when THIS tool creates one (see validateKeyCommandDescription)
-        // — DDS itself allows longer text (spilling onto a continuation line, which extractAttributes
-        // already reassembles into `attribute` before this regex runs), so reading must not re-impose
-        // that cap: a longer existing description would otherwise silently fail to match at all.
-        const commandMatch = attribute ? attribute.match(/^(CA|CF)(\d{2})\(\d{2}\s+'([^']*)'\)$/) : false;
-        if (commandMatch) {
-            keyCommands.push({
-                type: commandMatch[1] as 'CA' | 'CF',
-                keyNumber: commandMatch[2],
-                description: commandMatch[3],
-                indicators: []
-            });
+        let done: boolean;
+        switch (outcome.action) {
+            case 'add':
+                done = await addKey(editor, scope, keys, uses);
+                break;
+            case 'edit':
+                done = await editKey(editor, key!, uses, scope);
+                focusKeyword = undefined;
+                break;
+            case 'indicators':
+                await changeKeywordValueIndicators(editor, scope.element, key!.value);
+                done = true;
+                break;
+            case 'remove':
+                done = await removeWholeKeyword(editor, scope.element, key!.value);
+                if (done) vscode.window.showInformationMessage(`Removed ${key!.value.keywordText} from the ${scope.where}.`);
+                break;
+            case 'removeAll':
+                done = await removeAllKeys(editor, scope);
+                if (done) vscode.window.showInformationMessage(`Removed all command keys from the ${scope.where}.`);
+                break;
         };
-    });
 
-    return keyCommands;
-};
-
-/**
- * Collects every key number (01-24) already assigned to ANY record in the file, own attributes
- * only — used when adding key commands at file level, since a new file-level CAxx/CFxx applies to
- * every record format and would conflict with a key number any one of them already assigns itself,
- * regardless of whether the types match (DDS doesn't compile a key number defined as both CA and
- * CF for the same record's effective set — a record redeclaring the same type is just as useless).
- */
-function getAllRecordKeyNumbers(): string[] {
-    const keyNumbers = new Set<string>();
-    fieldsPerRecords.forEach(record => {
-        extractKeyCommandsFromAttributes(record.attributes).forEach(cmd => keyNumbers.add(cmd.keyNumber));
-    });
-    return [...keyNumbers];
-};
-
-/**
- * Gets available key numbers (01-24) excluding those already selected.
- * @param currentKeys - Array of currently selected key numbers
- * @returns Array of available key numbers
- */
-function getAvailableKeyNumbers(currentKeys: string[]): string[] {
-    const allKeys: string[] = [];
-
-    // Generate key numbers 01-24
-    for (let i = 1; i <= 24; i++) {
-        const keyNum = i.toString().padStart(2, '0');
-        allKeys.push(keyNum);
+        if (done) await nudgeCursor();
+        if (!refreshScope(editor, scope)) return;
     };
+};
 
-    return allKeys.filter(key => !currentKeys.includes(key));
+/**
+ * The window's rows: the keys the scope has, in key order, with their indicators and response
+ * indicator — and an error when the key is the other type somewhere else, or is also at the other
+ * level — then the add row.
+ */
+function buildKeyItems(keys: KeyCommand[], uses: KeyUse[], scope: KeyScope): KeyCommandItem[] {
+    const items: KeyCommandItem[] = keys
+        .map((key, index) => ({ key, index }))
+        .sort((a, b) => a.key.content.keyNumber.localeCompare(b.key.content.keyNumber))
+        .map(({ key, index }) => {
+            const { type, keyNumber, responseIndicator, text } = key.content;
+            const levelClashes = otherLevelUses(keyNumber, uses, scope);
+            const clashes = [...levelClashes, ...uses.filter(use => use.keyNumber === keyNumber && use.type !== type && !levelClashes.includes(use))];
+            return {
+                keyIndex: index,
+                label: `${keyLabel(keyNumber)} — ${type}${keyNumber}${text ? ` '${text}'` : ''}`,
+                description: [
+                    key.value.conditionText ? `When ${key.value.conditionText}` : 'Always (no indicators)',
+                    responseIndicator ? `response ${responseIndicator}` : 'no response indicator'
+                ].join(' · '),
+                detail: clashes.length > 0 ? `$(error) Won't compile: ${describeUses(clashes)}` : undefined,
+                buttons: [EDIT_BUTTON, INDICATORS_BUTTON, REMOVE_BUTTON]
+            };
+        });
+
+    if (items.length > 0) {
+        items.push({ keyIndex: -1, label: '', kind: vscode.QuickPickItemKind.Separator });
+    };
+    items.push({ keyIndex: -1, label: '$(add) Add command key...' });
+    return items;
+};
+
+/**
+ * The key where it can't also be: at file level when the scope is a record, in any record when
+ * it's the file. CRTDSPF rejects a key at both levels, whatever its type: "Keyword not allowed at
+ * both file and record level."
+ */
+function otherLevelUses(keyNumber: string, uses: KeyUse[], scope: KeyScope): KeyUse[] {
+    const atFileLevel = scope.where === 'file level';
+    return uses.filter(use => use.keyNumber === keyNumber && (use.where === 'file level') !== atFileLevel);
+};
+
+/** 'F5' for key '05'. */
+function keyLabel(keyNumber: string): string {
+    return `F${parseInt(keyNumber, 10)}`;
+};
+
+/** Where else a key is: "CF05 in record LIST, CF05 at file level". */
+function describeUses(uses: KeyUse[]): string {
+    const described = uses.map(use => `${use.type}${use.keyNumber} ${use.where === 'file level' ? 'at' : 'in'} ${use.where}`);
+    return described.length > 3 ? `${described.slice(0, 3).join(', ')} and ${described.length - 3} more` : described.join(', ');
+};
+
+/**
+ * Shows the window and resolves to what the user did, or undefined if dismissed. Needs the raw
+ * `createQuickPick` API rather than the simpler `showQuickPick` helper, since only it exposes
+ * per-item and title-bar buttons.
+ */
+function showKeyWindow(
+    items: KeyCommandItem[],
+    canRemoveAll: boolean,
+    title: string,
+    focus: KeyCommandItem | undefined
+): Promise<KeyWindowOutcome | undefined> {
+    const removeAllButton: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('trash'), tooltip: 'Remove all' };
+
+    return new Promise(resolve => {
+        const quickPick = vscode.window.createQuickPick<KeyCommandItem>();
+        quickPick.items = items;
+        if (focus) quickPick.activeItems = [focus];
+        quickPick.title = title;
+        quickPick.placeholder = 'Select a key to change it — its buttons set indicators or remove it';
+        quickPick.buttons = canRemoveAll ? [removeAllButton] : [];
+        quickPick.ignoreFocusOut = true;
+
+        let settled = false;
+        const finish = (result: KeyWindowOutcome | undefined) => {
+            if (settled) return;
+            settled = true;
+            resolve(result);
+            quickPick.hide();
+        };
+
+        quickPick.onDidTriggerButton(() => finish({ action: 'removeAll' }));
+        quickPick.onDidTriggerItemButton(event => {
+            const action = event.button === REMOVE_BUTTON ? 'remove' : event.button === INDICATORS_BUTTON ? 'indicators' : 'edit';
+            finish({ action, keyIndex: event.item.keyIndex });
+        });
+        quickPick.onDidAccept(() => {
+            const picked = quickPick.selectedItems[0];
+            if (!picked) return;
+            finish(picked.keyIndex >= 0 ? { action: 'edit', keyIndex: picked.keyIndex } : { action: 'add' });
+        });
+        quickPick.onDidHide(() => {
+            finish(undefined);
+            quickPick.dispose();
+        });
+
+        quickPick.show();
+    });
+};
+
+
+// READING
+
+/**
+ * Reads a CAnn/CFnn keyword: CA03, CA02(92), CF05(05 'Refresh').
+ * @param keywordText - The keyword, exactly as parsed
+ * @returns The key, or undefined when the keyword is no command key
+ */
+export function parseKeyCommand(keywordText: string): KeyCommandContent | undefined {
+    // A quote inside the text is written twice, as in every DDS literal.
+    const match = keywordText.match(/^(CA|CF)(\d{2})(?:\(\s*(\d{1,2})?\s*(?:'((?:[^']|'')*)')?\s*\))?$/i);
+    if (!match) return undefined;
+    return {
+        type: match[1].toUpperCase() as KeyType,
+        keyNumber: match[2],
+        responseIndicator: match[3]?.padStart(2, '0'),
+        text: match[4]?.replace(/''/g, "'")
+    };
+};
+
+/** The command keys among some keywords — a record's, or the file's. */
+function readKeyCommands(attributes: DdsAttribute[]): KeyCommand[] {
+    return attributes.flatMap(attr => {
+        const content = parseKeyCommand(attr.value);
+        return content ? [{
+            content,
+            value: {
+                code: attr.value,
+                keywordText: attr.value,
+                lineIndex: attr.lineIndex,
+                lastLineIndex: attr.lastLineIndex ?? attr.lineIndex,
+                conditionText: formatIndicatorCondition(attr.indicators),
+                wholeKeyword: true
+            }
+        }] : [];
+    });
+};
+
+/** The scope's command keys, from the last parse. */
+function readScopeKeys(scope: KeyScope): KeyCommand[] {
+    if (scope.element.kind === 'file') {
+        return readKeyCommands(attributesFileLevel);
+    };
+    return readKeyCommands(fieldsPerRecords.find(record => record.record === scope.element.name)?.attributes ?? []);
+};
+
+/** Every command key in the display file, file level and every record, from the last parse. */
+export function readKeyUses(): KeyUse[] {
+    const toUses = (keys: KeyCommand[], where: string): KeyUse[] => keys.map(key => ({ ...key.content, where, lineIndex: key.value.lineIndex }));
+    return [
+        ...toUses(readKeyCommands(attributesFileLevel), 'file level'),
+        ...fieldsPerRecords.flatMap(record => toUses(readKeyCommands(record.attributes ?? []), `record ${record.record}`))
+    ];
+};
+
+/**
+ * Parses the source again after an edit, bringing the shared model up to date, and finds the
+ * record again by its definition line — which none of these edits move, as they all happen below it.
+ * @returns False when the record can't be found any more
+ */
+function refreshScope(editor: vscode.TextEditor, scope: KeyScope): boolean {
+    const elements = parseDocument(editor.document.getText());
+    if (scope.element.kind === 'file') return true;
+
+    const record = elements.find(el => el.kind === 'record' && el.lineIndex === scope.element.lineIndex);
+    if (!record) return false;
+    scope.element = record;
+    return true;
+};
+
+/** The keyword a key is written as: the text only goes with a response indicator. */
+export function keyCommandKeyword(content: KeyCommandContent): string {
+    const { type, keyNumber, responseIndicator, text } = content;
+    if (!responseIndicator) return `${type}${keyNumber}`;
+    return `${type}${keyNumber}(${responseIndicator}${text ? ` '${text.replace(/'/g, "''")}'` : ''})`;
+};
+
+// SOURCE EDITS
+
+/**
+ * Adds a key the scope doesn't have yet, unconditioned, after its other keywords: asks which one,
+ * then its type, response indicator and text. Indicators are set afterwards with the row's button.
+ * @returns True when the key was added
+ */
+async function addKey(editor: vscode.TextEditor, scope: KeyScope, keys: KeyCommand[], uses: KeyUse[]): Promise<boolean> {
+    const keyNumber = await pickNewKeyNumber(keys, uses, scope);
+    if (!keyNumber) return false;
+
+    const content = await collectKeyCommand(keyNumber, uses);
+    if (!content) return false;
+
+    const keywordText = keyCommandKeyword(content);
+    if (!(await insertKeywordLines(editor, findElementInsertionPoint(editor, scope.element), keywordText))) return false;
+    vscode.window.showInformationMessage(`Added ${keywordText} to the ${scope.where}.`);
+    return true;
+};
+
+/**
+ * Changes a key where it is, keeping its indicators and any keyword beside it.
+ * @returns True when it was changed
+ */
+async function editKey(editor: vscode.TextEditor, key: KeyCommand, uses: KeyUse[], scope: KeyScope): Promise<boolean> {
+    // The key's own keyword doesn't clash with what it's being changed to.
+    const others = uses.filter(use => !(use.where === scope.where && use.lineIndex === key.value.lineIndex && use.keyNumber === key.content.keyNumber));
+    const content = await collectKeyCommand(key.content.keyNumber, others, key.content);
+    if (!content) return false;
+
+    const newKeywordText = keyCommandKeyword(content);
+    if (newKeywordText === key.value.keywordText) return false;
+
+    const { lineIndex, lastLineIndex, keywordText } = key.value;
+    return replaceKeywordTextInLines(editor, lineIndex, lastLineIndex, keywordText, newKeywordText);
+};
+
+/**
+ * Removes keys from the last line up, so that each one still to remove is where it was read —
+ * two on one line share it, so each removal re-reads the scope first.
+ */
+async function removeKeys(editor: vscode.TextEditor, scope: KeyScope, keys: KeyCommand[]): Promise<boolean> {
+    for (const target of [...keys].sort((a, b) => b.value.lineIndex - a.value.lineIndex)) {
+        const current = readScopeKeys(scope).find(key =>
+            key.value.keywordText === target.value.keywordText && key.value.lineIndex === target.value.lineIndex);
+        if (!current) continue;
+        if (!(await removeWholeKeyword(editor, scope.element, current.value))) return false;
+        if (!refreshScope(editor, scope)) return false;
+    };
+    return true;
+};
+
+async function removeAllKeys(editor: vscode.TextEditor, scope: KeyScope): Promise<boolean> {
+    return removeKeys(editor, scope, readScopeKeys(scope));
 };
 
 // USER INTERACTION FUNCTIONS
 
 /**
- * Collects key commands with indicators from user through interactive selection.
- * @param availableKeys - Array of key numbers available for selection
- * @returns Array of selected key commands with indicators
+ * Asks which key to add, among those the scope doesn't have yet. A key already at the other level
+ * is listed with where it is, and picking it explains why it can't be added and asks again.
+ * @returns The key, '01' to '24', or undefined if cancelled
  */
-async function collectKeyCommandsWithIndicatorsFromUser(availableKeys: string[]): Promise<KeyCommandWithIndicators[]> {
-    const selectedKeyCommands: KeyCommandWithIndicators[] = [];
-    let remainingKeys = [...availableKeys];
+async function pickNewKeyNumber(keys: KeyCommand[], uses: KeyUse[], scope: KeyScope): Promise<string | undefined> {
+    const items: (vscode.QuickPickItem & { keyNumber: string; clashes: KeyUse[] })[] = [];
+    for (let i = 1; i <= 24; i++) {
+        const keyNumber = i.toString().padStart(2, '0');
+        if (keys.some(key => key.content.keyNumber === keyNumber)) continue;
+        const clashes = otherLevelUses(keyNumber, uses, scope);
+        items.push({
+            keyNumber,
+            clashes,
+            label: keyLabel(keyNumber),
+            description: clashes.length > 0 ? `$(error) Already ${describeUses(clashes)}` : undefined
+        });
+    };
+    if (items.length === 0) {
+        vscode.window.showInformationMessage('Every key from F1 to F24 is already assigned.');
+        return undefined;
+    };
 
-    while (remainingKeys.length > 0) {
-        const selectedKey = await vscode.window.showQuickPick(
-            remainingKeys.map(key => ({
-                label: `F${parseInt(key)}`,
-                description: `Function key ${parseInt(key)}`,
-                detail: `Key number: ${key}`
-            })),
-            {
-                title: `Add Key Command (${selectedKeyCommands.length} selected) - Press ESC to finish`,
-                placeHolder: 'Select function key from list'
-            }
+    while (true) {
+        const picked = await vscode.window.showQuickPick(items, {
+            title: 'Add Command Key',
+            placeHolder: 'Select the key to add',
+            ignoreFocusOut: true
+        });
+        if (!picked) return undefined;
+        if (picked.clashes.length === 0) return picked.keyNumber;
+
+        await vscode.window.showErrorMessage(
+            `${picked.label} can't be added to the ${scope.where}: it is ${describeUses(picked.clashes)}. ` +
+            `A key can't be at both file and record level — CRTDSPF fails.`,
+            { modal: true }
         );
+    };
+};
 
-        if (!selectedKey) break;
+/**
+ * Asks for a key's type, response indicator and text, prefilled with `current` when changing one.
+ * The type it already has elsewhere in the file comes first, and the other one is refused.
+ * @param keyNumber - The key, '01' to '24'
+ * @param uses - Every other command key in the file
+ * @param current - The key as it is, when changing one
+ * @returns The key, or undefined if cancelled
+ */
+async function collectKeyCommand(keyNumber: string, uses: KeyUse[], current?: KeyCommandContent): Promise<KeyCommandContent | undefined> {
+    const type = await pickKeyType(keyNumber, uses, current?.type);
+    if (!type) return undefined;
 
-        const keyNumber = selectedKey.detail!.split(': ')[1];
+    const responseIndicator = await vscode.window.showInputBox({
+        title: `${keyLabel(keyNumber)} — Response Indicator`,
+        prompt: `Enter the indicator set on when ${keyLabel(keyNumber)} is pressed (01-99), or leave it blank for none`,
+        value: current ? current.responseIndicator ?? '' : keyNumber,
+        placeHolder: keyNumber,
+        ignoreFocusOut: true,
+        validateInput: value => !value.trim() || /^(0[1-9]|[1-9]\d)$/.test(value.trim().padStart(2, '0')) ? null : 'Enter an indicator from 01 to 99, or leave it blank'
+    });
+    if (responseIndicator === undefined) return undefined;
+    if (!responseIndicator.trim()) {
+        return { type, keyNumber };
+    };
 
-        // Get command type (CA or CF)
-        const commandType = await selectCommandType();
-        if (!commandType) continue;
+    const text = await vscode.window.showInputBox({
+        title: `${keyLabel(keyNumber)} — Text`,
+        prompt: 'Enter the text that documents the response indicator, or leave it blank for none',
+        value: current?.text,
+        placeHolder: 'Refresh',
+        ignoreFocusOut: true,
+        validateInput: value => value.trim().length > 50 ? 'The text must be 50 characters or fewer' : null
+    });
+    if (text === undefined) return undefined;
 
-        // Get description
-        const description = await collectKeyCommandDescription(keyNumber);
-        if (!description) continue;
+    return { type, keyNumber, responseIndicator: responseIndicator.trim().padStart(2, '0'), text: text.trim() || undefined };
+};
 
-        // Collect indicators for this key command
-        const indicators = await collectIndicatorsForKeyCommand(commandType, keyNumber);
+/**
+ * Asks CA or CF. The type the key already has elsewhere in the file comes first; picking the
+ * other one explains where it clashes and asks again.
+ * @returns The type, or undefined if cancelled
+ */
+async function pickKeyType(keyNumber: string, uses: KeyUse[], currentType?: KeyType): Promise<KeyType | undefined> {
+    const sameKey = uses.filter(use => use.keyNumber === keyNumber);
+    const clashesWith = (type: KeyType) => sameKey.filter(use => use.type !== type);
+    const usedType = sameKey.length > 0 && clashesWith(sameKey[0].type).length === 0 ? sameKey[0].type : undefined;
+    const preferred = usedType ?? currentType ?? 'CF';
 
-        selectedKeyCommands.push({
-            type: commandType,
-            keyNumber: keyNumber,
-            description: description,
-            indicators: indicators
+    const items = (['CF', 'CA'] as KeyType[])
+        .sort((a, b) => (a === preferred ? -1 : 0) - (b === preferred ? -1 : 0))
+        .map(type => {
+            const clashes = clashesWith(type);
+            return {
+                type,
+                label: `${type}${keyNumber}`,
+                description: type === 'CF' ? 'Command function: sends the changed data' : 'Command attention: no data is sent',
+                detail: clashes.length > 0 ? `$(error) Won't compile: ${describeUses(clashes)}` : usedType === type ? `As in ${describeUses(sameKey)}` : undefined
+            };
         });
 
-        remainingKeys = remainingKeys.filter(k => k !== keyNumber);
-    };
-
-    return selectedKeyCommands;
-};
-
-/**
- * Allows user to select between CA (attention) and CF (function) command types.
- * @returns Selected command type or null if cancelled
- */
-async function selectCommandType(): Promise<'CA' | 'CF' | null> {
-    const commandTypes = [
-        {
-            label: 'CA',
-            description: 'Command Attention',
-            detail: 'Attention key - typically used for cancellation or exit functions'
-        },
-        {
-            label: 'CF',
-            description: 'Command Function',
-            detail: 'Function key - typically used for processing or action functions'
-        }
-    ];
-
-    const selection = await vscode.window.showQuickPick(commandTypes, {
-        title: 'Select Command Type',
-        placeHolder: 'Choose between CA (attention) or CF (function) key'
-    });
-
-    return (selection?.label as 'CA' | 'CF') || null;
-};
-
-/**
- * Collects description text for a key command.
- * @param keyNumber - The key number (01-24)
- * @returns Description text or null if cancelled
- */
-async function collectKeyCommandDescription(keyNumber: string): Promise<string | null> {
-    const description = await vscode.window.showInputBox({
-        title: `Key Command F${parseInt(keyNumber)} - Description`,
-        prompt: 'Enter description text for this key command (max 25 characters)',
-        placeHolder: 'End of program',
-        validateInput: validateKeyCommandDescription
-    });
-
-    return description?.trim() || null;
-};
-
-/**
- * Validates key command description according to DDS rules.
- * @param value - The description to validate
- * @returns Error message or null if valid
- */
-function validateKeyCommandDescription(value: string): string | null {
-    if (!value || value.trim() === '') {
-        return "The description cannot be empty.";
-    };
-
-    const trimmedValue = value.trim();
-
-    if (trimmedValue.length > 25) {
-        return "The description must be 25 characters or fewer.";
-    };
-
-    // Check for single quotes which would break the DDS syntax
-    if (trimmedValue.includes("'")) {
-        return "The description cannot contain single quotes.";
-    };
-
-    return null;
-};
-
-/**
- * Collects conditioning indicators for a specific key command.
- * @param commandType - The command type (CA or CF)
- * @param keyNumber - The key number
- * @returns Array of indicator codes (max 3)
- */
-async function collectIndicatorsForKeyCommand(commandType: string, keyNumber: string): Promise<string[]> {
-    const indicators: string[] = [];
-
-    while (indicators.length < 3) {
-        const indicatorInput = await vscode.window.showInputBox({
-            title: `Indicators for ${commandType}${keyNumber} - ${indicators.length}/3 added`,
-            prompt: `Enter indicator ${indicators.length + 1} (e.g., '50', 'N50', or leave empty to finish)`,
-            placeHolder: 'Indicator (1-99, optional N prefix)',
-            validateInput: (value: string) => {
-                if (!value.trim()) return null; // Empty is OK to finish
-                if (!/^N?[0-9]{1,2}$/.test(value.trim())) {
-                    return 'Invalid indicator format. Use format like: 50, N50, 5, N99';
-                }
-                const num = parseInt(value.replace('N', ''));
-                if (num < 1 || num > 99) {
-                    return 'Indicator number must be between 1 and 99';
-                };
-                return null;
-            }
+    while (true) {
+        const picked = await vscode.window.showQuickPick(items, {
+            title: `${keyLabel(keyNumber)} — Key Type${currentType ? ` (current: ${currentType})` : ''}`,
+            placeHolder: 'Choose CF (function key) or CA (attention key)',
+            ignoreFocusOut: true
         });
+        if (!picked) return undefined;
 
-        if (indicatorInput === undefined) {
-            // User cancelled
-            return [];
-        };
+        const clashes = clashesWith(picked.type);
+        if (clashes.length === 0) return picked.type;
 
-        const trimmedInput = indicatorInput.trim();
-        if (!trimmedInput) {
-            // User finished entering indicators
-            break;
-        };
-
-        // Validate and add indicator
-        indicators.push(trimmedInput.toUpperCase());
+        await vscode.window.showErrorMessage(
+            `${keyLabel(keyNumber)} can't be ${picked.type}${keyNumber}: it is ${describeUses(clashes)}. ` +
+            `A display file can't use the same key as both CA and CF — CRTDSPF fails.`,
+            { modal: true }
+        );
     };
-
-    return indicators;
-};
-
-// DDS MODIFICATION FUNCTIONS
-
-/**
- * Adds key commands with indicators to a DDS record by inserting command lines after the record.
- * @param editor - The active text editor
- * @param element - The DDS record to add key commands to
- * @param keyCommands - Array of key commands with indicators to add
- */
-async function addKeyCommandsToRecord(
-    editor: vscode.TextEditor,
-    element: any,
-    keyCommands: KeyCommandWithIndicators[]
-): Promise<boolean> {
-    const insertionPoint = findElementInsertionPointRecordFirstLine(editor, element);
-    if (insertionPoint === -1) {
-        throw new Error('Could not find insertion point for key commands');
-    };
-
-    const workspaceEdit = new vscode.WorkspaceEdit();
-    const uri = editor.document.uri;
-
-    // Insert each key command line
-    let crInserted: boolean = false;
-    for (let i = 0; i < keyCommands.length; i++) {
-        const commandLine = createKeyCommandLineWithIndicators(keyCommands[i]);
-        const insertPos = new vscode.Position(insertionPoint, 0);
-
-        if (!crInserted && insertPos.line >= editor.document.lineCount) {
-            workspaceEdit.insert(uri, insertPos, '\n');
-            crInserted = true;
-        };
-
-        workspaceEdit.insert(uri, insertPos, commandLine);
-        if (i < keyCommands.length - 1 || insertPos.line < editor.document.lineCount) {
-            workspaceEdit.insert(uri, insertPos, '\n');
-        };
-    };
-
-    return applyWorkspaceEdit(workspaceEdit, 'add the key commands');
-};
-
-/**
- * Adds key commands with indicators to a DDS file by inserting command lines in the first lines.
- * @param editor - The active text editor
- * @param keyCommands - Array of key commands with indicators to add
- */
-async function addKeyCommandsToFile(
-    editor: vscode.TextEditor,
-    keyCommands: KeyCommandWithIndicators[]
-): Promise<boolean> {
-    const insertionPoint = findElementInsertionPointFileFirstLine(editor);
-    if (insertionPoint === -1) {
-        throw new Error('Could not find insertion point for key commands');
-    };
-
-    const workspaceEdit = new vscode.WorkspaceEdit();
-    const uri = editor.document.uri;
-
-    // Insert each key command line
-    let crInserted: boolean = false;
-    for (let i = 0; i < keyCommands.length; i++) {
-        const commandLine = createKeyCommandLineWithIndicators(keyCommands[i]);
-        const insertPos = new vscode.Position(insertionPoint, 0);
-
-        if (!crInserted && insertPos.line >= editor.document.lineCount) {
-            workspaceEdit.insert(uri, insertPos, '\n');
-            crInserted = true;
-        };
-
-        workspaceEdit.insert(uri, insertPos, commandLine);
-        if (i < keyCommands.length - 1 || insertPos.line < editor.document.lineCount) {
-            workspaceEdit.insert(uri, insertPos, '\n');
-        };
-    };
-
-    return applyWorkspaceEdit(workspaceEdit, 'add the key commands');
-};
-
-/**
- * Creates a DDS key command line with conditioning indicators.
- * @param keyCommandWithIndicators - The key command and its indicators
- * @returns Formatted DDS line with indicators in correct positions
- */
-function createKeyCommandLineWithIndicators(keyCommandWithIndicators: KeyCommandWithIndicators): string {
-    let line = '     A '; // Start with 'A' and spaces up to position 7
-
-    // Add indicators
-    for (let i = 0; i < 3; i++) {
-        const startPos = 7 + (i * 3);
-        if (i < keyCommandWithIndicators.indicators.length) {
-            const indicator = keyCommandWithIndicators.indicators[i].padStart(3, ' ');
-            line += indicator;
-        };
-    };
-
-    while (line.length < 44) {
-        line += ' ';
-    };
-
-    // Add the key command
-    const { type, keyNumber, description } = keyCommandWithIndicators;
-    line += `${type}${keyNumber}(${keyNumber} '${description}')`;
-
-    return line;
-};
-
-/**
- * Removes existing key commands from a DDS record using precise character offsets.
- * Handles edge cases properly to avoid leaving blank lines at the end of the file.
- * @param editor - The active text editor
- * @param element - The DDS record to remove key commands from
- */
-async function removeKeyCommandsFromRecord(editor: vscode.TextEditor, element: any): Promise<boolean> {
-    const keyCommandLines = findExistingKeyCommandLines(editor, element);
-    if (keyCommandLines.length === 0) return true;
-
-    const document = editor.document;
-    const workspaceEdit = new vscode.WorkspaceEdit();
-    const uri = document.uri;
-
-    // All key command lines are standalone (not on the record definition line)
-    const deletionRanges = calculateKeyCommandDeletionRanges(document, keyCommandLines);
-
-    // Apply deletions in reverse order to maintain offsets
-    for (let i = deletionRanges.length - 1; i >= 0; i--) {
-        const { startOffset, endOffset } = deletionRanges[i];
-        const startPos = document.positionAt(startOffset);
-        const endPos = document.positionAt(endOffset);
-        workspaceEdit.delete(uri, new vscode.Range(startPos, endPos));
-    };
-
-    return applyWorkspaceEdit(workspaceEdit, 'remove the key commands');
-};
-
-/**
- * Removes existing key commands from a DDS file using precise character offsets.
- * Handles edge cases properly to avoid leaving blank lines at the end of the file.
- * @param editor - The active text editor
- */
-async function removeKeyCommandsFromFile(editor: vscode.TextEditor): Promise<boolean> {
-    const keyCommandLines = findExistingKeyCommandLinesInFile(editor);
-    if (keyCommandLines.length === 0) return true;
-
-    const document = editor.document;
-    const workspaceEdit = new vscode.WorkspaceEdit();
-    const uri = document.uri;
-
-    // All key command lines are standalone (not on the record definition line)
-    const deletionRanges = calculateKeyCommandDeletionRanges(document, keyCommandLines);
-
-    // Apply deletions in reverse order to maintain offsets
-    for (let i = deletionRanges.length - 1; i >= 0; i--) {
-        const { startOffset, endOffset } = deletionRanges[i];
-        const startPos = document.positionAt(startOffset);
-        const endPos = document.positionAt(endOffset);
-        workspaceEdit.delete(uri, new vscode.Range(startPos, endPos));
-    };
-
-    return applyWorkspaceEdit(workspaceEdit, 'remove the key commands');
-};
-
-/**
- * Calculates precise deletion ranges for standalone key command lines.
- * Handles edge cases to prevent blank lines at the end of the file.
- * @param document - The text document
- * @param keyCommandLines - Array of line indices containing key commands
- * @returns Array of deletion ranges with start and end offsets
- */
-function calculateKeyCommandDeletionRanges(
-    document: vscode.TextDocument,
-    keyCommandLines: number[]
-): { startOffset: number; endOffset: number }[] {
-    const docText = document.getText();
-    const docLength = docText.length;
-    const ranges: { startOffset: number; endOffset: number }[] = [];
-
-    // Group consecutive lines for more efficient deletion
-    const lineGroups = groupConsecutiveLines(keyCommandLines);
-
-    for (const group of lineGroups) {
-        const firstLine = group[0];
-        const lastLine = group[group.length - 1];
-
-        let startOffset: number;
-        let endOffset: number;
-
-        if (lastLine === document.lineCount - 1) {
-            // Group includes the last line of the document
-            if (firstLine === 0) {
-                // Entire document is key command lines - delete everything
-                startOffset = 0;
-                endOffset = docLength;
-            } else {
-                // Delete from end of previous line to end of file
-                const prevLineEndPos = document.lineAt(firstLine - 1).range.end;
-                startOffset = document.offsetAt(prevLineEndPos);
-                endOffset = docLength;
-            };
-        } else {
-            // Group is in the middle or at the beginning
-            startOffset = document.offsetAt(new vscode.Position(firstLine, 0));
-
-            // Include the line break after the last line of the group
-            const afterGroupPos = document.lineAt(lastLine).rangeIncludingLineBreak.end;
-            endOffset = document.offsetAt(afterGroupPos);
-        };
-
-        // Validate the range
-        if (startOffset < endOffset && startOffset >= 0 && endOffset <= docLength) {
-            ranges.push({ startOffset, endOffset });
-        };
-    };
-
-    return ranges;
-};
-
-// LINE CREATION AND DETECTION FUNCTIONS
-
-/**
- * Finds existing key command lines for a record.
- * @param editor - The active text editor
- * @param element - The DDS record
- * @returns Array of line indices containing key commands
- */
-function findExistingKeyCommandLines(editor: vscode.TextEditor, element: any): number[] {
-    const keyCommandLines: number[] = [];
-    const startLine = element.lineIndex + 1;
-
-    for (let i = startLine; i < editor.document.lineCount; i++) {
-        const lineText = editor.document.lineAt(i).text;
-        const trimmedLine = lineText.trim();
-
-        // Skip empty lines
-        if (!trimmedLine) {
-            continue;
-        };
-
-        // Skip comment lines (column 7 = '*', regardless of column 6 being 'A' or blank)
-        if (lineText.length > 6 && lineText.charAt(6) === '*') {
-            continue;
-        };
-
-        // Stop if we find a line that doesn't start with 'A ' or isn't an attribute line
-        if (!trimmedLine.startsWith('A ') || !isAttributeLine(lineText)) {
-            break;
-        };
-
-        if (lineText.match(/\b(CA|CF)\d{2}\(/)) {
-            keyCommandLines.push(i);
-        };
-    };
-
-    return keyCommandLines;
-};
-
-/**
- * Finds existing key command lines in file level.
- * @param editor - The active text editor
- * @returns Array of line indices containing key commands
- */
-function findExistingKeyCommandLinesInFile(editor: vscode.TextEditor): number[] {
-    const keyCommandLines: number[] = [];
-
-    for (let i = 0; i < editor.document.lineCount; i++) {
-        const lineText = editor.document.lineAt(i).text;
-
-        // Skip empty lines
-        if (!lineText.trim()) {
-            continue;
-        };
-
-        // Skip comment lines (column 7 = '*', regardless of column 6 being 'A' or blank)
-        if (lineText.length > 6 && lineText.charAt(6) === '*') {
-            continue;
-        };
-
-        // Stop if we hit a record definition (R in col 17)
-        if (lineText.length > 16 && lineText[16] === 'R') {
-            break;
-        };
-
-        // If this line has CAxx( or CFxx(
-        if (lineText.match(/\b(CA|CF)\d{2}\(/)) {
-            keyCommandLines.push(i);
-            continue;
-        };
-
-        // If the previous line ended with a "-", check continuation
-        if (i > 0) {
-            const prevLine = editor.document.lineAt(i - 1).text;
-            if (prevLine.length >= 80 && prevLine[79] === '-') {
-                // Join previous + current to check CA/CF
-                const combined = prevLine + lineText;
-                if (combined.match(/\b(CA|CF)\d{2}\(/)) {
-                    keyCommandLines.push(i - 1); // use the line where it starts
-                };
-            };
-        };
-    };
-
-    return keyCommandLines;
 };

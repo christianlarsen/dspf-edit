@@ -31,7 +31,7 @@ After adding the record, use **Add Constant** on it to add the function-key text
 
 ## Assign command keys
 
-Right-click a record for **Command Keys**. A key number already assigned at the other level (file vs. record) is excluded from the picker, so you can never end up with the same key defined as both `CA` and `CF`. See [Command Keys](/dspf-edit/guides/command-keys/).
+Right-click a record for **Command Keys**: a window lists the record's keys, to add, change, remove or condition them with indicators. Keys that won't compile — the same key as `CA` in one place and `CF` in another, or at both file and record level — are refused or flagged. See [Command Keys](/dspf-edit/guides/command-keys/).
 
 ## Indicators
 

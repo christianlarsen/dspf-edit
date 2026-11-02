@@ -8,6 +8,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.16.0] - 2026-11-02
+### Changed
+- Fields: **Error Messages** now opens one window listing the field's error messages, like the **Attributes** and **Colors** windows. Each row shows the message, the indicators that show it and its response indicator.
+  - Selecting a row, or its ✏️ button, changes the message where it is, keeping its indicators. The indicators button changes its indicators with the same menu as **Indicators**: up to nine indicators per condition, and OR'd conditions. Before, a message could only have one indicator.
+  - The 🗑️ button removes a message, together with the indicator lines above it, and the 🗑️ button in the title bar removes them all.
+  - **Add error message...** adds one with its own text (`ERRMSG`), and **Add error message from a message file...** adds one from a message file (`ERRMSGID`): message ID, message file (with its library or without it), response indicator and the field the message data comes from. Both ask for the indicators that show the message.
+  - Messages from a message file (`ERRMSGID`) are now listed too, and can be changed and removed like the others.
+  - The window opens again after each change. `Escape` closes it.
+- Records and file: **Command Keys** now opens one window listing the keys the record (or the file) has. Each row shows the key (`F5 — CF05 'Refresh'`), its indicators and its response indicator.
+  - Selecting a row, or its ✏️ button, changes the key's type (CA or CF), response indicator and text, keeping its indicators. The indicators button changes its indicators with the same menu as **Indicators**. Before, a key could only be added with up to three indicators, and they couldn't be changed afterwards.
+  - The 🗑️ button removes a key, and the 🗑️ button in the title bar removes them all. Before, the only choices were adding more keys, replacing them all or removing them all.
+  - **Add command key...** asks for the key among those the record doesn't have yet, then CA or CF, the response indicator (the key's own number by default; blank for none) and the text (only with a response indicator, as DDS requires).
+- Command keys: CRTDSPF fails when a key is CA in one place of the display file and CF in another, or is at both file and record level ("Keyword not allowed at both file and record level"). STRSDA doesn't check either. Now:
+  - CA or CF is offered with the type the key already has elsewhere in the file first. Choosing the other type shows an error saying where the key is, and asks again.
+  - A key already at file level can't be added to a record, and a key already in a record can't be added at file level. The picker shows why, and choosing it shows an error.
+  - A key of the record that already clashes with another place is flagged in the window with `Won't compile:` and where the other one is.
+
+### Fixed
+- Command keys written as `CA03` or `CA02(92)` (without text, or without response indicator), both valid in DDS, weren't recognized, and a key's indicators weren't read.
+- Error messages and command key texts with a single quote (written twice in DDS, `''`) weren't recognized. They can now be entered too.
+- Changing the indicators of a keyword continued on more than one line (such as a long `ERRMSG`) wrote it on a single line longer than 80 positions.
+- Rewriting a keyword continued on more than one line copied the indicators of its first line onto its continuation lines.
+
 ## [1.15.0] - 2026-10-28
 ### Added
 - Screen Preview: **Copy Format...** and **Paste Format** in the **⋮ Actions** menu copy the format of a field or constant onto others. Select one element and choose **Copy Format...**, then select one or several elements and choose **Paste Format of NAME**. What was copied stays available until something else is copied, so it can be pasted again, also in other records or files.

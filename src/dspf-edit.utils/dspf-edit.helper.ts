@@ -1158,8 +1158,10 @@ async function rewriteKeywordArea(
 
     const chunks = paginateKeywordText(remaining);
 
-    const prefix = document.lineAt(lineIndex).text.substring(0, 44);
+    // Each line keeps its own columns 1-44: the first one carries the indicators, its
+    // continuation lines carry none.
     for (let i = 0; i < Math.min(chunks.length, lineCount); i++) {
+        const prefix = document.lineAt(lineIndex + i).text.substring(0, 44).padEnd(44, ' ');
         const newText = (prefix + chunks[i]).replace(/\s+$/, '');
         workspaceEdit.replace(uri, document.lineAt(lineIndex + i).range, newText);
     };

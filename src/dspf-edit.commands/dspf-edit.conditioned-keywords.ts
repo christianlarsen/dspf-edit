@@ -5,9 +5,9 @@
 */
 
 import * as vscode from 'vscode';
-import { findElementInsertionPoint, applyWorkspaceEdit, removeKeywordTextFromLines, replaceKeywordTextInLines } from '../dspf-edit.utils/dspf-edit.helper';
+import { findElementInsertionPoint, removeKeywordTextFromLines, replaceKeywordTextInLines, insertKeywordLines } from '../dspf-edit.utils/dspf-edit.helper';
 import { manageLineCondition, copyLineCondition, removeLineCondition, addConditionedKeywordLine } from './dspf-edit.add-indicators';
-import { parseDocument } from '../dspf-edit.parser/dspf-edit.parser';
+import { parseDocument, joinContinuedKeywordParts } from '../dspf-edit.parser/dspf-edit.parser';
 
 /**
  * What the Attributes (DSPATR) and Colors (COLOR) commands share: the window listing what a field
@@ -266,12 +266,12 @@ async function applyKeywordValueChecks(
  * line — which none of these edits move, as they all happen on it or below it. Parsing also brings
  * the shared model (fieldsPerRecords) up to date, which the add edits read.
  */
-function reparseElement(editor: vscode.TextEditor, element: any): any {
+export function reparseElement(editor: vscode.TextEditor, element: any): any {
     return parseDocument(editor.document.getText()).find(el => el.kind === element.kind && el.lineIndex === element.lineIndex);
 };
 
 /** Nudges the cursor so the tree and preview pick up the edit, as every command here does. */
-async function nudgeCursor(): Promise<void> {
+export async function nudgeCursor(): Promise<void> {
     await vscode.commands.executeCommand('cursorRight');
     await vscode.commands.executeCommand('cursorLeft');
 };
@@ -298,14 +298,20 @@ function keywordCodes(keywordText: string): string[] {
 };
 
 /**
- * True when the keyword is the only thing on a line of its own: not on the element's definition
- * line, and with no other keyword beside it. Only then are the line's indicators this keyword's
- * alone, and only then does removing the keyword remove the line.
+ * True when the keyword is the only thing on line(s) of its own: not on the element's definition
+ * line, and with no other keyword beside it — continued onto more lines when it doesn't fit in one,
+ * as a long ERRMSG does. Only then are the line's indicators this keyword's alone, and only then
+ * does removing the keyword remove its lines.
  */
 function hasLineOfItsOwn(editor: vscode.TextEditor, element: any, value: Pick<KeywordValue, 'keywordText' | 'lineIndex' | 'lastLineIndex'>): boolean {
-    return value.lineIndex !== element.lineIndex
-        && value.lineIndex === value.lastLineIndex
-        && editor.document.lineAt(value.lineIndex).text.substring(44, 80).trim() === value.keywordText;
+    if (value.lineIndex === element.lineIndex) {
+        return false;
+    };
+    const parts: string[] = [];
+    for (let i = value.lineIndex; i <= value.lastLineIndex; i++) {
+        parts.push(editor.document.lineAt(i).text.substring(44, 80));
+    };
+    return joinContinuedKeywordParts(parts).trim() === value.keywordText;
 };
 
 /**
@@ -327,7 +333,7 @@ export async function removeWholeKeyword(
         if (lineIndex === undefined) {
             return false;
         };
-        return removeKeywordTextFromLines(editor, lineIndex, lineIndex, value.keywordText);
+        return removeKeywordTextFromLines(editor, lineIndex, lineIndex + value.lastLineIndex - value.lineIndex, value.keywordText);
     };
 
     // The element's own definition line (field or constant) must keep its columns 1-44 even if
@@ -367,20 +373,16 @@ async function giveValueLineOfItsOwn(editor: vscode.TextEditor, element: any, va
         return value.lineIndex;
     };
 
-    // The new line goes in below the old one, so the old one keeps its index to copy from.
+    // The new line(s) go in below the old ones, so the old ones keep their index to copy from.
     const insertionPoint = findElementInsertionPoint(editor, element);
-    const newLine = '     A'.padEnd(44, ' ') + valueKeywordText(value);
-    const workspaceEdit = new vscode.WorkspaceEdit();
-    const atEnd = insertionPoint >= editor.document.lineCount;
-    workspaceEdit.insert(editor.document.uri, new vscode.Position(insertionPoint, 0), atEnd ? `\n${newLine}` : `${newLine}\n`);
-    if (!(await applyWorkspaceEdit(workspaceEdit, 'move the attribute'))) {
+    if (!(await insertKeywordLines(editor, insertionPoint, valueKeywordText(value)))) {
         return undefined;
     };
 
     let lineIndex: number | undefined = insertionPoint;
     if (value.lineIndex !== element.lineIndex) {
-        // The condition is read from the keyword's last line: that's the one carrying it.
-        lineIndex = await copyLineCondition(editor, value.lastLineIndex, insertionPoint);
+        // The condition is on the keyword's first line, the one its continuation lines follow.
+        lineIndex = await copyLineCondition(editor, value.lineIndex, insertionPoint);
         if (lineIndex === undefined) {
             return undefined;
         };
