@@ -23,7 +23,11 @@ import { addColor } from './dspf-edit.add-color';
 import { addAttribute } from './dspf-edit.add-attribute';
 import { addKeyCommand } from './dspf-edit.add-keys';
 import { addSflDropSflFold } from './dspf-edit.sfldrop-sflfold';
+import { addOverlaySflEnd } from './dspf-edit.overlay-sflend';
+import { addCursorLocation } from './dspf-edit.cursor-location';
+import { addSubfileRecordNumber } from './dspf-edit.subfile-record-number';
 import { addChginpdft } from './dspf-edit.add-chginpdft';
+import { setReferenceFile } from './dspf-edit.set-reference-file';
 import { addValidityCheck } from './dspf-edit.add-validity-check';
 import { editingKeywords } from './dspf-edit.add-editing-keywords';
 import { addErrorMessage } from './dspf-edit.add-error-messages';
@@ -62,7 +66,11 @@ export const commands = [
     { name: 'addAttribute', handler: addAttribute, needsTreeProvider: false },
     { name: 'addKey', handler: addKeyCommand, needsTreeProvider: false },
     { name: 'addSflDropSflFold', handler: addSflDropSflFold, needsTreeProvider: false },
+    { name: 'addOverlaySflEnd', handler: addOverlaySflEnd, needsTreeProvider: false },
+    { name: 'addCursorLocation', handler: addCursorLocation, needsTreeProvider: false },
+    { name: 'addSubfileRecordNumber', handler: addSubfileRecordNumber, needsTreeProvider: false },
     { name: 'addChginpdft', handler: addChginpdft, needsTreeProvider: false },
+    { name: 'setReferenceFile', handler: setReferenceFile, needsTreeProvider: false },
     { name: 'addValidityCheck', handler: addValidityCheck, needsTreeProvider: false },
     { name: 'addEditingKeywords', handler: editingKeywords, needsTreeProvider: false },
     { name: 'addErrorMessage', handler: addErrorMessage, needsTreeProvider: false },

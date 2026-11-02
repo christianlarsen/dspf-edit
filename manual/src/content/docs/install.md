@@ -21,7 +21,7 @@ Or install it directly from the [Visual Studio Marketplace listing](https://mark
 DSPF-edit works standalone. If you also install [Code for i](https://marketplace.visualstudio.com/items?itemName=HalcyonTechLtd.code-for-ibmi) and connect to an IBM i system, DSPF-edit can additionally:
 
 - Resolve the real type, length, and decimals of referenced fields (`R` fields) straight from the system — see [Referenced Fields](/dspf-edit/guides/referenced-fields/).
-- Fetch the `QDECFMT` system value to preview `EDTCDE()`-edited numeric fields using your system's decimal convention — see [Configuration](/dspf-edit/guides/configuration/).
+- Fetch the `QDECFMT` system value to preview `EDTCDE()`-edited numeric fields using your system's decimal convention, along with its user-defined edit codes (`EDTCDE(5)` to `EDTCDE(9)`) — see [Configuration](/dspf-edit/guides/configuration/).
 
 ## Next step
 

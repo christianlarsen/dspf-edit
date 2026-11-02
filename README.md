@@ -39,10 +39,11 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
   - Drag fields/constants to reposition them directly on the preview.
   - "+ Field" / "+ Constant" buttons: click, then click a point on the screen to place a new field/constant there, using the same prompts as the tree's "Add field"/"Add constant" commands.
   - WINDOW records are drawn at their real screen position and can be resized/moved with the mouse; shows WDWTITLE if present. Supports windows shared via WINDOW(record-name).
-  - Click a window's title to edit it, or use its "⋮" actions menu / one-click "center horizontally" icon — all shown only while hovering over the window.
-  - Subfile (SFL/SFLCTL) records show all SFLPAG rows, and automatically preview their paired header/detail record; detail rows can't be dragged up over the header's own content.
-  - Overlay any other record (dimmed) behind the one being previewed, to see how they compose.
+  - Click a window's title to edit it, or use its "⋮" actions menu / one-click "center horizontally" icon — all shown only while hovering over the window. The "⋮" menu's "Align..." places the window left, center or right, and top, center or bottom on the screen.
+  - Subfile (SFL/SFLCTL) records show all SFLPAG rows, together with their paired header/detail record; detail rows can't be dragged up over the header's own content.
+  - Overlay any number of other records (dimmed) behind the one being previewed, picked from a checkbox list, to see how they compose. A subfile's header and detail always come together, and the record named in `WINDOW(record-name)` is always shown. Both that pairing and keeping the checked overlays when switching records can be turned off from the "⚙ Configuration" panel.
   - Simulate indicators on/off to preview conditional fields, constants, and attributes.
+  - "◌ Hidden" shows the fields and constants that aren't visible right now — conditioned on indicators that are off, or with `DSPATR(ND)` — as dotted outlines, so you know something is there. Hovering one says why it's hidden.
   - A function-key legend (`F3`, `F12`, ...) shows every command key available to the record being previewed (file-level + record-level CAxx/CFxx); a key still shows even when its indicator condition isn't currently met (so you can see it's defined), switching to solid/inverted styling when it's actually active.
   - An active `ERRMSG()` on a window shows on the window's own reserved message line (its last content row) when the window doesn't specify `*NOMSGLIN`, matching real DDS behavior, instead of always at the bottom of the physical screen.
   - A subfile's `SFLMSG()` also shows on the message line when its indicator is active and `SFLDSP` is in effect, the same way `ERRMSG()` does (which still takes priority over it, matching the DDS reference).
@@ -50,11 +51,17 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
   - The "Indicators" toggle and the selected display format persist when switching which record is previewed in the same panel.
   - Stays in sync with the schema tree selection in both directions.
   - "Focus" maximizes the preview so it fills the editing area, hiding the DDS source editor beside it; "Show code" brings the source back.
-  - Select a field or constant (or several, with Ctrl/Cmd+click) to get a "⋮ Actions" menu: add color/attribute, copy, or delete — applied to every selected element at once for a multi-selection. A single selected field or constant also gets Rename.../Edit Text..., Indicators..., and — for fields — Validity Checks..., Editing Keywords..., and Error Messages..., the same commands the tree's context menu offers, so most of what you'd do from the tree is also reachable straight from the preview.
+  - "⬚ Area" selects every field and constant a rectangle dragged over the screen touches (Ctrl/Cmd adds to the selection). While it's on, clicking an element never selects or moves it.
+  - Select a field or constant (or several, with Ctrl/Cmd+click or "⬚ Area") to get a "⋮ Actions" menu: add color/attribute, copy, or delete — applied to every selected element at once for a multi-selection. A multi-selection can also be aligned left, center or right, each element keeping its own row. A single selected field or constant also gets Rename.../Edit Text..., Indicators..., and — for fields — Validity Checks..., Editing Keywords..., and Error Messages..., the same commands the tree's context menu offers, so most of what you'd do from the tree is also reachable straight from the preview.
+  - "Copy Format..." in the "⋮ Actions" menu copies a field or constant's colors, attributes, indicators and/or number editing (edit code, edit word, edit mask); "Paste Format" applies them to one or several selected elements, replacing what they had. Colors and attributes keep their indicators (optionally), and whatever a target can't take is left out.
   - Press `Delete`/`Backspace` with one or more fields/constants selected to delete them directly — same confirmation as the "⋮ Actions" menu's Delete.
-  - Double-click a dimmed background record (an SFL/SFLCTL auto-paired header/detail, the manual overlay, or a shared window's owner) to switch the preview to it, the same as picking it in the tree.
+  - Double-click a dimmed overlay record (a checked overlay, an SFL/SFLCTL header/detail, or a shared window's owner) to switch the preview to it, the same as picking it in the tree. Where several overlap, the one drawn on top wins.
   - Right-click a field or constant to open the "⋮ Actions" menu directly, instead of the browser's native Cut/Copy/Paste menu — selecting it first if it wasn't already selected.
-  - The decimal point and thousands-separator convention used to preview `EDTCDE()`-edited numeric fields — US or European — is configurable from the "⚙ Configuration" panel, either picked manually or fetched with one click from the connected IBM i's `QDECFMT` system value.
+  - The decimal point and thousands-separator convention used to preview `EDTCDE()`-edited numeric fields — US or European — is configurable from the "⚙ Configuration" panel, either picked manually or fetched with one click from the connected IBM i's `QDECFMT` system value. The same click reads the system's user-defined edit codes, `EDTCDE(5)` to `EDTCDE(9)`, so fields using them preview as they look on that system.
+
+### 📏 Column ruler
+  - While editing the source by hand, shows the DDS format line (`.....AAN01N02N03T.Name++++++RLen++TDpBLinPos...`) above the line being edited and outlines each column area, so a value in the wrong columns stands out. Hover an area to see its name.
+  - Off by default: `Shift+F4` or the "⚙ Configuration" panel turns it on and off.
 
 ### 🧭 Schema navigation
   - Two levels are shown: **File** and **Records**.
@@ -68,6 +75,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
     - Assign command keys — a key number already used at the other level (file vs. record) is excluded, so you can't end up with the same key defined as both CA and CF.
     - Add Display Size: adds a second standard screen size (*DS3/*DS4) to a file that currently declares only one.
     - Change Input Default: manages a parameterless `CHGINPDFT` — removes the automatic underline input-capable fields otherwise get by default.
+    - Reference File: adds, changes or removes the file-level `REF`, the database file referenced fields take their definition from when their own `REFFLD()` names no file.
 
 ### Records level
   - Right-click options:
@@ -84,6 +92,9 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
     - Assign command keys — a key number already used at the other level (file vs. record) is excluded, so you can't end up with the same key defined as both CA and CF.
     - Add / Remove / Change indicators.
     - Change Input Default: manages a parameterless `CHGINPDFT` for this record — removes the automatic underline input-capable fields otherwise get by default. Warns if the file already has one at file level.
+    - Overlay: adds `OVERLAY` (always or under indicators), changes its indicators or removes it. Not on subfile records.
+    - Return Cursor Location: manages both formats of `RTNCSRLOC` — the record and field the cursor is on, and its row and column — and, on `SFLCTL` records, `SFLCSRRRN`, creating, renaming and deleting their hidden fields along with the keyword. Not on subfile records.
+    - Subfile Drop/Fold, Subfile End and Subfile Record Number (`SFLCTL` records): `SFLDROP`/`SFLFOLD`, `SFLEND` with its type (`*PLUS`, `*MORE`, `*SCRBAR`) and indicator, and `SFLRCDNBR` on a field. On these records, Return Cursor Location also manages `SFLCSRRRN`.
     - Resizing (if window record) — aware of every declared display size, resizing all of them at once.
     - Change Window Title (if window record) — targets the size being worked on when the record declares more than one.
     - Sort elements.
@@ -115,7 +126,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
     - Add editing keywords.
     - Add error messages.
     - Add / Remove / Change indicators, including more than 3 ANDed indicators (up to DDS's limit of 9, spilling onto continuation lines automatically) and OR'd conditions (add/remove whole OR'd groups, or edit indicators within one).
-    - Resolve Referenced Field (for referenced fields only): fetches the real type/length/decimals from the connected IBM i, via the [Code for i](https://marketplace.visualstudio.com/items?itemName=HalcyonTechLtd.code-for-ibmi) extension. Also available as "Resolve All Referenced Fields" from the status bar, for every pending referenced field in the document at once.
+    - Resolve Referenced Field (for referenced fields only): fetches the real type/length/decimals from the connected IBM i, via the [Code for i](https://marketplace.visualstudio.com/items?itemName=HalcyonTechLtd.code-for-ibmi) extension — or, for a field referencing another field of the same source (`*SRC`), straight from the source, with no connection. The field's own length/decimals/type overrides (e.g. `+4`) are applied on top. Also available as "Resolve All Referenced Fields" from the status bar, for every pending referenced field in the document at once.
 
 ### Attributes
   - Add / Remove / Change indicators, with the same AND/OR support as fields and constants.
@@ -238,13 +249,10 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.8.2** - 2026-09-26
-- Fixed: resolving referenced fields — `REFFLD()` is now found when coded on its own line below the field, not only on the field's definition line ([#90](https://github.com/christianlarsen/dspf-edit/issues/90)).
-- Fixed: resolving referenced fields — with no library (or `*LIBL`/`*CURLIB`), the file is now looked up in the Code for i connection's current library and library list, in order, instead of in any library on the system.
-- Fixed: keywords continued onto the next line with `+` (not just `-`) are now joined correctly, so e.g. a wrapped `WDWBORDER()` shows properly in the Screen Preview.
-- Fixed: Screen Preview and Add Attribute — `DSPATR()` with several attributes (e.g. `DSPATR(UL HI)`) is now recognized.
-- Fixed: Add Buttons, Center and Change Window Title use the display size selected in the Screen Preview instead of asking for it.
-- Fixed: Screen Preview — a window with a top and a bottom `WDWTITLE` (e.g. `*BOTTOM *RIGHT`) now shows both titles, not just the first one.
+**1.15.0** - 2026-10-28
+- Added: **Copy Format...** and **Paste Format** in the Screen Preview's **⋮ Actions** menu. Copy the colors, attributes, indicators and/or number editing (edit code, edit word, edit mask) of a field or constant, and paste them onto one or several selected elements, replacing what they had.
+- Colors and attributes are pasted with their indicators, OR'd conditions included, or without them.
+- Whatever a target can't take is left out, and the message after pasting says so: `PR` on a constant, an edit code on an alphanumeric field, an edit mask on a field of another length... An `S` field receiving an edit code becomes `Y`, as in STRSDA.
 
 ---
 

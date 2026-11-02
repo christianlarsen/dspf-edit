@@ -6,20 +6,19 @@
 
 import * as vscode from 'vscode';
 import { DdsNode, DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
-import { DdsField, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
+import { DdsField } from '../dspf-edit.model/dspf-edit.model';
+import { checkForEditorAndDocument, updateTreeProvider } from '../dspf-edit.utils/dspf-edit.helper';
 import { resolveReferencedField, getPendingReferencedFields } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 
 /**
- * Resolves one referenced field, looking up its record's attributes for the REF() fallback.
+ * Resolves one referenced field, reporting a failure as a message instead of throwing.
  * @param documentUri - The DDS document's URI (as a string), used as the cache key
  * @param field - The referenced field to resolve
  * @returns An error message on failure, or undefined on success
  */
 async function resolveOneField(documentUri: string, field: DdsField): Promise<string | undefined> {
-    const recordAttributes = fieldsPerRecords.find(r => r.record === field.recordname)?.attributes;
     try {
-        await resolveReferencedField(documentUri, field, recordAttributes);
+        await resolveReferencedField(documentUri, field);
         return undefined;
     } catch (error) {
         return error instanceof Error ? error.message : `Could not resolve field '${field.name}'.`;
@@ -62,7 +61,9 @@ async function handleResolveReferencedField(node: DdsNode, treeProvider: DdsTree
         { location: vscode.ProgressLocation.Window, title: `Resolving ${element.name}...` },
         async () => {
             const error = await resolveOneField(document.uri.toString(), element);
-            treeProvider.refresh();
+            // Re-parse rather than just refresh: a field/constant positioned "+n" after this one
+            // moves now that its real length is known.
+            updateTreeProvider(treeProvider, document);
             if (error) {
                 vscode.window.showErrorMessage(error);
             };
@@ -117,7 +118,9 @@ async function handleResolveAllReferencedFields(treeProvider: DdsTreeProvider): 
         }
     );
 
-    treeProvider.refresh();
+    // Re-parse rather than just refresh: fields/constants positioned "+n" after a referenced field
+    // move now that its real length is known.
+    updateTreeProvider(treeProvider, document);
 
     const resolvedCount = pendingFields.length - errors.length;
     if (errors.length === 0) {

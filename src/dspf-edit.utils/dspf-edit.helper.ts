@@ -11,7 +11,7 @@ import { DdsElement, DdsIndicator, DdsAttribute, records, FieldsPerRecord, Const
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
 import { parseDocument, pickForActiveFormat, getContinuationChar, joinContinuedKeywordParts } from '../dspf-edit.parser/dspf-edit.parser';
 import { ExtensionState } from '../dspf-edit.states/state';
-import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
+import { getResolvedRef, parseRefKeyword, RefKeywordTarget } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 
 
 // FIELD DESCRIPTION FUNCTIONS
@@ -37,7 +37,7 @@ export function describeDdsField(field: DdsElement): string {
 
     if (field.referenced) {
         const documentUri = ExtensionState.lastDdsDocument?.uri.toString();
-        const resolved = documentUri ? getResolvedRef(documentUri, field.recordname, field.name) : undefined;
+        const resolved = documentUri ? getResolvedRef(documentUri, field.recordname, field.name, field.refOverrides) : undefined;
 
         if (resolved) {
             return `${formatFieldSize(resolved.length, resolved.decimals)}${resolved.type} [${col},${row}] (Ref)`;
@@ -79,6 +79,45 @@ export function describeDdsRecord(field: DdsElement): string {
 export function describeDdsFile(field: DdsElement): string {
     if (field.kind !== 'file') return 'Not a file.';
     return '';
+};
+
+/** The REF() keyword's target among the given attributes, if any. */
+function findRefTarget(attributes: DdsAttribute[] | undefined): RefKeywordTarget | undefined {
+    const attr = attributes?.find(a => /^REF\(/i.test(a.value.trim()));
+    return attr ? parseRefKeyword(attr.value) : undefined;
+};
+
+/** Formats a REF() target as [library/]file [record-format]. */
+function formatRefTarget(ref: RefKeywordTarget): string {
+    const qualifiedFile = ref.library ? `${ref.library}/${ref.file}` : ref.file;
+    return ref.recordFormat ? `${qualifiedFile} ${ref.recordFormat}` : qualifiedFile;
+};
+
+/**
+ * Describes where a referenced field takes its definition from, in the same order the resolver
+ * (resolveReferencedField) looks it up: the file named in its own REFFLD() (or *SRC, this same
+ * source), otherwise the REF() file. With neither, DDS itself defaults to *SRC.
+ * @param field - The DDS element to describe (should be a referenced field)
+ * @returns e.g. "UPDUSR in *LIBL/HTPFREF (file-level REF)", or an empty string if not referenced
+ */
+export function describeReferenceSource(field: DdsElement): string {
+    if (field.kind !== 'field' || !field.referenced) return '';
+
+    const target = field.refTarget ?? { fieldName: field.name };
+    const qualifiedField = target.recordFormat ? `${target.recordFormat}/${target.fieldName}` : target.fieldName;
+    if (target.file?.toUpperCase() === '*SRC') {
+        return `${qualifiedField} earlier in this source (REFFLD *SRC)`;
+    };
+    if (target.file) {
+        const qualifiedFile = target.library ? `${target.library}/${target.file}` : target.file;
+        return `${qualifiedField} in ${qualifiedFile} (REFFLD)`;
+    };
+
+    const fileRef = findRefTarget(attributesFileLevel);
+    if (fileRef) {
+        return `${qualifiedField} in ${formatRefTarget(fileRef)} (file-level REF)`;
+    };
+    return `${qualifiedField} earlier in this source (no file in REFFLD and no REF keyword: *SRC)`;
 };
 
 // FORMATTING FUNCTIONS
@@ -1017,6 +1056,33 @@ export async function removeKeywordTextFromLines(
 };
 
 /**
+ * Replaces one keyword's own text with another (e.g. "DSPATR(UL HI)" with "DSPATR(UL)") in the DDS
+ * keyword area of the line(s) it occupies, with the same continuation-aware, sibling-preserving
+ * re-pagination as removeKeywordTextFromLines.
+ * @param editor - The active text editor
+ * @param lineIndex - The keyword's own first line
+ * @param lastLineIndex - The keyword's own last line (equal to lineIndex when it doesn't continue)
+ * @param value - The keyword's own text, exactly as parsed
+ * @param newValue - The text to put in its place
+ */
+export async function replaceKeywordTextInLines(
+    editor: vscode.TextEditor,
+    lineIndex: number,
+    lastLineIndex: number,
+    value: string,
+    newValue: string
+): Promise<boolean> {
+    return rewriteKeywordArea(editor, lineIndex, lastLineIndex, true, joined => {
+        const start = joined.indexOf(value);
+        if (start === -1) {
+            vscode.window.showErrorMessage(`Could not locate the attribute's text on its source line(s).`);
+            return null;
+        };
+        return joined.slice(0, start) + newValue + joined.slice(start + value.length);
+    });
+};
+
+/**
  * Removes every match of any of `patterns` (e.g. EDTCDE()/EDTWRD()/EDTMSK() at once) from the DDS
  * keyword area of the line(s) it occupies, with the same continuation-aware, sibling-preserving
  * re-pagination as removeKeywordTextFromLines — used where several *kinds* of keyword need removing
@@ -1090,27 +1156,59 @@ async function rewriteKeywordArea(
         return applyWorkspaceEdit(workspaceEdit, 'delete the attribute');
     };
 
-    // Re-paginate the remaining text: up to 35 characters per continued line (leaving room for a
-    // trailing '-'), and up to 36 on the final line (no continuation needed).
-    const chunks: string[] = [];
-    let rest = remaining;
-    while (rest.length > 36) {
-        chunks.push(rest.substring(0, 35) + '-');
-        rest = rest.substring(35);
-    };
-    chunks.push(rest);
+    const chunks = paginateKeywordText(remaining);
 
     const prefix = document.lineAt(lineIndex).text.substring(0, 44);
-    for (let i = 0; i < chunks.length; i++) {
+    for (let i = 0; i < Math.min(chunks.length, lineCount); i++) {
         const newText = (prefix + chunks[i]).replace(/\s+$/, '');
         workspaceEdit.replace(uri, document.lineAt(lineIndex + i).range, newText);
     };
 
     if (chunks.length < lineCount) {
         deleteLineRange(workspaceEdit, document, uri, lineIndex + chunks.length, lastLineIndex);
+    } else if (chunks.length > lineCount) {
+        // Grown (a replacement longer than what it replaced): the extra continuation lines go in
+        // right below the last one, never over whatever line follows it.
+        const extra = chunks.slice(lineCount).map(chunk => ('     A'.padEnd(44, ' ') + chunk).replace(/\s+$/, ''));
+        workspaceEdit.insert(uri, document.lineAt(lastLineIndex).range.end, extra.map(line => '\n' + line).join(''));
     };
 
     return applyWorkspaceEdit(workspaceEdit, 'delete the attribute');
+};
+
+/**
+ * Splits keyword text into the parts that go in positions 45-80 of consecutive lines: up to 35
+ * characters per continued line (leaving room for a trailing '-'), and up to 36 on the final line.
+ * A line is cut right after a blank when it has one, so that names aren't split in two; a '-'
+ * continuation keeps that blank, as it keeps everything before it.
+ * @param text - The keyword area's whole text, e.g. "RTNCSRLOC(&CSRRCD &CSRFLD &CSRPOS)"
+ */
+export function paginateKeywordText(text: string): string[] {
+    const chunks: string[] = [];
+    let rest = text;
+    while (rest.length > 36) {
+        const blank = rest.lastIndexOf(' ', 34);
+        const cut = blank > 0 ? blank + 1 : 35;
+        chunks.push(rest.substring(0, cut) + '-');
+        rest = rest.substring(cut);
+    };
+    chunks.push(rest);
+    return chunks;
+};
+
+/**
+ * Inserts an unconditioned keyword on line(s) of its own at `insertionPoint`, continued with '-'
+ * when it doesn't fit in positions 45-80.
+ * @param editor - The active text editor
+ * @param insertionPoint - The line it goes in at (see findElementInsertionPoint)
+ * @param keywordText - The keyword, e.g. "RTNCSRLOC(&CSRRCD &CSRFLD)"
+ */
+export async function insertKeywordLines(editor: vscode.TextEditor, insertionPoint: number, keywordText: string): Promise<boolean> {
+    const lines = paginateKeywordText(keywordText).map(chunk => '     A'.padEnd(44, ' ') + chunk).join('\n');
+    const workspaceEdit = new vscode.WorkspaceEdit();
+    const atEnd = insertionPoint >= editor.document.lineCount;
+    workspaceEdit.insert(editor.document.uri, new vscode.Position(insertionPoint, 0), atEnd ? `\n${lines}` : `${lines}\n`);
+    return applyWorkspaceEdit(workspaceEdit, `add ${keywordText}`);
 };
 
 /** Deletes a contiguous range of whole lines (inclusive), handling end-of-document edge cases. */

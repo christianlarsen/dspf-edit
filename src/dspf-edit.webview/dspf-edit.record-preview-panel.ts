@@ -10,6 +10,8 @@ import { checkForEditorAndDocument, updateTreeProvider, applyWorkspaceEdit, appl
 import { getBackgroundColor, getDdsColorMap, getReferencedFieldColor } from '../dspf-edit.utils/dspf-edit.preview-colors';
 import { getDecimalSeparators } from '../dspf-edit.utils/dspf-edit.decimal-format';
 import { getDateSeparator } from '../dspf-edit.utils/dspf-edit.date-format';
+import { UserEditDescription, getUserEditDescription } from '../dspf-edit.utils/dspf-edit.user-edit-codes';
+import { getOverlaySubfilePair, getOverlayKeepOnSwitch } from '../dspf-edit.utils/dspf-edit.overlay-settings';
 import { DdsTreeProvider, DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { ExtensionState } from '../dspf-edit.states/state';
 import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
@@ -22,6 +24,8 @@ import { addAttributeToMultipleElements } from '../dspf-edit.commands/dspf-edit.
 import { removeElements } from '../dspf-edit.commands/dspf-edit.remove-element';
 import { copyFieldToPosition } from '../dspf-edit.commands/dspf-edit.copy-field';
 import { copyConstantToPosition } from '../dspf-edit.commands/dspf-edit.copy-constant';
+import { copyFormat, pasteFormat, getCopiedFormat } from '../dspf-edit.commands/dspf-edit.copy-format';
+import { HorizontalAlignment, WindowAlignment, WINDOW_ALIGNMENTS, computeAlignedColumns, computeWindowAlignedPosition } from '../dspf-edit.utils/dspf-edit.alignment';
 
 /**
  * Item sent to the webview for rendering (a single field or constant on the screen grid).
@@ -108,6 +112,13 @@ interface PreviewItem {
      * (e.g. "VALUES(0 2 4 5 7 8)"), for display in the preview's selection bar. Undefined when the
      * field has none, or for a constant. */
     validityChecks?: string;
+    /**
+     * Only set on an item sent in the render message's `hiddenItems` list (one whose conditioning
+     * indicators aren't satisfied right now, so it isn't on the screen): the condition it would
+     * show on, as it reads in DDS (e.g. "shown on 61 N62", ORed groups joined by "or"). The preview
+     * draws these as dotted, non-selectable "ghosts" only while its "Hidden" toggle is on.
+     */
+    hiddenReason?: string;
 };
 
 /** A rectangle in the coordinates of the canvas being drawn (the full display size). */
@@ -263,7 +274,8 @@ const EDIT_CODE_INFO: Record<string, { comma: boolean; sign: '' | '-' | 'CR'; si
 /**
  * Extracts a field's EDTCDE() code, if it carries one. Recognizes every IBM i edit code: 1-4, A-D,
  * J-Q (the comma/decimal/sign codes), W and Y (the date-slash codes), and X and Z (see
- * getEditingMask for their masks, confirmed against real STRSDA).
+ * getEditingMask for their masks, confirmed against real STRSDA) — plus the user-defined ones, 5-9
+ * (see getUserEditCodeMask).
  * @param attributes - The element's DDS attributes
  */
 function getEditCode(attributes: AttributeWithIndicators[] | undefined): string | null {
@@ -272,7 +284,7 @@ function getEditCode(attributes: AttributeWithIndicators[] | undefined): string 
         return null;
     };
 
-    return attr.value.match(/^EDTCDE\(\s*([1-4A-DJ-QWXYZ])/i)?.[1]?.toUpperCase() ?? null;
+    return attr.value.match(/^EDTCDE\(\s*([1-9A-DJ-QWXYZ])/i)?.[1]?.toUpperCase() ?? null;
 };
 
 /**
@@ -388,6 +400,61 @@ function getEditCodeMask(length: number, decimals: number, code: string): string
         mask += decimal + ' '.repeat(decimals);
     };
     mask = info.signLeading ? info.sign + mask : mask + info.sign;
+
+    return mask;
+};
+
+/** A literal blank inside a mask — a plain space there would mean "digit position" instead. */
+const MASK_LITERAL_BLANK = '\u00a0';
+
+/**
+ * Cuts a CRTEDTD integer or fraction mask down to the given number of digit positions, keeping the
+ * insert characters between them: an integer mask is consumed from its right end (so only the
+ * separators that fall between the field's own digits survive), a fraction mask from its left. In
+ * these masks a blank or a '0' is a digit position ('0' only marks where zero suppression stops,
+ * which a placeholder preview doesn't simulate), '&' is a literal blank and anything else is
+ * inserted as is. A field with more digits than the mask covers just gets plain digits beyond it.
+ * @param mask - The mask as defined in the edit description, null for *NONE
+ * @param digits - How many digit positions the field has on this side of the decimal point
+ * @param fromRight - True for an integer mask, false for a fraction mask
+ */
+function fitUserEditMask(mask: string | null, digits: number, fromRight: boolean): string {
+    const chars = (mask ?? '').split('');
+    const ordered = fromRight ? chars.reverse() : chars;
+    const fitted: string[] = [];
+    let remaining = digits;
+    for (const ch of ordered) {
+        if (remaining === 0) {
+            break;
+        };
+        const isDigit = ch === ' ' || ch === '0';
+        fitted.push(isDigit ? ' ' : ch === '&' ? MASK_LITERAL_BLANK : ch);
+        remaining -= isDigit ? 1 : 0;
+    };
+    fitted.push(...' '.repeat(remaining));
+
+    return (fromRight ? fitted.reverse() : fitted).join('');
+};
+
+/**
+ * Builds an EDTWRD-mask-shaped string for a field carrying a user-defined edit code, EDTCDE(5)
+ * through EDTCDE(9), from its edit description as fetched from the IBM i. Unlike the IBM i edit
+ * codes, these ignore QDECFMT: confirmed against real STRSDA, a 6,2 field with the IBM-supplied
+ * QEDIT5 shows "9,999.99CR" on a system where EDTCDE(A) shows "9.999,99CR".
+ * @param length - The field's digit length
+ * @param decimals - The field's decimal positions
+ * @param description - The edit description for this field's edit code
+ */
+function getUserEditCodeMask(length: number, decimals: number, description: UserEditDescription): string {
+    const literal = (text: string) => text.replace(/ /g, MASK_LITERAL_BLANK);
+    const statusWidth = Math.max(description.negativeStatus.length, description.positiveStatus.length);
+
+    let mask = literal(description.leftConstant) + literal(description.currencySymbol);
+    mask += fitUserEditMask(description.integerMask, Math.max(length - decimals, 1), true);
+    if (decimals > 0) {
+        mask += literal(description.decimalPoint) + fitUserEditMask(description.fractionMask, decimals, false);
+    };
+    mask += literal(description.negativeStatus.padEnd(statusWidth, ' ')) + literal(description.rightConstant);
 
     return mask;
 };
@@ -513,26 +580,28 @@ function getEditingMask(attributes: AttributeWithIndicators[] | undefined, type:
 
     const code = getEditCode(attributes);
     if (code) {
-        // Confirmed against real STRSDA: an EDTCDE's comma/sign/date-slash/currency decoration only
-        // ever shows on an output field — an input-capable (I/B) field always previews exactly as if
-        // it carried no EDTCDE at all, under the Y (numeric-only) shift EDTCDE forces on a blank
-        // Type (a decimal point reserved only when it actually has decimals; see
-        // getUneditedNumericMask). This holds for every code, including W/Y/X/Z.
-        const usageCode = (usage || '').trim().toUpperCase() || 'O';
-        if (usageCode === 'I' || usageCode === 'B') {
-            return getUneditedNumericMask('Y', usage, length, rawDecimals);
-        };
-
+        // Confirmed against real STRSDA: an EDTCDE previews the same on an input-capable (I/B)
+        // field as on an output one — a 6,2 B field shows "9.999,99" with EDTCDE(1), "9.999,99-"
+        // with EDTCDE(J), "9.999,99CR" with EDTCDE(A), "-9.999,99" with EDTCDE(N), "$9.999,99-"
+        // with EDTCDE(J $) and "99-99-99" with EDTCDE(Y).
         if (code === 'W' || code === 'Y') {
             return getDateEditCodeMask(length, code);
         };
-        // X's own output display is identical to an unedited field (no comma/sign, ever) — it only
-        // ever mattered for forcing the Y shift above. Z's own output display, confirmed against
-        // real STRSDA, has no comma or decimal point regardless of decimals (unlike every other
-        // code) and reserves no extra position either — it only changes the field's stored sign
-        // representation (hex F), never its display.
+        // Z adds no comma, sign or decimal point regardless of decimals or usage — confirmed
+        // against real STRSDA: a 6,2 field shows "666666" as output and "999999" as B. X is treated
+        // the same way; STRSDA itself rejects it as a nonexistent code, so there's nothing to
+        // mirror there.
         if (code === 'X' || code === 'Z') {
             return null;
+        };
+
+        // A user-defined code's editing only exists as an object on the IBM i (QEDIT5-QEDIT9), so
+        // until it's been fetched from there the field previews as unedited, under the Y shift.
+        if (/[5-9]/.test(code)) {
+            const description = getUserEditDescription(code);
+            return description
+                ? getUserEditCodeMask(length, decimals, description)
+                : getUneditedNumericMask('Y', usage, length, rawDecimals);
         };
 
         const baseMask = getEditCodeMask(length, decimals, code);
@@ -914,12 +983,15 @@ function extractFunctionKeyCommands(attributes: DdsAttribute[] | undefined): Fun
         // that had to wrap (see dspf-edit.add-keys.ts's extractKeyCommandsFromAttributes for the
         // matching read-side fix, and validateKeyCommandDescription for where 25 legitimately still
         // applies: only when this tool itself creates a new one).
-        const caCfMatch = attr.value.match(/^(CA|CF)(\d{2})\(\d{2}\s+'([^']*)'\)$/);
+        //
+        // The response indicator and the text are both optional in DDS: `CF03`, `CF03(03)` and
+        // `CF03(03 'Exit')` are all valid, and the key is just as available in each.
+        const caCfMatch = attr.value.trim().match(/^(CA|CF)(\d{2})(?:\(\s*(?:\d{2})?\s*(?:'([^']*)')?\s*\))?$/i);
         if (caCfMatch) {
             commands.push({
-                type: caCfMatch[1] as 'CA' | 'CF',
+                type: caCfMatch[1].toUpperCase() as 'CA' | 'CF',
                 keyNumber: caCfMatch[2],
-                description: caCfMatch[3],
+                description: caCfMatch[3] ?? '',
                 indicators: attr.indicators,
                 displayFormat: attr.displayFormat
             });
@@ -929,13 +1001,16 @@ function extractFunctionKeyCommands(attributes: DdsAttribute[] | undefined): Fun
         // Captures the response indicator (the first `nn`) too: unlike CA/CF, whose Fnn label
         // already names their key number, HELP/PAGEDOWN/PAGEUP have no numbered slot to show it —
         // it only surfaces in the preview's legend tooltip (see getVisibleFunctionKeys).
-        const namedMatch = attr.value.match(/^(HELP|PAGEDOWN|PAGEUP)\((\d{2})\s+'([^']*)'\)$/i);
+        // Same optional forms as CA/CF: `HELP`, `HELP(83)` and `HELP(83 'text')`. ROLLUP/ROLLDOWN are
+        // the older names of PAGEDOWN/PAGEUP (same keys), still common in existing source.
+        const namedMatch = attr.value.trim().match(/^(HELP|PAGEDOWN|PAGEUP|ROLLUP|ROLLDOWN)(?:\(\s*(\d{2})?\s*(?:'([^']*)')?\s*\))?$/i);
         if (namedMatch) {
-            const type = namedMatch[1].toUpperCase() as 'HELP' | 'PAGEDOWN' | 'PAGEUP';
+            const keyword = namedMatch[1].toUpperCase();
+            const type = (keyword === 'ROLLUP' ? 'PAGEDOWN' : keyword === 'ROLLDOWN' ? 'PAGEUP' : keyword) as 'HELP' | 'PAGEDOWN' | 'PAGEUP';
             commands.push({
                 type,
                 keyNumber: type,
-                description: namedMatch[3],
+                description: namedMatch[3] ?? '',
                 responseIndicator: namedMatch[2],
                 indicators: attr.indicators,
                 displayFormat: attr.displayFormat
@@ -1192,7 +1267,12 @@ export class RecordPreviewPanel {
     private recordName: string;
     private treeSubscription: vscode.Disposable | undefined;
     private treeProvider: DdsTreeProvider | undefined;
-    private overlayRecordName: string | undefined;
+    /** Records the user has checked in the Overlay list, drawn dimmed behind the previewed record.
+     * Kept when switching records within the same DDS file (see overlayFileUri), unless the
+     * "keep overlays" setting is off. */
+    private overlayRecordNames: Set<string> = new Set();
+    /** The DDS document the overlay selection belongs to; switching to another file clears it. */
+    private overlayFileUri: string | undefined = ExtensionState.lastDdsDocument?.uri.toString();
     private indicatorsEnabled = false;
     private activeIndicators: Set<number> = new Set();
     /** Simulates a subfile's SFLDROP/SFLFOLD toggle, once the user has actually clicked it — only
@@ -1206,10 +1286,18 @@ export class RecordPreviewPanel {
     private activeDisplayFormat: string | undefined;
     private lastRecordInfo: FieldsPerRecord | undefined;
     private lastSize: DdsSize | undefined;
+    /** The previewed record's own items as last sent to the webview, so actions on a selection
+     * (see `alignElements`) work from the exact positions and widths the user is looking at. */
+    private lastItems: PreviewItem[] = [];
     private focusModeActive = false;
     /** The field/constant node armed by the Actions menu's "Copy...", waiting for the webview to
      * report a canvas click (`copyElementAt`) to actually place it. Cleared once consumed. */
     private pendingCopySource: DdsNode | undefined;
+    /** The field/constant last clicked in the preview while the tree view was hidden: its tree
+     * selection is synced only once the tree is shown again (see syncTreeSelection), since revealing
+     * a node in a hidden tree would bring the whole Side Bar back on its own. */
+    private pendingTreeSyncLine: number | undefined;
+    private treeVisibilitySubscription: vscode.Disposable | undefined;
 
     private constructor(recordName: string) {
         this.recordName = recordName;
@@ -1233,6 +1321,7 @@ export class RecordPreviewPanel {
 
         this.panel.onDidDispose(() => {
             this.treeSubscription?.dispose();
+            this.treeVisibilitySubscription?.dispose();
             if (RecordPreviewPanel.current === this) {
                 RecordPreviewPanel.current = undefined;
                 ExtensionState.previewDisplayFormat = undefined;
@@ -1321,6 +1410,14 @@ export class RecordPreviewPanel {
     };
 
     /**
+     * Re-renders the open preview panel after an overlay setting changes (see
+     * dspf-edit.utils/dspf-edit.overlay-settings.ts). No-op if no panel is open.
+     */
+    static refreshOverlays(): void {
+        RecordPreviewPanel.current?.render();
+    };
+
+    /**
      * Gets the single preview panel, retargeting it to the given record if it already exists,
      * or creates a new one.
      * @param recordName - Name of the record to preview
@@ -1331,7 +1428,11 @@ export class RecordPreviewPanel {
         if (existing) {
             existing.recordName = recordName;
             existing.treeProvider = treeProvider;
-            existing.overlayRecordName = undefined;
+            const fileUri = ExtensionState.lastDdsDocument?.uri.toString();
+            if (fileUri !== existing.overlayFileUri || !getOverlayKeepOnSwitch()) {
+                existing.overlayRecordNames = new Set();
+                existing.overlayFileUri = fileUri;
+            };
             // indicatorsEnabled (the "Indicators" toggle checkbox) and activeDisplayFormat (the
             // selected DSPSIZ format, e.g. *DS3) are deliberately NOT reset here — they're panel-wide
             // view preferences (formats are file-level, not per-record) that should stay as the user
@@ -1452,6 +1553,7 @@ export class RecordPreviewPanel {
     private render(): void {
         const geometry = this.resolveActiveGeometry();
         if (!geometry) {
+            this.lastItems = [];
             this.panel.webview.postMessage({ type: 'notFound' });
             return;
         };
@@ -1464,47 +1566,45 @@ export class RecordPreviewPanel {
 
         const canvasSize = isWindow ? { rows: defaultSize.rows, cols: defaultSize.cols } : { rows: size.rows, cols: size.cols };
 
-        let items = this.buildItems(recordInfo, rowOffset, colOffset, false, size.cols);
+        let hiddenItems: PreviewItem[] = [];
+        let items = this.buildItems(recordInfo, rowOffset, colOffset, false, size.cols, hiddenItems);
         if (isSflRecordInfo(recordInfo)) {
             const { visibleBase, repeats } = this.buildSubfileDisplayItems(items, this.recordName);
+            // A truncated subfile only shows its template's first row, the rest of the screen being
+            // taken by repeats — so a ghost from one of the template's other rows would land on top
+            // of those. Ghosts are only ever drawn for the real (first) instance, never repeated.
+            if (visibleBase !== items) {
+                const visibleRows = new Set(visibleBase.map(item => item.row));
+                hiddenItems = hiddenItems.filter(item => visibleRows.has(item.row));
+            };
             items = [...visibleBase, ...repeats];
         };
+        this.lastItems = items;
 
-        // The overlaid (background) record can be previewed on its own, whether or not it's itself
-        // a window, no matter what the record being previewed is. Indicator simulation doesn't
-        // apply to it, so its own indicators aren't offered in the toggle list either.
+        // Overlaid (background) records can be previewed on their own, whether or not they're
+        // themselves windows, no matter what the record being previewed is. Indicator simulation
+        // doesn't apply to them, so their own indicators aren't offered in the toggle list either.
+        // Drawn in source order: later records over earlier ones.
+        const autoOverlays = this.computeAutoOverlays();
+        const checkedOverlays = this.resolveCheckedOverlays(autoOverlays);
         const backgroundItems: PreviewItem[] = [];
-        const shownAsBackground = new Set<string>([this.recordName]);
-        const toProcess: string[] = [this.recordName];
-
-        const addBackground = (name: string | undefined): void => {
-            if (!name || shownAsBackground.has(name)) {
-                return;
+        for (const name of records) {
+            if (name === this.recordName || !checkedOverlays.has(name)) {
+                continue;
             };
-            const items = this.buildBackgroundItemsFor(name);
-            if (!items) {
-                return;
-            };
-            backgroundItems.push(...items);
-            shownAsBackground.add(name);
-            toProcess.push(name);
-        };
-
-        addBackground(this.overlayRecordName);
-
-        // A subfile's own preview is incomplete without its counterpart: the SFL detail record
-        // has no header/titles of its own (those live on the SFLCTL record), and the SFLCTL record
-        // has no rows of its own. Likewise, a record whose WINDOW() keyword only names another
-        // record (or that inherited its window from an SFL/SFLCTL pair) is missing that owner's
-        // own content (e.g. WDWTITLE, footer text). Show whichever of these isn't already visible,
-        // automatically, following the chain (e.g. SFL -> its SFLCTL -> that SFLCTL's window owner).
-        for (let i = 0; i < toProcess.length; i++) {
-            const anchor = toProcess[i];
-            addBackground(findSubfilePairRecordName(anchor));
-            addBackground(findWindowOwnerRecordName(anchor, this.activeDisplayFormat));
+            backgroundItems.push(...(this.buildBackgroundItemsFor(name) ?? []));
         };
 
         const availableIndicators = this.collectIndicatorNumbers(recordInfo).sort((a, b) => a - b);
+
+        // Referenced fields still shown as a 1-character marker (previewed record and overlays):
+        // until they're resolved their real size is unknown, and so is the position of anything
+        // placed "+n" after them. Counted so the preview can flag it.
+        const pendingReferencedCount = new Set(
+            [...items, ...backgroundItems]
+                .filter(item => item.isReferenced)
+                .map(item => `${item.sourceRecord ?? this.recordName}/${item.name}`)
+        ).size;
 
         // The content area (where fields/constants live); its top-left is 1 row/col inside the border.
         const windowFrame: WindowFrame | null = isWindow
@@ -1566,19 +1666,77 @@ export class RecordPreviewPanel {
             sflPag,
             maxSize,
             availableRecords,
-            overlayRecordName: this.overlayRecordName ?? null,
+            overlayRecordNames: availableRecords.filter(name => checkedOverlays.has(name)),
+            overlayLockedRecords: availableRecords.filter(name => autoOverlays.pairs.has(name) || autoOverlays.windowOwners.has(name)),
             availableIndicators,
+            pendingReferencedCount,
             indicatorsEnabled: this.indicatorsEnabled,
             activeIndicators: [...this.activeIndicators],
             availableFormats,
             activeDisplayFormat: this.activeDisplayFormat ?? null,
             minDetailRow,
             items,
+            hiddenItems,
             backgroundItems,
             functionKeys,
             subfileExpanded: this.resolveSubfileExpanded(),
             subfileToggleEnabled: this.canToggleSubfileFold()
         });
+    };
+
+    /**
+     * Finds the records the preview checks in the Overlay list on its own: for the record being
+     * previewed and for every record the user checked as an overlay.
+     * - pairs: a subfile's other half. The SFL detail record has no header/titles of its own (those
+     *   live on the SFLCTL record), and the SFLCTL record has no rows of its own. Only added if the
+     *   "overlay subfile pair" setting is on; then both halves always go together, so the user
+     *   can't uncheck one on its own (unchecking the half they checked removes both).
+     * - windowOwners: the record(s) named by WINDOW(record-name), following the chain (e.g. SFL ->
+     *   its SFLCTL's WINDOW(record-name) -> that record). That's how the window is built — the owner
+     *   carries its WDWTITLE, footer text... — so these are always shown and can't be unchecked.
+     *   A subfile half that merely inherited its window from the other half is never one of these:
+     *   that's still the pair, governed by the setting.
+     */
+    private computeAutoOverlays(): { pairs: Set<string>, windowOwners: Set<string> } {
+        const roots = [this.recordName, ...records.filter(name => name !== this.recordName && this.overlayRecordNames.has(name))];
+        const pairOf = (name: string): string | undefined => {
+            const pairName = findSubfilePairRecordName(name);
+            return pairName && pairName !== name && records.includes(pairName) ? pairName : undefined;
+        };
+
+        const pairs = new Set<string>();
+        const anchors: string[] = [];
+        for (const root of roots) {
+            anchors.push(root);
+            const pair = pairOf(root);
+            if (pair) {
+                anchors.push(pair);
+                if (getOverlaySubfilePair() && !roots.includes(pair)) {
+                    pairs.add(pair);
+                };
+            };
+        };
+
+        const windowOwners = new Set<string>();
+        for (let i = 0; i < anchors.length; i++) {
+            const anchor = anchors[i];
+            const owner = findWindowOwnerRecordName(anchor, this.activeDisplayFormat);
+            if (owner && owner !== this.recordName && owner !== pairOf(anchor) && !windowOwners.has(owner) && records.includes(owner)) {
+                windowOwners.add(owner);
+                anchors.push(owner);
+            };
+        };
+
+        return { pairs, windowOwners };
+    };
+
+    /**
+     * The records currently checked in the Overlay list: the ones the user checked, plus the ones
+     * the preview adds on its own (see computeAutoOverlays).
+     * @param autoOverlays - Result of computeAutoOverlays()
+     */
+    private resolveCheckedOverlays(autoOverlays: { pairs: Set<string>, windowOwners: Set<string> }): Set<string> {
+        return new Set([...this.overlayRecordNames, ...autoOverlays.pairs, ...autoOverlays.windowOwners]);
     };
 
     /**
@@ -1625,8 +1783,11 @@ export class RecordPreviewPanel {
      * @param isBackground - Whether these items belong to the record overlaid behind a window
      * @param rowWidth - The record's own display width (window content width, or full screen width otherwise),
      * used to auto-wrap a field too long to fit on one line when it carries no CNTFLD() of its own
+     * @param hiddenItems - When given, the fields/constants whose own indicators aren't satisfied are
+     * built anyway (marked with `hiddenReason`, non-interactive) and collected here instead of being
+     * skipped, so the preview can show them as ghosts; they never reach the returned items
      */
-    private buildItems(recordInfo: FieldsPerRecord, rowOffset: number, colOffset: number, isBackground: boolean, rowWidth: number): PreviewItem[] {
+    private buildItems(recordInfo: FieldsPerRecord, rowOffset: number, colOffset: number, isBackground: boolean, rowWidth: number, hiddenItems?: PreviewItem[]): PreviewItem[] {
         const items: PreviewItem[] = [];
 
         // Indicator toggling only applies to the record being actively previewed; an overlaid
@@ -1639,9 +1800,12 @@ export class RecordPreviewPanel {
             if (this.activeDisplayFormat && field.displayFormat && field.displayFormat !== this.activeDisplayFormat) {
                 continue;
             };
-            if (!this.isItemDisplayed(field.indicators, useLiveIndicators)) {
+            // A field hidden by its indicators is either skipped, or built into hiddenItems instead.
+            const target = this.isItemDisplayed(field.indicators, useLiveIndicators) ? items : hiddenItems;
+            if (!target) {
                 continue;
             };
+            const hiddenReason = target === items ? undefined : this.formatShownOnCondition(field.indicators);
 
             const trueRow = field.row;
             const trueCol = field.col;
@@ -1654,8 +1818,9 @@ export class RecordPreviewPanel {
                 // its own — so it's shown as a single marker character instead of a guessed-width
                 // placeholder, unless its real type/length has already been resolved (via the
                 // "Resolve Referenced Field" tree command), in which case it renders like any other
-                // field, just tinted the reference color when it carries no COLOR()/DSPATR() of its own.
-                const resolvedRef = field.referenced && documentUri ? getResolvedRef(documentUri, recordInfo.record, field.name) : undefined;
+                // field, in its normal color — as STRSDA shows it. The reference color is only kept
+                // for unresolved fields, as a cue that they still need resolving.
+                const resolvedRef = field.referenced && documentUri ? getResolvedRef(documentUri, recordInfo.record, field.name, field.refOverrides) : undefined;
                 const isReferenced = field.referenced === true && !resolvedRef;
                 // The displayed text's own length drives the item's width/hit-box (below), not the
                 // parsed field length: a system keyword field (DATE, USER...) always renders at a
@@ -1674,7 +1839,7 @@ export class RecordPreviewPanel {
                     : isReferenced
                         ? getFieldPlaceholderText(field.name, field.type, field.usage, 1)
                         : getFieldPlaceholderText(field.name, effectiveType, field.usage, effectiveLength, editingMask, rawDecimals);
-                const color = isReferenced || (field.referenced && activeAttrs.length === 0)
+                const color = isReferenced
                     ? getReferencedFieldColor()
                     : getDisplayColor(activeAttrs, hasDisplayAttribute(activeAttrs, 'HI'));
                 // A drag handle to resize a field only makes sense when its displayed width maps
@@ -1706,7 +1871,8 @@ export class RecordPreviewPanel {
                     rowOffset,
                     colOffset,
                     isBackground,
-                    isInteractive: !isBackground,
+                    isInteractive: !isBackground && !hiddenReason,
+                    hiddenReason,
                     isInputCapable,
                     hasDefaultUnderline: isInputCapable && !this.isDefaultUnderlineSuppressed(recordInfo, field),
                     isReferenced,
@@ -1732,22 +1898,22 @@ export class RecordPreviewPanel {
                     const chunkCount = Math.ceil(text.length / continuedWidth);
                     for (let chunk = 0; chunk < chunkCount; chunk++) {
                         const chunkText = text.substr(chunk * continuedWidth, continuedWidth);
-                        items.push({ ...baseItem, text: chunkText, row: trueRow + rowOffset + chunk, length: chunkText.length, isResizable: false });
+                        target.push({ ...baseItem, text: chunkText, row: trueRow + rowOffset + chunk, length: chunkText.length, isResizable: false });
                     };
                 } else if (remainingOnFirstLine > 0 && text.length > remainingOnFirstLine) {
                     const firstChunkText = text.substr(0, remainingOnFirstLine);
-                    items.push({ ...baseItem, text: firstChunkText, row: trueRow + rowOffset, col: trueCol + colOffset, length: firstChunkText.length, isResizable: false });
+                    target.push({ ...baseItem, text: firstChunkText, row: trueRow + rowOffset, col: trueCol + colOffset, length: firstChunkText.length, isResizable: false });
 
                     let consumed = remainingOnFirstLine;
                     let chunk = 1;
                     while (consumed < text.length) {
                         const chunkText = text.substr(consumed, rowWidth);
-                        items.push({ ...baseItem, text: chunkText, row: trueRow + rowOffset + chunk, col: 1 + colOffset, length: chunkText.length, isResizable: false });
+                        target.push({ ...baseItem, text: chunkText, row: trueRow + rowOffset + chunk, col: 1 + colOffset, length: chunkText.length, isResizable: false });
                         consumed += chunkText.length;
                         chunk++;
                     };
                 } else {
-                    items.push({ ...baseItem, text, row: trueRow + rowOffset, length: text.length });
+                    target.push({ ...baseItem, text, row: trueRow + rowOffset, length: text.length });
                 };
 
                 // SNGCHCFLD/MLTCHCFLD: confirmed against STRSDA — the field's own input box
@@ -1779,7 +1945,7 @@ export class RecordPreviewPanel {
                         const rowIndex = columnMajor ? index % fillSize : Math.floor(index / fillSize);
                         const colIndex = columnMajor ? Math.floor(index / fillSize) : index % fillSize;
                         const label = `${option.number}. ${option.text}`;
-                        items.push({
+                        target.push({
                             ...baseItem,
                             name: `${field.name}_CHOICE_${option.number}`,
                             text: label,
@@ -1804,9 +1970,11 @@ export class RecordPreviewPanel {
             if (this.activeDisplayFormat && constant.displayFormat && constant.displayFormat !== this.activeDisplayFormat) {
                 continue;
             };
-            if (!this.isItemDisplayed(constant.indicators, useLiveIndicators)) {
+            const target = this.isItemDisplayed(constant.indicators, useLiveIndicators) ? items : hiddenItems;
+            if (!target) {
                 continue;
             };
+            const hiddenReason = target === items ? undefined : this.formatShownOnCondition(constant.indicators);
 
             const trueRow = constant.row;
             const trueCol = constant.col;
@@ -1818,7 +1986,7 @@ export class RecordPreviewPanel {
                 const systemConstantText = getSystemConstantText(constant.name, activeAttrs);
                 const isSystemConstant = systemConstantText !== undefined;
                 const text = systemConstantText ?? constant.name;
-                items.push({
+                target.push({
                     kind: 'constant',
                     name: constant.name,
                     text,
@@ -1836,7 +2004,8 @@ export class RecordPreviewPanel {
                     rowOffset,
                     colOffset,
                     isBackground,
-                    isInteractive: !isBackground,
+                    isInteractive: !isBackground && !hiddenReason,
+                    hiddenReason,
                     isInputCapable: false,
                     hasDefaultUnderline: false,
                     // A constant has no LENGTH keyword of its own in DDS — its width *is* its quoted
@@ -1856,6 +2025,18 @@ export class RecordPreviewPanel {
         // items (or ones whose conditions aren't perfectly complementary) could still land on the
         // exact same spot — keep only the first-defined one so they don't render stacked.
         return this.dedupByPosition(items);
+    };
+
+    /**
+     * Describes the indicator condition a hidden field/constant would show on, as it reads in DDS
+     * ("61 N62"; ORed groups joined by "or"), for the preview's tooltip on its ghost.
+     * @param indicators - The item's own indicators
+     */
+    private formatShownOnCondition(indicators: DdsIndicator[] | undefined): string {
+        const groups = groupIndicatorsByCondition(indicators).map(group =>
+            group.map(ind => (ind.active ? '' : 'N') + String(ind.number).padStart(2, '0')).join(' ')
+        );
+        return 'shown on ' + groups.join(' or ');
     };
 
     /**
@@ -2245,8 +2426,11 @@ export class RecordPreviewPanel {
             return;
         };
 
-        if (message?.type === 'centerWindowHorizontally') {
-            await this.centerWindowHorizontally();
+        if (message?.type === 'alignWindow') {
+            const target = WINDOW_ALIGNMENTS.find(a => a.axis === message.axis && a.alignment === message.alignment);
+            if (target) {
+                await this.alignWindow(target);
+            };
             return;
         };
 
@@ -2288,8 +2472,15 @@ export class RecordPreviewPanel {
             return;
         };
 
-        if (message?.type === 'setOverlay') {
-            this.overlayRecordName = message.recordName || undefined;
+        // One record at a time rather than the whole list: the list never offers the record being
+        // previewed, so replacing the set would drop it — and it should still be checked when the
+        // user switches back to another record.
+        if (message?.type === 'setOverlay' && typeof message.recordName === 'string') {
+            if (message.checked) {
+                this.overlayRecordNames.add(message.recordName);
+            } else {
+                this.overlayRecordNames.delete(message.recordName);
+            };
             this.render();
             return;
         };
@@ -2379,15 +2570,42 @@ export class RecordPreviewPanel {
         const position = new vscode.Position(lineIndex, 0);
         await RecordPreviewPanel.revealInSourceEditor(editor, position);
 
+        await this.syncTreeSelection(lineIndex);
+    };
+
+    /**
+     * Selects the given field/constant's node in the tree view — but only while the tree is
+     * actually visible. TreeView.reveal() opens its containing view when it's hidden, so someone who
+     * hid the Side Bar (Ctrl/Cmd+B) to work in the preview alone would get it back on every click.
+     * Instead, the line is remembered and synced as soon as the tree is shown again, by whatever
+     * means the user chooses to show it.
+     * @param lineIndex - Zero-based source line index of the field/constant to select
+     */
+    private async syncTreeSelection(lineIndex: number): Promise<void> {
         const treeView = this.treeProvider?.getTreeView();
-        if (this.treeProvider && treeView) {
-            const node = await this.treeProvider.findFieldOrConstantNode(lineIndex);
-            if (node) {
-                try {
-                    await treeView.reveal(node, { select: true, focus: false, expand: true });
-                } catch {
-                    // Ignore reveal errors (e.g. the item is currently filtered out of the tree).
+        if (!this.treeProvider || !treeView) {
+            return;
+        };
+
+        if (!treeView.visible) {
+            this.pendingTreeSyncLine = lineIndex;
+            this.treeVisibilitySubscription ??= treeView.onDidChangeVisibility(event => {
+                if (event.visible && this.pendingTreeSyncLine !== undefined) {
+                    const pending = this.pendingTreeSyncLine;
+                    this.pendingTreeSyncLine = undefined;
+                    void this.syncTreeSelection(pending);
                 };
+            });
+            return;
+        };
+
+        this.pendingTreeSyncLine = undefined;
+        const node = await this.treeProvider.findFieldOrConstantNode(lineIndex);
+        if (node) {
+            try {
+                await treeView.reveal(node, { select: true, focus: false, expand: true });
+            } catch {
+                // Ignore reveal errors (e.g. the item is currently filtered out of the tree).
             };
         };
     };
@@ -2724,14 +2942,14 @@ export class RecordPreviewPanel {
     };
 
     /**
-     * Shows the window's action menu, opened from the "⋮" button drawn in the frame's corner.
-     * Currently just offers "Change Title...", but is meant to grow: additional actions (e.g. a
-     * one-click "Center Horizontally") can be appended here, and/or given their own icon on the
-     * canvas later, following the same pattern as the title button.
+     * Shows the window's action menu, opened from the "⋮" button drawn in the frame's corner:
+     * "Change Title..." and "Align..." (every alignment; centering horizontally also has its own
+     * one-click icon next to the menu button).
      */
     private async showWindowMenu(): Promise<void> {
         const options: (vscode.QuickPickItem & { action: string })[] = [
-            { label: '$(edit) Change Title...', action: 'editTitle' }
+            { label: '$(edit) Change Title...', action: 'editTitle' },
+            { label: '$(arrow-both) Align...', action: 'align' }
         ];
 
         const selection = await vscode.window.showQuickPick(options, {
@@ -2745,31 +2963,110 @@ export class RecordPreviewPanel {
 
         if (selection.action === 'editTitle') {
             await this.editWindowTitle();
+        } else if (selection.action === 'align') {
+            await this.showWindowAlignMenu();
         };
     };
 
     /**
-     * Centers the window horizontally on the screen, keeping its row and size unchanged. A
-     * one-click action triggered from its own icon, bypassing the actions menu — the same
-     * centering math as the "Change Window Size" command's CENTERED option, for consistency.
+     * The window menu's "Align...": asks for the axis first, then where on it — marking the
+     * alignment the window already has, if any, as "current".
      */
-    private async centerWindowHorizontally(): Promise<void> {
+    private async showWindowAlignMenu(): Promise<void> {
+        const axisChoice = await vscode.window.showQuickPick([
+            { label: '$(arrow-both) Horizontally', axis: 'horizontal' as const },
+            { label: '$(arrow-swap) Vertically', axis: 'vertical' as const }
+        ], {
+            title: `Window '${this.recordName}' — Align`,
+            placeHolder: 'Select how to align the window',
+            ignoreFocusOut: true
+        });
+        if (!axisChoice) {
+            return;
+        };
+
+        const currentAlignments = this.resolveCurrentWindowAlignments();
+        const icons: Record<string, string> = { left: '$(arrow-left)', right: '$(arrow-right)', top: '$(arrow-up)', bottom: '$(arrow-down)' };
+        const options = WINDOW_ALIGNMENTS
+            .filter(target => target.axis === axisChoice.axis)
+            .map(target => ({
+                label: `${icons[target.alignment] ?? (target.axis === 'horizontal' ? '$(arrow-both)' : '$(arrow-swap)')} ${target.alignment[0].toUpperCase()}${target.alignment.slice(1)}`,
+                description: currentAlignments.some(a => a.axis === target.axis && a.alignment === target.alignment) ? 'current' : undefined,
+                target
+            }));
+
+        const choice = await vscode.window.showQuickPick(options, {
+            title: `Window '${this.recordName}' — Align ${axisChoice.axis === 'horizontal' ? 'Horizontally' : 'Vertically'}`,
+            placeHolder: 'Select where to align the window',
+            ignoreFocusOut: true
+        });
+        if (choice) {
+            await this.alignWindow(choice.target);
+        };
+    };
+
+    /**
+     * Where the window's border corner would go for each of the six alignments (see
+     * `computeWindowAlignedPosition`), on the screen size of the display format being previewed.
+     * Undefined when the record being previewed isn't a window.
+     */
+    private resolveWindowAlignmentTargets(): { windowRecordName: string; windowInfo: NonNullable<ReturnType<typeof findWindowAttribute>>; targets: Array<{ target: WindowAlignment; row: number; col: number }> } | undefined {
         const windowRecordName = this.resolveWindowRecordName();
         const windowInfo = findWindowAttribute(windowRecordName, this.activeDisplayFormat);
         if (!windowInfo) {
-            return;
+            return undefined;
         };
 
-        const defaultSize = this.activeDisplayFormat
+        const screen = this.activeDisplayFormat
             ? (getSizeForFormat(this.activeDisplayFormat) ?? getDefaultSize())
             : getDefaultSize();
+        const frame = {
+            rows: windowInfo.numRows + WINDOW_BORDER_TOP + WINDOW_BORDER_BOTTOM,
+            cols: windowInfo.numCols + WINDOW_BORDER_LEFT + WINDOW_BORDER_RIGHT
+        };
+        const current = { row: windowInfo.startRow, col: windowInfo.startCol };
 
-        const newStartCol = Math.max(1, Math.floor((defaultSize.cols - windowInfo.numCols) / 2) + 1);
-        if (newStartCol === windowInfo.startCol) {
+        return {
+            windowRecordName,
+            windowInfo,
+            targets: WINDOW_ALIGNMENTS.map(target => ({ target, ...computeWindowAlignedPosition(screen, frame, current, target) }))
+        };
+    };
+
+    /**
+     * The alignments the window already has: those whose target is exactly where it is now
+     * (several on the same axis when the window is as wide/tall as the screen). Drives the
+     * "current" mark in the Align menu.
+     */
+    private resolveCurrentWindowAlignments(): WindowAlignment[] {
+        const resolved = this.resolveWindowAlignmentTargets();
+        if (!resolved) {
+            return [];
+        };
+        return resolved.targets
+            .filter(t => t.row === resolved.windowInfo.startRow && t.col === resolved.windowInfo.startCol)
+            .map(t => t.target);
+    };
+
+    /**
+     * Aligns the window on the screen along one axis — left/center/right or top/center/bottom —
+     * keeping its size and its position on the other axis (see `computeWindowAlignedPosition`).
+     * Triggered from the window menu's "Align...", or from the frame's one-click "center
+     * horizontally" icon.
+     * @param target - Which axis to align on, and where
+     */
+    private async alignWindow(target: WindowAlignment): Promise<void> {
+        const resolved = this.resolveWindowAlignmentTargets();
+        if (!resolved) {
+            return;
+        };
+        const { windowRecordName, windowInfo, targets } = resolved;
+        const position = targets.find(t => t.target.axis === target.axis && t.target.alignment === target.alignment);
+        if (!position || (position.row === windowInfo.startRow && position.col === windowInfo.startCol)) {
             return;
         };
 
-        await this.rewriteWindowKeyword(windowRecordName, windowInfo.startRow, newStartCol, windowInfo.numRows, windowInfo.numCols);
+        await this.rewriteWindowKeyword(windowRecordName, position.row, position.col, windowInfo.numRows, windowInfo.numCols);
     };
 
     /**
@@ -2843,8 +3140,15 @@ export class RecordPreviewPanel {
             options.push(
                 editOption,
                 { label: '$(symbol-boolean) Indicators...', command: 'add-indicators' },
-                { label: '$(copy) Copy...', command: 'copy' }
+                { label: '$(copy) Copy...', command: 'copy' },
+                { label: '$(wand) Copy Format...', command: 'copy-format' }
             );
+        } else {
+            options.push({ label: '$(arrow-both) Align...', command: 'align' });
+        };
+        const copiedFormat = getCopiedFormat();
+        if (copiedFormat) {
+            options.push({ label: `$(wand) Paste Format of ${copiedFormat.sourceName}`, command: 'paste-format' });
         };
         options.push({ label: '$(trash) Delete...', command: 'delete' });
 
@@ -2861,6 +3165,33 @@ export class RecordPreviewPanel {
         if (selection.command === 'copy') {
             this.pendingCopySource = nodes[0];
             this.panel.webview.postMessage({ type: 'startCopyPlacement', kind: nodes[0].ddsElement.kind });
+            return;
+        };
+
+        if (selection.command === 'copy-format') {
+            await copyFormat(nodes[0].ddsElement);
+            return;
+        };
+
+        if (selection.command === 'paste-format') {
+            await this.pasteFormatOn(nodes.map(n => n.ddsElement.lineIndex));
+            return;
+        };
+
+        if (selection.command === 'align') {
+            const alignmentOptions: (vscode.QuickPickItem & { alignment: HorizontalAlignment })[] = [
+                { label: '$(arrow-left) Left', alignment: 'left' },
+                { label: '$(arrow-both) Center', alignment: 'center' },
+                { label: '$(arrow-right) Right', alignment: 'right' }
+            ];
+            const alignmentChoice = await vscode.window.showQuickPick(alignmentOptions, {
+                title: `${nodes.length} elements — Align`,
+                placeHolder: 'Select how to align them',
+                ignoreFocusOut: true
+            });
+            if (alignmentChoice) {
+                await this.alignElements(nodes.map(n => n.ddsElement.lineIndex), alignmentChoice.alignment);
+            };
             return;
         };
 
@@ -2885,6 +3216,62 @@ export class RecordPreviewPanel {
         if (editor) {
             this.forceReparse(editor.document);
         };
+    };
+
+    /**
+     * Aligns the selected fields/constants horizontally (the "⋮ Actions" menu's Align..., offered
+     * for a multi-selection only, then Left/Center/Right), within the span they already cover between them —
+     * see `computeAlignedColumns`. Only columns change; every element keeps its own row. Works from
+     * the positions and widths last shown in the preview (`lastItems`), so the result lines up
+     * exactly as it looks there, and writes them back through `moveElements`, the same path (and
+     * single undo step) as dragging the group.
+     * Refused, with a message, when two of the elements share a row (aligning them would put one
+     * on top of the other), or, for center/right, when one is a referenced field whose real width
+     * isn't known yet (it's shown as a 1-character marker, so lining up its end would be a guess).
+     * @param lineIndices - Zero-based source line indices of the fields/constants to align
+     * @param alignment - Which edge (or the middle) to line them up on
+     */
+    private async alignElements(lineIndices: number[], alignment: HorizontalAlignment): Promise<void> {
+        // A CNTFLD-wrapped field (or a selection field with its choices) is drawn as several items
+        // sharing one source line; its position is that of its first (topmost, then leftmost) one.
+        const anchors = new Map<number, PreviewItem>();
+        for (const item of this.lastItems) {
+            if (!item.isInteractive || !lineIndices.includes(item.lineIndex)) {
+                continue;
+            };
+            const existing = anchors.get(item.lineIndex);
+            if (!existing || item.row < existing.row || (item.row === existing.row && item.col < existing.col)) {
+                anchors.set(item.lineIndex, item);
+            };
+        };
+        const elements = [...anchors.values()];
+        if (elements.length < 2) {
+            return;
+        };
+
+        const rows = new Set(elements.map(e => e.row));
+        if (rows.size < elements.length) {
+            vscode.window.showWarningMessage('Cannot align the elements: some of them are on the same row, and aligning them would put one on top of the other.');
+            return;
+        };
+
+        if (alignment !== 'left' && elements.some(e => e.isReferenced)) {
+            vscode.window.showWarningMessage(`Cannot align the elements to the ${alignment}: the real length of a referenced field is not known yet. Resolve the referenced fields first, or align them to the left.`);
+            return;
+        };
+
+        const newCols = computeAlignedColumns(
+            elements.map(e => ({ col: e.col, width: Math.max(e.length, e.text.length, 1) })),
+            alignment
+        );
+        const moves = elements
+            .map((e, i) => ({ lineIndex: e.lineIndex, newRow: e.row, newCol: newCols[i], rowOffset: e.rowOffset, colOffset: e.colOffset }))
+            .filter((move, i) => move.newCol !== elements[i].col);
+        if (moves.length === 0) {
+            return;
+        };
+
+        await this.moveElements(moves);
     };
 
     /**
@@ -2923,6 +3310,22 @@ export class RecordPreviewPanel {
         if (editor) {
             this.forceReparse(editor.document);
         };
+    };
+
+    /**
+     * Pastes the format copied with "Copy Format..." onto the selected fields/constants — the
+     * Actions menu's "Paste Format".
+     * @param lineIndices - Zero-based source line indices of the fields/constants
+     */
+    private async pasteFormatOn(lineIndices: number[]): Promise<void> {
+        const nodes = await this.resolveElementNodes(lineIndices);
+        const { editor } = checkForEditorAndDocument();
+        if (nodes.length === 0 || !editor) {
+            return;
+        };
+
+        await pasteFormat(editor, nodes.map(n => n.ddsElement));
+        this.forceReparse(editor.document);
     };
 
     /**
@@ -3103,21 +3506,90 @@ export class RecordPreviewPanel {
         margin-bottom: 6px;
         font-size: 12px;
     }
-    /* toolbarRowDisplaced only ever holds actionBar while it's away from toolbarRow3 (see
-       updateSelectionBar) — collapse it to nothing rather than leaving an empty row/gap when it's
-       not currently hosting anything. */
-    .toolbar-row:empty {
-        display: none;
+    /* The Indicators checkbox and the selection label share this row, and it always keeps the
+       height of one line, even when neither is showing: selecting or deselecting something must
+       never push the preview below it up or down. A long label is cut short with an ellipsis
+       (the full text is in its tooltip) instead of wrapping onto a second line. */
+    #toolbarRow4 {
+        flex-wrap: nowrap;
+        min-height: 18px;
     }
     #info {
         opacity: 0.7;
+    }
+    #pendingRefsIcon {
+        display: none;
+        color: ${getReferencedFieldColor()};
+        cursor: default;
+        margin-right: -10px;
     }
     #formatBar, #toolbar {
         display: none;
         align-items: center;
         gap: 4px;
     }
-    #formatBar select, #toolbar select {
+    #toolbar {
+        position: relative;
+    }
+    #overlayBtn {
+        background: ${bg};
+        color: ${fg};
+        border: 1px solid #333333;
+        font-family: inherit;
+        font-size: inherit;
+        max-width: 320px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        cursor: pointer;
+    }
+    #overlayPopup {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        z-index: 10;
+        margin-top: 2px;
+        padding: 4px;
+        min-width: 180px;
+        background: ${bg};
+        color: ${fg};
+        border: 1px solid #333333;
+    }
+    #overlayPopup.open {
+        display: block;
+    }
+    #overlaySearch {
+        display: none;
+        width: 100%;
+        box-sizing: border-box;
+        margin-bottom: 4px;
+        background: ${bg};
+        color: ${fg};
+        border: 1px solid #333333;
+        font-family: inherit;
+    }
+    #overlayList {
+        max-height: 260px;
+        overflow-y: auto;
+    }
+    #overlayList label {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 1px 2px;
+        white-space: nowrap;
+        cursor: pointer;
+    }
+    #overlayList label:has(input:disabled) {
+        cursor: default;
+        opacity: 0.7;
+    }
+    #overlayList .empty {
+        opacity: 0.6;
+        padding: 1px 2px;
+    }
+    #formatBar select {
         background: ${bg};
         color: ${fg};
         border: 1px solid #333333;
@@ -3154,10 +3626,12 @@ export class RecordPreviewPanel {
     }
     #selectionLabel {
         opacity: 0.7;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
-    /* Empty (no selection) — hide it entirely rather than leaving a zero-width flex item, whose
-       column-gap before actionBar would otherwise shift the buttons right of where the row above
-       (e.g. "Format:") starts, even though nothing visible is actually there. */
+    /* Empty (no selection) — hide it entirely rather than leaving a zero-width flex item. */
     #selectionLabel:empty {
         display: none;
     }
@@ -3245,6 +3719,7 @@ export class RecordPreviewPanel {
 </head>
 <body>
 <div id="toolbarRow1" class="toolbar-row">
+    <span id="pendingRefsIcon">⚠</span>
     <span id="info">Loading...</span>
     <button id="focusModeBtn" title="Hide the source code editor to focus on the preview (tree view stays visible)">🗖 Focus</button>
     <button id="configBtn" title="Configure the preview (colors)">⚙ Configuration</button>
@@ -3255,8 +3730,12 @@ export class RecordPreviewPanel {
         <select id="formatSelect"></select>
     </span>
     <span id="toolbar">
-        <label for="overlaySelect">Overlay: </label>
-        <select id="overlaySelect"></select>
+        <label for="overlayBtn">Overlay: </label>
+        <button id="overlayBtn" title="Choose records to show dimmed behind this one">(none) ▾</button>
+        <div id="overlayPopup">
+            <input id="overlaySearch" type="text" placeholder="Filter records..." spellcheck="false">
+            <div id="overlayList"></div>
+        </div>
     </span>
     <span id="sflpagBar">
         <label>Page rows: </label>
@@ -3266,18 +3745,19 @@ export class RecordPreviewPanel {
     </span>
 </div>
 <div id="toolbarRow3" class="toolbar-row">
-    <span id="selectionLabel"></span>
     <span id="actionBar">
         <button id="addFieldBtn" title="Click, then click a point in the screen to place a new field there">+ Field</button>
         <button id="addConstantBtn" title="Click, then click a point in the screen to place a new constant there">+ Constant</button>
         <button id="gridDotsBtn" title="Show a dot in every empty character cell, to see spacing between fields/constants">⋅ Grid</button>
+        <button id="hiddenBtn" title="Show the elements that aren't visible right now (conditioned on indicators that are off, or DSPATR(ND)) as dotted outlines. They can't be selected">◌ Hidden</button>
+        <button id="areaSelectBtn" title="Drag a rectangle to select every field/constant it touches (Ctrl/Cmd adds to the current selection). While on, clicking an element doesn't select or move it, and a window is moved by dragging its border">⬚ Area</button>
         <button id="selectionCenterBtn" title="Center horizontally" disabled>↔ Center</button>
         <button id="selectionMenuBtn" title="More actions (color, attributes, copy, delete...)" disabled>⋮ Actions</button>
     </span>
 </div>
-<div id="toolbarRowDisplaced" class="toolbar-row"></div>
 <div id="toolbarRow4" class="toolbar-row">
     <label id="indicatorBar"><input type="checkbox" id="indicatorsToggle"> Indicators</label>
+    <span id="selectionLabel"></span>
 </div>
 <div id="indicatorList"></div>
 <div id="functionKeyList"></div>
@@ -3289,10 +3769,14 @@ export class RecordPreviewPanel {
     const info = document.getElementById('info');
     const focusModeBtn = document.getElementById('focusModeBtn');
     const configBtn = document.getElementById('configBtn');
+    const pendingRefsIcon = document.getElementById('pendingRefsIcon');
     const formatBar = document.getElementById('formatBar');
     const formatSelect = document.getElementById('formatSelect');
     const toolbar = document.getElementById('toolbar');
-    const overlaySelect = document.getElementById('overlaySelect');
+    const overlayBtn = document.getElementById('overlayBtn');
+    const overlayPopup = document.getElementById('overlayPopup');
+    const overlaySearch = document.getElementById('overlaySearch');
+    const overlayList = document.getElementById('overlayList');
     const indicatorBar = document.getElementById('indicatorBar');
     const indicatorsToggle = document.getElementById('indicatorsToggle');
     const indicatorList = document.getElementById('indicatorList');
@@ -3304,9 +3788,8 @@ export class RecordPreviewPanel {
     const addConstantBtn = document.getElementById('addConstantBtn');
     const addFieldBtn = document.getElementById('addFieldBtn');
     const gridDotsBtn = document.getElementById('gridDotsBtn');
-    const actionBar = document.getElementById('actionBar');
-    const toolbarRow3 = document.getElementById('toolbarRow3');
-    const toolbarRowDisplaced = document.getElementById('toolbarRowDisplaced');
+    const areaSelectBtn = document.getElementById('areaSelectBtn');
+    const hiddenBtn = document.getElementById('hiddenBtn');
     const selectionLabel = document.getElementById('selectionLabel');
     const selectionCenterBtn = document.getElementById('selectionCenterBtn');
     const selectionMenuBtn = document.getElementById('selectionMenuBtn');
@@ -3350,6 +3833,9 @@ export class RecordPreviewPanel {
     const WINDOW_BORDER_RIGHT = 2;
 
     let currentItems = [];
+    // Fields/constants hidden by their indicators right now (see PreviewItem.hiddenReason): never
+    // part of currentItems, so nothing can click/select/drag them; only drawn as ghosts.
+    let currentHiddenItems = [];
     let currentBackgroundItems = [];
     let currentSize = null;
     let currentWindowFrame = null;
@@ -3372,9 +3858,16 @@ export class RecordPreviewPanel {
     let currentElementHandleRect = null;
     let currentElementHandleRectLeft = null;
     let selectedLineIndices = new Set();
+    // Set by a Ctrl+click toggle (see the canvas 'mousedown' handler), cleared by the next mousedown.
+    let suppressNextContextMenu = false;
     let currentRecordName = null;
     let placingKind = null; // null | 'constant' | 'field'
     let showGridDots = false;
+    let areaSelectMode = false;
+    let showHidden = false;
+    // Rectangle ("marquee") selection in progress: the anchor cell, the cell under the cursor, and
+    // the selection it started from — kept so a Ctrl/Cmd marquee adds to it, and Escape restores it.
+    let marqueeState = null;
 
     function clamp(value, min, max) {
         return Math.min(Math.max(value, min), max);
@@ -3397,8 +3890,58 @@ export class RecordPreviewPanel {
         return { row, col };
     }
 
+    // An element that isn't on the screen right now (DSPATR(ND), or hidden by its indicators), drawn
+    // only while "Hidden" is on: a dotted outline with its text faded way down. Where it shares
+    // cells with an element that *is* visible (typically the 61/N61 alternate at the same spot),
+    // only the outline is drawn, so the visible one's text stays readable.
+    function drawGhost(item, fontFamily, moveDelta) {
+        const { row, col } = resolveItemRowCol(item, moveDelta);
+        const width = Math.max(item.length, item.text.length, 1);
+        const x = (col - 1) * CHAR_W;
+        const y = (row - 1) * CHAR_H;
+        const w = width * CHAR_W;
+
+        const overlapsVisible = currentItems.some(other => {
+            if (other === item || other.nonDisplay) {
+                return false;
+            }
+            const otherPos = resolveItemRowCol(other, moveDelta);
+            const otherWidth = Math.max(other.length, other.text.length, 1);
+            return otherPos.row === row && otherPos.col < col + width && otherPos.col + otherWidth > col;
+        });
+
+        ctx.save();
+        if (!overlapsVisible) {
+            ctx.globalAlpha = 0.35;
+            ctx.font = (CHAR_H - 4) + 'px ' + fontFamily;
+            ctx.fillStyle = item.color;
+            const text = item.text.length > item.length ? item.text.substring(0, item.length) : item.text;
+            ctx.textAlign = 'center';
+            for (let i = 0; i < text.length; i++) {
+                ctx.fillText(text[i], x + i * CHAR_W + CHAR_W / 2, y + CHAR_H / 2);
+            }
+            ctx.textAlign = 'start';
+        }
+        ctx.globalAlpha = 0.85;
+        ctx.strokeStyle = '#9a9a9a';
+        ctx.setLineDash([1, 2]);
+        ctx.strokeRect(x + 0.5, y + 0.5, w - 1, CHAR_H - 1);
+        ctx.restore();
+
+        // A DSPATR(ND) element can still be clicked (see findItemAt), so it keeps its selection box.
+        if (selectedLineIndices.has(item.lineIndex) && !item.hiddenReason) {
+            ctx.save();
+            ctx.strokeStyle = '#ffffff';
+            ctx.strokeRect(x - 1.5, y - 1.5, w + 2, CHAR_H + 2);
+            ctx.restore();
+        }
+    }
+
     function drawItem(item, fontFamily, moveDelta) {
         if (item.nonDisplay) {
+            if (showHidden && !item.isBackground) {
+                drawGhost(item, fontFamily, moveDelta);
+            }
             return;
         }
         if (item.blink && !blinkOn) {
@@ -3658,6 +4201,12 @@ export class RecordPreviewPanel {
             ctx.restore();
         }
 
+        if (showHidden) {
+            for (const item of currentHiddenItems) {
+                drawGhost(item, fontFamily, moveDelta);
+            }
+        }
+
         for (const item of items) {
             // Field/constant resize preview: while dragging its handle, the element's own text
             // stretches/shrinks live to the currently-dragged length — nothing is actually written
@@ -3687,7 +4236,7 @@ export class RecordPreviewPanel {
             }
         }
 
-        drawGridDots(size, items, currentBackgroundItems, moveDelta, currentOuterFrame, currentWindowFrame);
+        drawGridDots(size, showHidden ? items.concat(currentHiddenItems) : items, currentBackgroundItems, moveDelta, currentOuterFrame, currentWindowFrame);
 
         // Element resize handles: shown only while exactly one resizable field/constant is selected —
         // a small grip just past its right edge (outside its own text, so it never overlaps it even
@@ -3698,7 +4247,9 @@ export class RecordPreviewPanel {
         // would otherwise go stale (it's computed from the item's un-dragged base length/column).
         currentElementHandleRect = null;
         currentElementHandleRectLeft = null;
-        if (selectedLineIndices.size === 1) {
+        // None in "Area" mode, where the mouse only ever draws selection rectangles — a stray click
+        // there must never resize (or move) an element.
+        if (selectedLineIndices.size === 1 && !areaSelectMode) {
             const selectedLineIndex = [...selectedLineIndices][0];
             const isDraggingLeft = elementResizeState && elementResizeState.side === 'left';
             const isDraggingRight = elementResizeState && elementResizeState.side !== 'left';
@@ -3839,11 +4390,26 @@ export class RecordPreviewPanel {
             const menuY = (currentOuterFrame.row - 1) * CHAR_H + (CHAR_H - MENU_ICON_SIZE) / 2;
             currentMenuIconRect = drawIconButton(menuX, menuY, '⋮', 'Window actions');
 
-            // "Center horizontally" button, a one-click action next to it (no menu needed) — the
-            // pattern any future direct-action icon can follow.
+            // "Center horizontally" button, a one-click action next to it (no menu needed). The
+            // window's other alignments (left/right, top/center/bottom) are in the menu's "Align...".
             const centerX = menuX - MENU_ICON_SIZE - 2;
             const centerY = menuY;
             currentCenterIconRect = drawIconButton(centerX, centerY, '↔', 'Center horizontally');
+        }
+
+        if (marqueeState) {
+            const area = marqueeArea();
+            const mx = (area.minCol - 1) * CHAR_W;
+            const my = (area.minRow - 1) * CHAR_H;
+            const mw = (area.maxCol - area.minCol + 1) * CHAR_W;
+            const mh = (area.maxRow - area.minRow + 1) * CHAR_H;
+            ctx.save();
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+            ctx.fillRect(mx, my, mw, mh);
+            ctx.strokeStyle = '#ffffff';
+            ctx.setLineDash([4, 3]);
+            ctx.strokeRect(mx + 0.5, my + 0.5, mw - 1, mh - 1);
+            ctx.restore();
         }
 
         updateSelectionBar();
@@ -3889,25 +4455,15 @@ export class RecordPreviewPanel {
             }
             selectionLabel.textContent = label;
         }
+        // The label lives on the Indicators row, which is never allowed to wrap (see #toolbarRow4),
+        // so a long one gets cut short there — the tooltip keeps the full text reachable.
+        selectionLabel.title = selectionLabel.textContent;
 
         // Center only makes sense for exactly one selected element; Actions applies to one or
-        // several. Both stay visible but disabled rather than hidden when they don't apply — and
-        // both live inside actionBar itself, so they always move together with the rest of the buttons.
+        // several. Both stay visible but disabled rather than hidden when they don't apply, so the
+        // button row never changes shape as the selection changes.
         selectionCenterBtn.disabled = !hasSelection || multi;
         selectionMenuBtn.disabled = !hasSelection;
-
-        // All the buttons (+Field/+Constant/Grid/Center/Actions) share row 3 with the
-        // selection label when nothing is selected; once something is, the label needs that room,
-        // so the whole button group moves into its own dedicated row (toolbarRowDisplaced) as one
-        // unit until the selection is cleared again. That row sits between row 3 and the Indicators
-        // row, and collapses to nothing when empty (see the ".toolbar-row:empty" rule), so the
-        // Indicators row always ends up directly below wherever the buttons currently are, on its
-        // own line, rather than sharing a line with them.
-        if (hasSelection) {
-            toolbarRowDisplaced.appendChild(actionBar);
-        } else {
-            toolbarRow3.appendChild(actionBar);
-        }
     }
 
     setInterval(() => {
@@ -3926,6 +4482,25 @@ export class RecordPreviewPanel {
         return { row, col };
     }
 
+    // Hover tooltip: the element under the cursor's name — plus, while "Hidden" is on, every ghost
+    // there too and why it isn't on the screen, since a ghost may well share its cells with a
+    // visible element (or another ghost).
+    function hoverTitleAt(ev, hit) {
+        const lines = [];
+        if (hit) {
+            lines.push(hit.nonDisplay && showHidden ? hit.name + ' — hidden (DSPATR(ND))' : hit.name);
+        }
+        if (showHidden) {
+            const { row, col } = cellAt(ev);
+            for (const ghost of currentHiddenItems) {
+                if (row === ghost.row && col >= ghost.col && col < ghost.col + Math.max(ghost.length, ghost.text.length, 1)) {
+                    lines.push(ghost.name + ' — hidden (' + ghost.hiddenReason + ')');
+                }
+            }
+        }
+        return lines.join('\\n');
+    }
+
     function findItemAt(ev) {
         // Only the real, interactive instance can be clicked/selected/dragged: an overlaid
         // background record is reference-only, and subfile page-repeat ghosts aren't real lines.
@@ -3938,34 +4513,42 @@ export class RecordPreviewPanel {
         );
     }
 
-    // Hit-tests the dimmed background record(s) for the double-click-to-switch gesture — by row
+    // Hit-tests the dimmed background record(s) for the double-click-to-switch gesture. A click
+    // right on an overlay's own field/constant text picks that record. Otherwise it goes by row
     // range per source record rather than requiring the click to land exactly on a field/constant's
-    // own text, the way findItemAt does for the foreground. A background block (an SFLCTL header,
+    // own text, the way findItemAt does for the foreground: a background block (an SFLCTL header,
     // an SFL detail area, a shared window's owner...) reads as one visual region to the user, blank
     // cells included, so double-clicking anywhere across the rows it occupies — not just its actual
-    // characters — switches to it.
+    // characters — switches to it. Where several overlays share the spot, the one drawn on top wins
+    // (same order as draw(): behind-the-window items first, then same-window ones, each in the order
+    // the extension sent them — later records over earlier ones).
     function findBackgroundItemAt(ev) {
-        const { row } = cellAt(ev);
-        const rowRangeBySourceRecord = {};
-        for (const item of currentBackgroundItems) {
-            if (!item.sourceRecord) {
-                continue;
+        const { row, col } = cellAt(ev);
+        const drawOrder = [
+            ...currentBackgroundItems.filter(item => !item.sameWindow),
+            ...currentBackgroundItems.filter(item => item.sameWindow)
+        ].filter(item => item.sourceRecord);
+
+        for (let i = drawOrder.length - 1; i >= 0; i--) {
+            const item = drawOrder[i];
+            if (row === item.row && col >= item.col && col < item.col + Math.max(item.length, item.text.length, 1)) {
+                return { sourceRecord: item.sourceRecord };
             }
-            const range = rowRangeBySourceRecord[item.sourceRecord];
+        }
+
+        // Records in draw order (bottom first), each with the rows it spans.
+        const ranges = new Map();
+        for (const item of drawOrder) {
+            const range = ranges.get(item.sourceRecord);
             if (range) {
                 range.min = Math.min(range.min, item.row);
                 range.max = Math.max(range.max, item.row);
             } else {
-                rowRangeBySourceRecord[item.sourceRecord] = { min: item.row, max: item.row };
+                ranges.set(item.sourceRecord, { min: item.row, max: item.row });
             }
         }
-        for (const sourceRecord in rowRangeBySourceRecord) {
-            const range = rowRangeBySourceRecord[sourceRecord];
-            if (row >= range.min && row <= range.max) {
-                return { sourceRecord };
-            }
-        }
-        return undefined;
+        const topmost = [...ranges].reverse().find(([, range]) => row >= range.min && row <= range.max);
+        return topmost ? { sourceRecord: topmost[0] } : undefined;
     }
 
     function isOverResizeHandle(ev) {
@@ -4009,6 +4592,46 @@ export class RecordPreviewPanel {
         const { row, col } = cellAt(ev);
         return row >= currentOuterFrame.row && row < currentOuterFrame.row + currentOuterFrame.rows &&
                col >= currentOuterFrame.col && col < currentOuterFrame.col + currentOuterFrame.cols;
+    }
+
+    // The window's writable content area only (inside the border), as opposed to isOverWindowFrame,
+    // which also counts the border itself.
+    function isOverWindowContent(ev) {
+        if (!currentWindowFrame) {
+            return false;
+        }
+        const { row, col } = cellAt(ev);
+        return row >= currentWindowFrame.row && row < currentWindowFrame.row + currentWindowFrame.rows &&
+               col >= currentWindowFrame.col && col < currentWindowFrame.col + currentWindowFrame.cols;
+    }
+
+    function marqueeArea() {
+        return {
+            minRow: Math.min(marqueeState.startRow, marqueeState.endRow),
+            maxRow: Math.max(marqueeState.startRow, marqueeState.endRow),
+            minCol: Math.min(marqueeState.startCol, marqueeState.endCol),
+            maxCol: Math.max(marqueeState.startCol, marqueeState.endCol)
+        };
+    }
+
+    // The marquee's selection: whatever it started from (only non-empty for a Ctrl/Cmd marquee) plus
+    // every interactive item the rectangle touches — touching is enough, it doesn't need to cover
+    // the whole item. Background (overlaid/dimmed) items are never picked up, same as a click, and
+    // neither are non-display (DSPATR(ND)) ones: nothing is drawn for them, so sweeping over what
+    // looks like empty space mustn't quietly select them.
+    function applyMarqueeSelection() {
+        const area = marqueeArea();
+        const selection = new Set(marqueeState.baseSelection);
+        for (const item of currentItems) {
+            if (!item.isInteractive || item.nonDisplay) {
+                continue;
+            }
+            const lastCol = item.col + Math.max(item.length, item.text.length, 1) - 1;
+            if (item.row >= area.minRow && item.row <= area.maxRow && item.col <= area.maxCol && lastCol >= area.minCol) {
+                selection.add(item.lineIndex);
+            }
+        }
+        selectedLineIndices = selection;
     }
 
     function isOverTitle(ev) {
@@ -4070,6 +4693,29 @@ export class RecordPreviewPanel {
         setPlacingKind(placingKind === 'field' ? null : 'field');
     });
 
+    hiddenBtn.addEventListener('click', () => {
+        showHidden = !showHidden;
+        hiddenBtn.classList.toggle('active', showHidden);
+        if (currentSize) {
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
+        }
+    });
+
+    areaSelectBtn.addEventListener('click', () => {
+        areaSelectMode = !areaSelectMode;
+        areaSelectBtn.classList.toggle('active', areaSelectMode);
+        // Turning it on starts from a clean slate: whatever was selected by clicking is dropped, so
+        // only what the rectangles pick up counts. Turning it off keeps the rectangle's selection,
+        // ready to be moved or acted on.
+        if (areaSelectMode) {
+            selectedLineIndices.clear();
+        }
+        // Also shows/hides the selected element's resize handles, which "Area" mode turns off.
+        if (currentSize) {
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
+        }
+    });
+
     gridDotsBtn.addEventListener('click', () => {
         showGridDots = !showGridDots;
         gridDotsBtn.classList.toggle('active', showGridDots);
@@ -4113,6 +4759,12 @@ export class RecordPreviewPanel {
             setPlacingKind(null);
             return;
         }
+        if (ev.key === 'Escape' && marqueeState) {
+            selectedLineIndices = marqueeState.baseSelection;
+            marqueeState = null;
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
+            return;
+        }
 
         // Delete/Backspace (Mac laptop keyboards only have the latter) removes the current
         // selection, same as "Actions... > Delete" — but only when focus isn't inside a text
@@ -4129,6 +4781,15 @@ export class RecordPreviewPanel {
     });
 
     canvas.addEventListener('mousedown', (ev) => {
+        suppressNextContextMenu = false;
+        // Only the main button selects, drags or draws a rectangle. A right-click is left entirely
+        // to the 'contextmenu' handler: treating its mousedown as a click would collapse a
+        // multi-selection to the item under the cursor on mouseup (or, in "Area" mode, start a new
+        // rectangle that replaces it), right while its Actions menu is open for the whole group.
+        if (ev.button !== 0) {
+            return;
+        }
+
         if (placingKind) {
             const { row, col } = cellAt(ev);
             const messageType = placingKind === 'field' ? 'addFieldAt'
@@ -4198,7 +4859,7 @@ export class RecordPreviewPanel {
         }
 
         if (isOverCenterIcon(ev)) {
-            vscode.postMessage({ type: 'centerWindowHorizontally' });
+            vscode.postMessage({ type: 'alignWindow', axis: 'horizontal', alignment: 'center' });
             return;
         }
 
@@ -4207,11 +4868,32 @@ export class RecordPreviewPanel {
             return;
         }
 
+        // "Area" mode: the mouse only selects by rectangle — pressing anywhere (on an element or
+        // on empty space alike) starts one, so an element is never clicked, selected or dragged by
+        // accident. The window's border is the one exception: it's still how the window gets moved.
+        if (areaSelectMode && currentSize && (isOverWindowContent(ev) || !isOverWindowFrame(ev))) {
+            const { row, col } = cellAt(ev);
+            const additive = ev.ctrlKey || ev.metaKey;
+            marqueeState = {
+                startRow: row,
+                startCol: col,
+                endRow: row,
+                endCol: col,
+                baseSelection: additive ? new Set(selectedLineIndices) : new Set()
+            };
+            applyMarqueeSelection();
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
+            return;
+        }
+
         const hit = findItemAt(ev);
 
         // Ctrl/Cmd+click toggles an item in/out of a multi-selection, without starting a drag —
         // the standard desktop convention for building up a selection one item at a time.
         if (hit && (ev.ctrlKey || ev.metaKey)) {
+            // On macOS, Ctrl+click also fires 'contextmenu' right after this — it's a selection
+            // gesture here, so that menu must not open on top of it.
+            suppressNextContextMenu = ev.ctrlKey;
             if (selectedLineIndices.has(hit.lineIndex)) {
                 selectedLineIndices.delete(hit.lineIndex);
             } else {
@@ -4236,6 +4918,11 @@ export class RecordPreviewPanel {
             dragState = {
                 items: draggedItems.map(i => ({ item: i, startRow: i.row, startCol: i.col })),
                 primaryLineIndex: hit.lineIndex,
+                // The exact rendered item that was grabbed, not just its lineIndex: a CNTFLD-wrapped
+                // field (or a selection field with its choices) is several items sharing one
+                // lineIndex, each at its own row/col, and the grab offsets below are relative to
+                // this one specifically.
+                primaryItem: hit,
                 grabRowOffset: row - hit.row,
                 grabColOffset: col - hit.col,
                 rowDelta: 0,
@@ -4283,8 +4970,17 @@ export class RecordPreviewPanel {
         // multi-selection keeps the whole group (same as a plain left-click there); right-clicking
         // any other item — selected or not — replaces the selection with just that one first.
         ev.preventDefault();
+        if (suppressNextContextMenu) {
+            suppressNextContextMenu = false;
+            return;
+        }
         const hit = findItemAt(ev);
         if (!hit) {
+            return;
+        }
+        // In "Area" mode, a right-click can't change the selection either: it opens the Actions for
+        // the rectangle's selection when made on one of its elements, and does nothing otherwise.
+        if (areaSelectMode && !selectedLineIndices.has(hit.lineIndex)) {
             return;
         }
         if (!selectedLineIndices.has(hit.lineIndex)) {
@@ -4306,6 +5002,19 @@ export class RecordPreviewPanel {
     window.addEventListener('mousemove', (ev) => {
         if (placingKind) {
             canvas.style.cursor = 'crosshair';
+            return;
+        }
+
+        if (marqueeState) {
+            const { row, col } = cellAt(ev);
+            const endRow = clamp(row, 1, currentSize.rows);
+            const endCol = clamp(col, 1, currentSize.cols);
+            if (endRow !== marqueeState.endRow || endCol !== marqueeState.endCol) {
+                marqueeState.endRow = endRow;
+                marqueeState.endCol = endCol;
+                applyMarqueeSelection();
+                draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
+            }
             return;
         }
 
@@ -4410,13 +5119,18 @@ export class RecordPreviewPanel {
                     return;
                 }
             }
+            if (areaSelectMode && (isOverWindowContent(ev) || !isOverWindowFrame(ev))) {
+                canvas.style.cursor = 'crosshair';
+                canvas.title = hoverTitleAt(ev, hit);
+                return;
+            }
             canvas.style.cursor = (!hit && isOverWindowFrame(ev)) ? 'move' : 'default';
-            canvas.title = hit ? hit.name : '';
+            canvas.title = hoverTitleAt(ev, hit);
             return;
         }
 
         const { row, col } = cellAt(ev);
-        const primary = dragState.items.find(d => d.item.lineIndex === dragState.primaryLineIndex);
+        const primary = dragState.items.find(d => d.item === dragState.primaryItem);
         const desiredRowDelta = (row - dragState.grabRowOffset) - primary.startRow;
         const desiredColDelta = (col - dragState.grabColOffset) - primary.startCol;
 
@@ -4459,6 +5173,12 @@ export class RecordPreviewPanel {
     });
 
     window.addEventListener('mouseup', () => {
+        if (marqueeState) {
+            marqueeState = null;
+            draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
+            return;
+        }
+
         if (elementResizeState) {
             const { item, newLength, startLength, side } = elementResizeState;
             elementResizeState = null;
@@ -4546,26 +5266,109 @@ export class RecordPreviewPanel {
         formatSelect.value = selectedValue;
     }
 
-    overlaySelect.addEventListener('change', () => {
-        vscode.postMessage({ type: 'setOverlay', recordName: overlaySelect.value || null });
+    // The filter box only earns its space once the list gets long enough to need scrolling.
+    const OVERLAY_SEARCH_THRESHOLD = 8;
+    let overlayAvailable = [];
+    let overlayChecked = new Set();
+    // Added by the preview itself (a subfile's other half, a WINDOW(record-name) owner): always
+    // shown alongside the record that brought them, so checked and disabled in the list.
+    let overlayLocked = new Set();
+
+    function setOverlayPopupOpen(open) {
+        overlayPopup.classList.toggle('open', open);
+        if (open) {
+            overlaySearch.value = '';
+            renderOverlayList();
+            if (overlayAvailable.length > OVERLAY_SEARCH_THRESHOLD) {
+                overlaySearch.focus();
+            }
+        }
+    }
+
+    overlayBtn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        setOverlayPopupOpen(!overlayPopup.classList.contains('open'));
     });
 
-    function rebuildOverlayOptions(availableRecords, selectedValue) {
-        overlaySelect.innerHTML = '';
+    // Clicks inside the popup (checkboxes, filter box) or on its button must not reach the document
+    // listener below, which closes it — for the button, it would close on mousedown and then reopen
+    // on click, so the button could never close it.
+    overlayBtn.addEventListener('mousedown', (ev) => ev.stopPropagation());
+    overlayPopup.addEventListener('mousedown', (ev) => ev.stopPropagation());
+    overlayPopup.addEventListener('click', (ev) => ev.stopPropagation());
+    document.addEventListener('mousedown', () => setOverlayPopupOpen(false));
 
-        const noneOption = document.createElement('option');
-        noneOption.value = '';
-        noneOption.textContent = '(none)';
-        overlaySelect.appendChild(noneOption);
-
-        for (const name of availableRecords) {
-            const opt = document.createElement('option');
-            opt.value = name;
-            opt.textContent = name;
-            overlaySelect.appendChild(opt);
+    overlaySearch.addEventListener('input', renderOverlayList);
+    overlaySearch.addEventListener('keydown', (ev) => {
+        ev.stopPropagation();
+        if (ev.key === 'Escape') {
+            setOverlayPopupOpen(false);
+            overlayBtn.focus();
         }
+    });
+    overlayPopup.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Escape') {
+            ev.stopPropagation();
+            setOverlayPopupOpen(false);
+            overlayBtn.focus();
+        }
+    });
 
-        overlaySelect.value = selectedValue;
+    function updateOverlayButton() {
+        const checked = overlayAvailable.filter(name => overlayChecked.has(name));
+        overlayBtn.textContent = (checked.length > 0 ? checked.join(', ') : '(none)') + ' ▾';
+        overlayBtn.title = checked.length > 0
+            ? 'Shown behind this record: ' + checked.join(', ')
+            : 'Choose records to show dimmed behind this one';
+    }
+
+    function renderOverlayList() {
+        overlaySearch.style.display = overlayAvailable.length > OVERLAY_SEARCH_THRESHOLD ? 'block' : 'none';
+        const filter = overlaySearch.value.trim().toUpperCase();
+        const visible = overlayAvailable.filter(name => !filter || name.toUpperCase().includes(filter));
+
+        overlayList.innerHTML = '';
+        if (visible.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'empty';
+            empty.textContent = 'No matching records';
+            overlayList.appendChild(empty);
+            return;
+        }
+        for (const name of visible) {
+            const label = document.createElement('label');
+            const box = document.createElement('input');
+            box.type = 'checkbox';
+            box.checked = overlayChecked.has(name);
+            box.disabled = overlayLocked.has(name);
+            if (box.disabled) {
+                label.title = 'Always shown together with the record being previewed or an overlay (subfile pair or window)';
+            }
+            box.addEventListener('change', () => {
+                if (box.checked) {
+                    overlayChecked.add(name);
+                } else {
+                    overlayChecked.delete(name);
+                }
+                updateOverlayButton();
+                vscode.postMessage({ type: 'setOverlay', recordName: name, checked: box.checked });
+            });
+            label.appendChild(box);
+            label.appendChild(document.createTextNode(name));
+            overlayList.appendChild(label);
+        }
+    }
+
+    function rebuildOverlayOptions(availableRecords, checkedRecords, lockedRecords) {
+        overlayAvailable = availableRecords;
+        overlayLocked = new Set(lockedRecords);
+        overlayChecked = new Set(checkedRecords);
+        updateOverlayButton();
+        // Re-rendered on every 'render' message (e.g. after an edit re-parses the source); keep the
+        // popup and its filter text as they are if the user has it open.
+        if (overlayPopup.classList.contains('open')) {
+            renderOverlayList();
+        }
     }
 
     indicatorsToggle.addEventListener('change', () => {
@@ -4652,7 +5455,9 @@ export class RecordPreviewPanel {
             const hasOverlayOptions = message.availableRecords && message.availableRecords.length > 0;
             toolbar.style.display = hasOverlayOptions ? 'inline-flex' : 'none';
             if (hasOverlayOptions) {
-                rebuildOverlayOptions(message.availableRecords, message.overlayRecordName || '');
+                rebuildOverlayOptions(message.availableRecords, message.overlayRecordNames || [], message.overlayLockedRecords || []);
+            } else {
+                setOverlayPopupOpen(false);
             }
 
             // indicatorBar (the "Indicators" checkbox) and indicatorList (the toggle buttons below
@@ -4686,9 +5491,15 @@ export class RecordPreviewPanel {
                   ' at (' + message.windowFrame.row + ',' + message.windowFrame.col + ')'
                 : baseInfo;
 
+            // Warning icon ahead of the screen size, only while referenced fields are pending.
+            const pendingCount = message.pendingReferencedCount || 0;
+            pendingRefsIcon.style.display = pendingCount > 0 ? 'inline' : 'none';
+            pendingRefsIcon.title = pendingCount + ' referenced field' + (pendingCount === 1 ? '' : 's') + ' not resolved';
+
             currentErrorMessage = message.errorMessage || null;
             currentErrorMessageFrame = message.errorMessageFrame || null;
             currentWindowBorder = message.windowBorder || null;
+            currentHiddenItems = message.hiddenItems || [];
             draw(message.size, message.items, message.backgroundItems, message.windowFrame, message.windowTitles, message.outerFrame);
         } else if (message.type === 'notFound') {
             info.textContent = 'Record no longer exists.';

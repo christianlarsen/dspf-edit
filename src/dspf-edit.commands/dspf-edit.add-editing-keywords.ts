@@ -332,7 +332,7 @@ function getFieldInfo(element: any): any {
 function getEffectiveFieldInfo(fieldInfo: any, element: any, documentUri: string): any {
     if (!element.referenced) return fieldInfo;
 
-    const resolved = getResolvedRef(documentUri, element.recordname, element.name);
+    const resolved = getResolvedRef(documentUri, element.recordname, element.name, element.refOverrides);
     if (!resolved) return fieldInfo;
 
     return { ...fieldInfo, type: resolved.type, length: resolved.length, decimals: resolved.decimals };
@@ -870,7 +870,7 @@ function upgradeSignedTypeChar(line: string): string {
  * @param uri - The document URI
  * @param element - The DDS field element
  */
-function upgradeSignedTypeOnFieldLine(
+export function upgradeSignedTypeOnFieldLine(
     document: vscode.TextDocument,
     workspaceEdit: vscode.WorkspaceEdit,
     uri: vscode.Uri,

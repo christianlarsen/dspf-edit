@@ -11,6 +11,7 @@ import {
     DdsFile,
     DdsAttribute,
     DdsSize,
+    RefOverrides,
     fileSizeAttributes,
     records,
     fieldsPerRecords,
@@ -32,6 +33,23 @@ export let currentDdsElements: DdsElement[] = [];
  * both defined relative to whatever came immediately before in this record, not to any fixed origin.
  */
 let lastPositionInRecord: { row: number; col: number; length: number } | undefined;
+
+/** Looks up a referenced field's real length once it has been resolved (see setReferencedLengthResolver). */
+type ReferencedLengthResolver = (recordName: string, fieldName: string, overrides?: RefOverrides) => number | undefined;
+
+let referencedLengthResolver: ReferencedLengthResolver | undefined;
+
+/**
+ * Gives the parser a way to look up a referenced field's resolved length. A referenced field has
+ * no length of its own in the source, so without this a field/constant positioned "+n" after it
+ * would be placed as if it were 0 long — right on top of it. Set once by the extension (the parser
+ * itself stays free of any VS Code/IBM i dependency); when unset, or while the field is still
+ * unresolved, the length coded in the source (usually none) is used, as before.
+ * @param resolver - Returns the resolved length, or undefined if the field isn't resolved
+ */
+export function setReferencedLengthResolver(resolver: ReferencedLengthResolver | undefined): void {
+    referencedLengthResolver = resolver;
+};
 
 /**
  * AND-groups accumulated so far from indicator-only continuation lines (position 7 = 'A'/blank,
@@ -459,6 +477,35 @@ function parseReffldTarget(attributes: DdsAttribute[] | undefined, ownName: stri
     return { fieldName, file, library, recordFormat };
 };
 
+/**
+ * Reads a referenced field's overrides from its own length (positions 30-34), data type (35) and
+ * decimal positions (36-37) columns: a plain number replaces the referenced field's value, +n/-n
+ * changes it by n, and blank keeps it.
+ * @param trimmedLine - The field's source line, from position 6 on
+ * @returns The overrides, or undefined when every column is blank
+ */
+function parseRefOverrides(trimmedLine: string): RefOverrides | undefined {
+    const overrides: RefOverrides = {};
+    const readSpec = (raw: string): { value?: number; delta?: number } => {
+        const spec = raw.trim();
+        if (/^[+-]\d+$/.test(spec)) return { delta: Number(spec) };
+        if (/^\d+$/.test(spec)) return { value: Number(spec) };
+        return {};
+    };
+
+    const length = readSpec(trimmedLine.substring(24, 29));
+    const decimals = readSpec(trimmedLine.substring(30, 32));
+    const type = (trimmedLine[29] ?? ' ').trim();
+
+    if (length.value !== undefined) overrides.length = length.value;
+    if (length.delta !== undefined) overrides.lengthDelta = length.delta;
+    if (decimals.value !== undefined) overrides.decimals = decimals.value;
+    if (decimals.delta !== undefined) overrides.decimalsDelta = decimals.delta;
+    if (type) overrides.type = type;
+
+    return Object.keys(overrides).length > 0 ? overrides : undefined;
+};
+
 function parseFieldElement(
     lines: string[],
     lineIndex: number,
@@ -467,20 +514,25 @@ function parseFieldElement(
     lastRecord: string
 ) {
     const type = trimmedLine[29];
-    const length = Number(trimmedLine.substring(24, 29).trim()) || FIXED_LENGTH_BY_TYPE[type] || 0;
+    const isReferenced = trimmedLine[23] === 'R';
+    // A referenced field's length/decimals may be a +n/-n change to the referenced field's, not
+    // a length of its own (see parseRefOverrides) — those count as blank here.
+    const isRelativeSpec = (raw: string) => /^[+-]/.test(raw.trim());
+    const lengthRaw = trimmedLine.substring(24, 29);
+    const length = (isRelativeSpec(lengthRaw) ? 0 : Number(lengthRaw.trim())) || FIXED_LENGTH_BY_TYPE[type] || 0;
     // A truly blank decimal-positions column (vs. an explicit "0") is kept as `undefined`, not
     // coerced to 0 — with a blank Type column too, that blank/non-blank distinction is exactly
     // what tells a plain zoned-numeric field (Type blank, decimals given, even 0) apart from a
     // plain alphanumeric one (Type blank, decimals also blank). See isNumeric in
     // dspf-edit.record-preview-panel.ts and isNumericField in dspf-edit.add-editing-keywords.ts.
     const decimalsRaw = trimmedLine.substring(30, 32).trim();
-    const decimals = decimalsRaw !== '' ? Number(decimalsRaw) : undefined;
+    const decimals = decimalsRaw !== '' && !isRelativeSpec(decimalsRaw) ? Number(decimalsRaw) : undefined;
     const usage = trimmedLine[32] !== ' ' ? trimmedLine[32] : ' ';
     const isHidden = trimmedLine[32] === 'H';
-    const isReferenced = trimmedLine[23] === 'R';
 
     const { attributes, nextIndex } = extractAttributes('F', lines, lineIndex, true, components.indicators, components.displayFormat);
     const refTarget = isReferenced ? parseReffldTarget(attributes, components.fieldName) : undefined;
+    const refOverrides = isReferenced ? parseRefOverrides(trimmedLine) : undefined;
 
     // Resolve DDS relative record format ("+n" position, blank line) against the preceding
     // field/constant in this record, using the raw row/col as written in source. The raw Line spec
@@ -500,7 +552,13 @@ function parseFieldElement(
         // width, not the declared DDS length (usually 0, since none is coded) — use that width here
         // so a following "+n" relative position lands after the actual rendered text, not the source length.
         const systemWidth = SYSTEM_FIELD_PLACEHOLDER[String(components.fieldName).trim().toUpperCase()]?.length;
-        lastPositionInRecord = { row: resolvedRow, col: resolvedCol, length: systemWidth ?? length };
+        // A referenced field's real length lives in the field it refers to: once resolved, that's
+        // the length a following "+n" has to count from, not the (usually blank) one in the source.
+        const resolvedLength = isReferenced ? referencedLengthResolver?.(lastRecord, components.fieldName, refOverrides) : undefined;
+        // Still unresolved with no length of its own: it shows as a 1-character marker in the
+        // preview, so count that much rather than 0, which would put the next element on top of it.
+        const pendingLength = isReferenced && length === 0 ? 1 : length;
+        lastPositionInRecord = { row: resolvedRow, col: resolvedCol, length: systemWidth ?? resolvedLength ?? pendingLength };
     };
 
     const element = {
@@ -515,6 +573,7 @@ function parseFieldElement(
         hidden: isHidden,
         referenced: isReferenced,
         refTarget: refTarget,
+        refOverrides: refOverrides,
         lineIndex: lineIndex,
         recordname: lastRecord,
         attributes: attributes || [],
@@ -1050,6 +1109,7 @@ function addFieldToRecord(field: any, recordEntry: any, seenFieldNames: Set<stri
             length: field.length || 0,
             decimals: field.decimals,
             referenced: field.referenced,
+            refOverrides: field.refOverrides,
             attributes: processedAttributes,
             indicators: field.indicators || [],
             lineIndex: field.lineIndex,

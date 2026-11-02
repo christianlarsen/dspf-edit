@@ -24,6 +24,134 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - The extension now also activates on `onLanguage:dds.dspf`, so opening a display file is enough — the schema tree and preview no longer wait for the DSPF Structure view to be opened first.
 - Test output (`out/test/**`) is no longer shipped inside the published `.vsix`.
 
+## [1.15.0] - 2026-10-28
+### Added
+- Screen Preview: **Copy Format...** and **Paste Format** in the **⋮ Actions** menu copy the format of a field or constant onto others. Select one element and choose **Copy Format...**, then select one or several elements and choose **Paste Format of NAME**. What was copied stays available until something else is copied, so it can be pasted again, also in other records or files.
+  - **Copy Format...** opens a window with a checkbox for each part, showing what the element has: **Colors**, **Display attributes**, the **Indicators** of the element itself, **Number editing** (edit code, edit word, edit mask; only for fields), and **Keep the indicators of colors and attributes**. Number editing is checked only when the field has some.
+  - Pasting replaces what each target has of every part copied, so it ends up looking like the source: a part the source doesn't have is removed from the targets.
+  - Colors and attributes keep their whole condition, more than three indicators and OR'd conditions included. Without their indicators, only the first color is pasted (two unconditioned colors would both apply), and the attributes are merged into one `DSPATR`, each once.
+  - Attributes a target can't take are left out: `MDT`, `OID`, `PR` and `SP` on constants and output fields, and `DSPATR(&field)` when the target's record has no such P field.
+  - Number editing goes only on numeric fields with `Y`, `S` or blank (with decimals) in position 35, as the DDS reference requires; an `S` field becomes `Y`, as STRSDA does. It's left out on fields with `DFT`/`DFTVAL`, when edit code `W` or `Y` doesn't allow the field's length, or when the edit word's digit positions don't match it, and on referenced fields not resolved yet. The edit mask goes only on input-capable fields (`I`/`B`) with the same length and decimals as the source, and not with `CHECK(AB MF RB RZ RLTB)`. A target that can't take the editing keeps its own.
+  - The message shown after pasting says what was left out, and why.
+
+## [1.14.0] - 2026-10-25
+### Added
+- Records: **Overlay** adds `OVERLAY` to a record, so it is shown without erasing the screen first: always, or under indicators. On a record that already has it, it changes its indicators or removes it, also when it's written on the record's own `R` line. Offered on every record except subfile records (`SFL`).
+- Records: **Return Cursor Location** manages `RTNCSRLOC`, which returns where the cursor is to the program. It lists the keyword's two formats, each with a ✏️ button to set or change it and a 🗑️ button to remove it: the record and field the cursor is on (`RTNCSRLOC(&record &field [&position])`), and its row and column (`RTNCSRLOC(*WINDOW|*MOUSE &row &column [&row2 [&column2]])`). A record can have both. Offered on every record except subfile records (`SFL`).
+  - It asks for the name of each parameter's hidden field, and keeps those fields in step with the keyword. Missing ones are created with the definition the DDS reference requires: `10A H` for the record and field, `4S 0 H` for the position, `3S 0 H` for rows and columns. Renaming a parameter renames its field too, so changing `&WSNOMCAM` to `&CSRFLD` changes both the keyword and the field's definition. Fields the keyword no longer uses can be deleted; it asks first, since the program may still use them.
+  - A name already used by another parameter, or by a field of the record defined differently (for example `5A B` where `10A H` is needed), is rejected.
+  - A keyword that doesn't fit in positions 45-80 is continued on the next line.
+  - On a subfile control record (`SFLCTL`), the same menu also manages `SFLCSRRRN(&field)`, which returns the relative record number of the subfile record the cursor is on, in a `5S 0 H` field, kept in step the same way.
+  - New hidden fields are added after the hidden fields that follow the record's keywords, so they stay together, as they usually are in the source.
+- Subfiles: **Subfile Record Number** manages `SFLRCDNBR` on a field of a subfile control record (`SFLCTL`), which says which record's page is shown: with no options, `CURSOR` (the cursor goes on that record), `*TOP` (that record is shown first on the page) or both. It asks for the field: a name no field has yet creates it as a hidden `4S 0` field, with the keyword on its own line (`NBR01W 4S 0H SFLRCDNBR(CURSOR)`), and an existing field must be signed numeric, up to 4 digits, with no decimals, and used as output, both or hidden. On a record that already has it, it changes the options, moves it to another field (or renames its field, when given a name no field has), or removes it; a hidden field left without it can then be deleted.
+- Subfiles: **Subfile End** manages `SFLEND` on a subfile control record (`SFLCTL`): what shows that there are more records (`*PLUS`, `*MORE`, or `*SCRBAR` with what displays without graphics show instead) and its indicators. It can also be removed. `SFLEND` needs an indicator (STRSDA says `Condition indicator is not specified with keyword SFLEND` without one), so it isn't added without one, and changing its indicators never leaves it with none: its only condition has no 🗑️ button, there's no **Remove all**, and emptying that condition is refused. To take its indicators off, remove the keyword.
+
+### Changed
+- Attributes and Colors: on a single field or constant, **Attributes** and **Colors** now open one window listing every attribute or color with a checkbox, like the one used for several selected elements. The ones the element already has are checked and show the indicators that condition them. Check or uncheck them and press `Enter` to add or remove them, all at once.
+  - Each row has a ✏️ button to set its indicators. On an attribute or color the element doesn't have yet, it asks for the indicators first and adds it with them, with the same menu as **Indicators**: up to nine indicators per condition. Before, adding one asked for up to three indicators, one by one.
+  - Each row the element has also has a 🗑️ button to remove it, and the 🗑️ button in the title bar removes them all.
+  - After ✏️ or 🗑️, the window opens again, up to date, keeping the checkboxes not applied yet. `Escape` closes it.
+- Keywords continued on the next line (with `-`) are now cut after a blank where possible, instead of in the middle of a name.
+
+### Fixed
+- Replacing a keyword with a longer one that needs more continuation lines than it had wrote the extra lines over the lines that followed it. They are now inserted below it.
+
+## [1.13.1] - 2026-10-18
+### Changed
+- Screen Preview: what is selected (for example `3 fields/constants selected`, or a field's name, length and position) now shows to the right of the **Indicators** toggle, on the same row, instead of on the button row. The buttons no longer move to a row of their own when something is selected, so selecting or deselecting no longer moves the screen up or down. A long text is cut short with `…`; hovering it shows it whole.
+
+### Fixed
+- Screen Preview: right-clicking an element of a multi-selection opened **⋮ Actions** for the whole group, but the selection was reduced to that one element as soon as the mouse button was released. The whole group now stays selected.
+- Screen Preview: with **⬚ Area** on, right-clicking an element of the selection replaced it with only that element, so **⋮ Actions** didn't offer **Align...**. Right-clicking no longer changes the selection, and **Align...** is offered for everything the rectangle selected.
+- Screen Preview: on macOS, `Ctrl`+click, used to add an element to the selection, could also open the **⋮ Actions** menu, since macOS treats it as a right-click. It now only changes the selection.
+
+## [1.13.0] - 2026-10-18
+### Added
+- Screen Preview: select fields and constants by dragging a rectangle over them. Turn on **⬚ Area** in the toolbar, then drag anywhere on the screen: every field and constant the rectangle touches is selected, without having to cover it whole. Hold `Ctrl`/`Cmd` while dragging to add them to the current selection, and press `Escape` while dragging to cancel and get back the previous one.
+  - Only the record being previewed is selected: dimmed overlays and elements that aren't visible are left out.
+  - While **⬚ Area** is on, clicking an element doesn't select or move it, and the resize handles don't show, so nothing is moved by accident. Right-clicking an element that is part of the selection still opens **⋮ Actions** for the whole selection.
+  - Turning it on clears the current selection. Turning it off keeps what the rectangle selected, ready to be moved, aligned or deleted.
+  - Inside a window the rectangle works too; the window is moved by dragging its border.
+- Screen Preview: see where the elements that aren't visible are. Turn on **◌ Hidden** in the toolbar to show, as a dotted outline with faded text, every field and constant that isn't on the screen right now: the ones conditioned on indicators that are off, and the ones with an active `DSPATR(ND)`. Hovering one says why it's hidden, for example `shown on 61 N62`, or `DSPATR(ND)`.
+  - Which ones are hidden follows the **Indicators** being simulated: turning on indicator 61 shows the elements conditioned on 61 normally, and hides the ones conditioned on `N61`.
+  - Where a hidden element shares its place with a visible one, as an alternate on `61` / `N61` usually does, only its outline is drawn, so the visible one stays readable.
+  - Elements hidden by their indicators can't be selected. One with `DSPATR(ND)` can still be clicked, as before.
+
+### Fixed
+- Screen Preview: clicking a field or constant brought back the Side Bar with the DSPF Structure view, even after hiding it with `Ctrl`/`Cmd`+`B` to work with the preview alone. The view is now left as it is. The clicked element is selected in it the next time it is shown.
+- Screen Preview: clicking the second or a later line of a field that spans several lines (`CNTFLD()`, or a field too long for its line) could move the field as soon as the mouse moved by one pixel, as if it had been dragged. It now stays where it is unless it's really dragged.
+
+## [1.12.0] - 2026-10-17
+### Added
+- Screen Preview: align several selected fields and constants. With more than one selected, the **⋮ Actions** menu has **Align...**, which then asks how to align them: **Left**, **Center** or **Right**. They line the elements up within the columns they already cover between them: left moves each one to the leftmost start column, right moves each one so it ends on the rightmost end column, and center centers each one between those two columns. Each element keeps its own row, and the whole change is a single undo step. Elements that share a row can't be aligned, since one would end up on top of the other; and a referenced field whose real length isn't known yet can only be aligned to the left.
+- Screen Preview: align a window on the screen, horizontally and vertically. The window's **⋮** menu has **Align...**, which asks for the direction, horizontally or vertically, and then where: left, center or right, or top, center or bottom. The one the window already has is marked "current". Only the window's position on that axis changes; its size and its position on the other axis stay as they are. A window is never placed on row 1 and column 1 at the same time, the same as when dragging it.
+
+### Fixed
+- Screen Preview: **center horizontally** on a window left it 2 columns to the right of center. It didn't count the border, which adds 2 columns on each side of the window's content: a 40-column window on an 80-column screen ended up with 20 columns free on its left and 16 on its right. It now leaves 18 on each side.
+
+## [1.11.0] - 2026-10-11
+### Added
+- Screen Preview: the user-defined edit codes, `EDTCDE(5)` to `EDTCDE(9)`, are now previewed. Their editing is not part of DDS: it lives on each IBM i, in the edit descriptions `QEDIT5` to `QEDIT9`. **Fetch from IBM i**, in the **Decimal Format** section of the Configuration panel, now reads them along with `QDECFMT`, and the message it shows says which codes were read. A field using one of them then shows as STRSDA shows it, for example `9,999.99CR` for a 6,2 field with the IBM-supplied `EDTCDE(5)`. These codes do not follow the decimal format setting, since each edit description has its own decimal point and separators. **Reset to Default** forgets them. Until they are fetched, a field with one of these codes previews with no editing, as before. Tested on IBM i 7.5.
+
+### Changed
+- Attributes and Colors: on a field or constant that already has some, **Attributes** and **Colors** now open a list of them, each with the indicators that condition it, instead of asking whether to add more, replace all or remove all. Each row has a button to change its indicators (✏️) and one to remove it (🗑️); **Add attributes...** / **Add colors...** adds more, and **Remove all** clears them.
+  - Changing the indicators of an attribute or color opens the same menu a field or constant has in **Indicators**: up to nine indicators per condition, and several conditions joined with OR. Before, an attribute or color could only get up to three indicators, and no OR.
+  - Indicators condition a whole source line. So an attribute or color that shares its line with something else (the field's own line, another keyword, or a keyword with several attributes such as `DSPATR(UL HI)`) is first moved to a line of its own, keeping the condition it had.
+  - Removing one attribute of a keyword that holds several leaves the others in place.
+
+### Fixed
+- Indicators on an attribute of a field (from the attribute's node in the Schema Tree) always treated it as written on the field's own line, even when it was on a line of its own: it asked to move it, and left a line with only the old indicators behind. It now opens the indicators menu directly, with AND and OR conditions, as it already did for a constant's attributes.
+- Removing an attribute or color whose condition spans several lines (more than three indicators, or OR conditions) left those extra indicator lines in the source, where they would condition whatever came next. They are now removed with it.
+### Fixed
+- Screen Preview: an input-capable field (usage `I` or `B`) with `EDTCDE()` previewed with no editing at all: no thousands separators, no sign, no date separators and no currency symbol. STRSDA shows it edited, the same as an output field, and so does the preview now. A 13,2 `B` field with `EDTCDE(M)` shows `99999999999,99-` instead of `99999999999,99`, and a 6,2 `B` field shows `9.999,99-` with `EDTCDE(J)`, `9.999,99CR` with `EDTCDE(A)`, `-9.999,99` with `EDTCDE(N)`, `$9.999,99-` with `EDTCDE(J $)` and `99-99-99` with `EDTCDE(Y)`. This undoes a change made in an earlier version, which had it the other way round.
+- Screen Preview: an input-capable field with decimals and `EDTCDE(Z)` showed a decimal point. `EDTCDE(Z)` never shows one: a 6,2 `B` field now previews as `999999`, as in STRSDA.
+
+## [1.10.0] - 2026-10-02
+### Added
+- Screen Preview: overlay several records at once ([#89](https://github.com/christianlarsen/dspf-edit/discussions/89)). The **Overlay** dropdown is now a list of checkboxes, with a filter box when the file has more than 8 records, so you can show, for example, a header, a footer and a "no records" format behind the record being previewed. Overlays are drawn dimmed behind it, in source order, each over the ones before it.
+- Screen Preview: checked overlays stay checked when switching to another record of the same file, and are cleared when previewing another file.
+- Screen Preview: a subfile's other half (the detail record while previewing its `SFLCTL`, and the other way round) now appears checked in the Overlay list instead of being shown with no way to turn it off. Checking a subfile record as an overlay also brings its other half. Both halves always go together; to see one without the other, turn off the new setting below.
+- Screen Preview: the record named in `WINDOW(record-name)` is always shown, checked and locked in the Overlay list, since the window is built from it (its title, footer text...). That applies to the record being previewed and to its overlays.
+- Configuration panel: new **Preview Overlay** section with two settings, both on by default:
+  - **Show a subfile's detail and control records together**: turn it off to preview a subfile record without its other half, and check it yourself when you want it.
+  - **Keep checked overlays when switching to another record**: turn it off to start each record with only its subfile pair and window owner.
+
+- Column ruler ([#94](https://github.com/christianlarsen/dspf-edit/issues/94)): while editing DDS source, shows the format line `.....AAN01N02N03T.Name++++++RLen++TDpBLinPosFunctions+++…` above the line the cursor is on, and outlines each column area of that line, highlighting the one the cursor is in. Hovering an area shows its name and positions. It helps spot values typed into the wrong columns, like a usage `O` that ended up in the decimal positions. Works like the fixed-format RPG ruler of vscode-rpgle. Off by default: turn it on with `Shift+F4`, from the new **Source Editor** section of the Configuration panel, or with **Show/Hide Column Ruler** in the Command Palette.
+- Screen Preview: when the previewed record, or one of its overlays, has referenced fields still waiting to be resolved, a warning icon (⚠) shows in front of the screen size. Hovering it says how many are pending. Until they are resolved their size, and the position of anything placed after them with `+n`, is not final.
+- The extension now starts when a DDS display file is opened, instead of waiting for the DSPF Structure view to be opened, so the column ruler is there from the start.
+
+### Changed
+- Screen Preview: double-clicking a dimmed overlay to switch to it now picks the record whose field or constant is under the pointer. On an empty spot where several overlays overlap, the one drawn on top wins, instead of the first one in the file.
+- Screen Preview: a referenced field that has been resolved now shows in its normal color, as STRSDA shows it. The referenced field marker color (orange by default) is only used for fields still waiting to be resolved. Before, a resolved field with no `COLOR()` or `DSPATR()` of its own kept the marker color.
+
+### Fixed
+- A field or constant positioned with `+n` right after a referenced field ([#97](https://github.com/christianlarsen/dspf-edit/issues/97)) was placed as if the referenced field were 0 long, on top of it or right next to it, even after resolving it. It now counts from the end of the referenced field, using its real length once resolved. The Schema Tree and the Screen Preview are updated as soon as the field is resolved. While it is still pending, the 1-character marker shown in the preview is counted.
+- Screen Preview: the function-key legend only showed keys coded with a response indicator and a text, such as `CF03(03 'Exit')` or `HELP(01 'Help')`. Keys coded as `CF03`, `CF03(03)`, `HELP` or `HELP(83)`, which are just as valid, were missing, so a file using only those showed no legend at all ([#97](https://github.com/christianlarsen/dspf-edit/issues/97)). All three forms now show. `ROLLUP` and `ROLLDOWN`, the older names of `PAGEDOWN` and `PAGEUP`, show as **Page Down** and **Page Up** too.
+
+## [1.9.0] - 2026-09-28
+### Added
+- File-level `REF` keyword support ([#91](https://github.com/christianlarsen/dspf-edit/issues/91)):
+  - New **Reference File** option on the file node of the Schema Tree adds, changes or removes the file's `REF`. It asks for the library (optional, `*LIBL` or `*CURLIB` allowed), the file and the record format (optional), and writes the keyword right after `DSPSIZ`, where STRSDA puts it. Changing or removing it makes the document's referenced fields pending again, so they are resolved against the new file.
+  - Hovering a referenced field in the Schema Tree shows where its definition comes from: the file in its own `REFFLD()`, the file-level `REF`, or a field earlier in the same source.
+- Add Field: referenced fields now have their own entries in the first field kind list, instead of being under "More options...":
+  - **Referenced from REF file** (only when the file has a `REF`) asks only for the referenced field's name. With the same name as the new field, only the `R` in position 29 is written, with no `REFFLD()`, as DDS allows. With a different name, `REFFLD(name)` is written with no file.
+  - **Referenced from another file** asks for library, file, field and record format, as before.
+  - **Referenced from this source** lists the fields of the record and of the records before it to pick from, and writes `REFFLD(field *SRC)`, qualified with the record format when the field is in another record.
+- Add Field: hidden fields now have their own entries in the first field kind list, **Alphanumeric — Hidden** and **Numeric — Hidden**, instead of being under "More options...". They ask only for the length (or digits and decimals) and no position, and are written the way STRSDA writes them, e.g. `10A  H` and `4S 0H`.
+- Resolving referenced fields: a field referencing another field of the same source is now resolved locally, without an IBM i connection. That's `REFFLD(field *SRC)`, and also `REFFLD(field)` with no file when the file has no `REF`, which DDS treats as `*SRC`. As DDS requires, the referenced field must come before the referencing one. If it is itself a referenced field, it must be resolved first; Resolve All handles them in source order.
+- Resolving referenced fields: a referenced field's own length, decimal positions or data type now override the referenced field's, as DDS defines. A value such as `12` replaces it, `+4` or `-2` increases or decreases it, and changing the data type to character drops the decimal positions. These are applied on top of the resolved definition, so changing them in the source doesn't require resolving the field again.
+
+### Fixed
+- Resolving referenced fields: a `REF` naming a record format, e.g. `REF(LIB/FILE1 RECORD2)`, was not recognized, so fields relying on it could not be resolved.
+- Referenced fields with a relative length, e.g. `+7` or `-2` in positions 30-34, were read as a length of 7 or -2.
+- Add Field: a fully qualified `REFFLD(format/field library/file)` too long for positions 45-80 was written past position 80. The file now goes on a continuation line.
+- Add Field, "More options...": pressing Esc when asked for the length didn't cancel. The field was added anyway with a length of 10.
+- Add Field, "More options...": a message field (usage `M`) could be given any data type. DDS only allows character, so now only its length is asked, and the `M` usage isn't offered in a subfile record, where DDS doesn't allow it.
+- Add Field, "More options...": a program-to-system field (usage `P`) offered date, time and timestamp types, which DDS doesn't allow for it.
+- Add Field and Edit Field: a numeric field could be given up to 999 digits. The DDS maximum is 63.
+- Schema Tree: hidden (`H`), message (`M`) and program-to-system (`P`) fields offered options that don't apply to a field that is never displayed: Center, Change Position, Colors, Attributes, validity checks, editing keywords and error messages. They are no longer offered for these fields. DDS only allows `ALIAS`, `INDTXT`, `OVRDTA`, `REFFLD` and `TEXT` on message and program-to-system fields, and a hidden field has no position and is neither input- nor output-capable.
+- Resolving referenced fields: a `REF` coded at record level was used for the fields of that record. DDS only allows `REF` at file level, so it is now ignored there, as the compiler would reject it.
+
 ## [1.8.2] - 2026-09-26
 ### Fixed
 - Resolving referenced fields on IBM i ([#90](https://github.com/christianlarsen/dspf-edit/issues/90)): a field's `REFFLD()` was only read when coded on the field's own definition line. If it was on a separate line below, the reference fell back to the field's own name and could not be found. `REFFLD()` is now read wherever it appears among the field's keywords.

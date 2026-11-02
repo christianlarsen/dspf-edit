@@ -6,7 +6,8 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { findElementInsertionPoint, checkForEditorAndDocument, applyWorkspaceEdit, removeKeywordTextFromLines } from '../dspf-edit.utils/dspf-edit.helper';
+import { findElementInsertionPoint, checkForEditorAndDocument, applyWorkspaceEdit, formatIndicatorCondition } from '../dspf-edit.utils/dspf-edit.helper';
+import { KeywordValue, KeywordValueSpec, manageKeywordValues, removeWholeKeyword } from './dspf-edit.conditioned-keywords';
 import { fieldsPerRecords, DdsIndicator } from '../dspf-edit.model/dspf-edit.model';
 
 // INTERFACES AND TYPES
@@ -17,6 +18,8 @@ interface ColorWithIndicators {
     lineIndex?: number;
     lastLineIndex?: number;
     isInlineColor?: boolean;
+    /** The color's whole indicator condition spelled out, OR'd groups included. */
+    conditionText?: string;
 };
 
 // COMMAND REGISTRATION
@@ -55,72 +58,49 @@ async function handleAddColorCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        // Get current colors from the element (both inline and separate lines)
-        const currentColors = getCurrentColorsForElement(node.ddsElement);
-        
-        // Get available colors (excluding current ones)
-        let availableColors = getAvailableColors(currentColors.map(c => c.color));
-
-        // Show current colors if any exist
-        if (currentColors.length > 0) {
-            const currentColorsList = currentColors.map(c => 
-                `${c.color}${c.indicators.length > 0 ? `(${c.indicators.join(',')})` : ''}`
-            ).join(', ');
-            
-            const action = await vscode.window.showQuickPick(
-                ['Add more colors', 'Replace all colors', 'Remove all colors'],
-                {
-                    title: `Current colors: ${currentColorsList}`,
-                    placeHolder: 'Choose how to manage colors',
-                    ignoreFocusOut: true
-                }
-            );
-
-            if (!action) return;
-
-            if (action === 'Remove all colors') {
-                await removeColorsFromElement(editor, node.ddsElement);
-                return;
-            };
-
-            if (action === 'Replace all colors') {
-                if (!(await removeColorsFromElement(editor, node.ddsElement))) {
-                    return;
-                };
-                // Continue to add new colors
-                availableColors = getAvailableColors([]);
-            };
-            // If "Add more colors", continue with current logic
-        };
-
-        // Collect new colors to add
-        const selectedColors = await collectColorsWithIndicatorsFromUser(availableColors);
-        
-        if (selectedColors.length === 0) {
-            vscode.window.showInformationMessage('No colors selected.');
-            return;
-        };
-
-        // Apply the selected colors to the element
-        if (!(await addColorsToElement(editor, node.ddsElement, selectedColors))) {
-            return;
-        };
-        await vscode.commands.executeCommand('cursorRight');
-        await vscode.commands.executeCommand('cursorLeft');
-        
-        
-        const colorsSummary = selectedColors.map(c => 
-            `${c.color}${c.indicators.length > 0 ? `(${c.indicators.join(',')})` : ''}`
-        ).join(', ');
-        
-        vscode.window.showInformationMessage(
-            `Added colors ${colorsSummary} to ${node.ddsElement.name}.`
-        );
+        // One window for everything: check/uncheck colors, set each one's indicators, remove them
+        // (see dspf-edit.conditioned-keywords.ts). An element can well have several colors, each
+        // one applying under its own indicators.
+        await manageKeywordValues(editor, node.ddsElement, COLOR_SPEC);
 
     } catch (error) {
         console.error('Error managing colors:', error);
         vscode.window.showErrorMessage('An error occurred while managing colors.');
     };
+};
+
+// COLORS WINDOW
+
+const COLOR_NAMES: Record<string, string> = {
+    BLU: 'Blue',
+    GRN: 'Green',
+    PNK: 'Pink',
+    RED: 'Red',
+    TRQ: 'Turquoise',
+    WHT: 'White',
+    YLW: 'Yellow'
+};
+
+/** An existing color, as the shared window and its edits take it. */
+function toKeywordValue(color: ColorWithIndicators): KeywordValue {
+    return {
+        code: color.color,
+        keywordText: `COLOR(${color.color})`,
+        lineIndex: color.lineIndex!,
+        lastLineIndex: color.lastLineIndex ?? color.lineIndex!,
+        conditionText: color.conditionText ?? ''
+    };
+};
+
+const COLOR_SPEC: KeywordValueSpec = {
+    keyword: 'COLOR',
+    codes: Object.keys(COLOR_NAMES),
+    noun: 'color',
+    nounPlural: 'colors',
+    describe: code => COLOR_NAMES[code] ? `${code} — ${COLOR_NAMES[code]}` : code,
+    read: element => getCurrentColorsForElement(element).map(toKeywordValue),
+    add: (editor, element, codes) => addColorsToElement(editor, element, codes.map(color => ({ color, indicators: [] }))),
+    removeAll: removeColorsFromElement
 };
 
 // COLOR EXTRACTION FUNCTIONS
@@ -154,7 +134,8 @@ function getCurrentColorsForElement(element: any): ColorWithIndicators[] {
                 indicators: (attr.indicators || []).map(formatIndicatorForDisplay),
                 lineIndex: attr.lineIndex,
                 lastLineIndex: attr.lastLineIndex ?? attr.lineIndex,
-                isInlineColor: attr.lineIndex === element.lineIndex
+                isInlineColor: attr.lineIndex === element.lineIndex,
+                conditionText: formatIndicatorCondition(attr.indicators)
             });
         };
         return colors;
@@ -169,88 +150,6 @@ function getCurrentColorsForElement(element: any): ColorWithIndicators[] {
 function getAvailableColors(currentColors: string[]): string[] {
     const allColors: string[] = ['BLU', 'GRN', 'PNK', 'RED', 'TRQ', 'WHT', 'YLW'];
     return allColors.filter(color => !currentColors.includes(color));
-};
-
-// USER INTERACTION FUNCTIONS
-
-/**
- * Collects colors with indicators from user through interactive selection.
- * @param availableColors - Array of colors available for selection
- * @returns Array of selected colors with indicators
- */
-async function collectColorsWithIndicatorsFromUser(availableColors: string[]): Promise<ColorWithIndicators[]> {
-    const selectedColors: ColorWithIndicators[] = [];
-    let remainingColors = [...availableColors];
-
-    while (remainingColors.length > 0) {
-        const selectedColor = await vscode.window.showQuickPick(
-            remainingColors,
-            {
-                title: `Add Color (${selectedColors.length} selected) - Press ESC to finish`,
-                placeHolder: 'Select color from list',
-                ignoreFocusOut: true
-            }
-        );
-
-        if (!selectedColor) break;
-
-        // Collect indicators for this color
-        const indicators = await collectIndicatorsForColor(selectedColor);
-        
-        selectedColors.push({
-            color: selectedColor,
-            indicators: indicators
-        });
-        
-        remainingColors = remainingColors.filter(c => c !== selectedColor);
-    };
-
-    return selectedColors;
-};
-
-/**
- * Collects conditioning indicators for a specific color.
- * @param color - The color code (e.g., 'BLU', 'RED')
- * @returns Array of indicator codes (max 3)
- */
-async function collectIndicatorsForColor(color: string): Promise<string[]> {
-    const indicators: string[] = [];
-    
-    while (indicators.length < 3) {
-        const indicatorInput = await vscode.window.showInputBox({
-            title: `Indicators for COLOR(${color}) - ${indicators.length}/3 added`,
-            prompt: `Enter indicator ${indicators.length + 1} (e.g., '50', 'N50', or leave empty to finish)`,
-            placeHolder: 'Indicator (1-99, optional N prefix)',
-            ignoreFocusOut: true,
-            validateInput: (value: string) => {
-                if (!value.trim()) return null; // Empty is OK to finish
-                if (!/^N?[0-9]{1,2}$/.test(value.trim())) {
-                    return 'Invalid indicator format. Use format like: 50, N50, 5, N99';
-                }
-                const num = parseInt(value.replace('N', ''));
-                if (num < 1 || num > 99) {
-                    return 'Indicator number must be between 1 and 99';
-                }
-                return null;
-            }
-        });
-
-        if (indicatorInput === undefined) {
-            // User cancelled
-            return [];
-        };
-
-        const trimmedInput = indicatorInput.trim();
-        if (!trimmedInput) {
-            // User finished entering indicators
-            break;
-        };
-
-        // Validate and add indicator
-        indicators.push(trimmedInput.toUpperCase());
-    };
-
-    return indicators;
 };
 
 // DDS MODIFICATION FUNCTIONS
@@ -476,13 +375,7 @@ async function removeColorsFromElement(editor: vscode.TextEditor, element: any):
     // when its turn comes, regardless of whether it's inline on the element's own definition line
     // or on a separate line below it.
     for (const color of [...currentColors].sort((a, b) => b.lineIndex! - a.lineIndex!)) {
-        const lineIndex = color.lineIndex!;
-        const endLine = color.lastLineIndex ?? lineIndex;
-        // The element's own definition line (field or constant) must keep its columns 1-44 even if
-        // nothing else is left in its keyword area once this color is removed.
-        const preserveFirstLine = lineIndex === element.lineIndex;
-
-        if (!(await removeKeywordTextFromLines(editor, lineIndex, endLine, `COLOR(${color.color})`, preserveFirstLine))) {
+        if (!(await removeWholeKeyword(editor, element, toKeywordValue(color)))) {
             return false;
         };
     };

@@ -5,9 +5,10 @@
 */
 
 import * as vscode from 'vscode';
-import { DdsAttribute, DdsElement, DdsField, attributesFileLevel } from '../dspf-edit.model/dspf-edit.model';
+import { DdsAttribute, DdsElement, DdsField, RefOverrides, attributesFileLevel, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
 import { DecimalFormat } from '../dspf-edit.utils/dspf-edit.decimal-format';
 import { DateSeparatorFormat } from '../dspf-edit.utils/dspf-edit.date-format';
+import { USER_EDIT_CODES, UserEditDescription, UserEditDescriptions } from '../dspf-edit.utils/dspf-edit.user-edit-codes';
 
 /**
  * Isolated from the rest of the extension on purpose: this is the only file that knows about the
@@ -24,6 +25,8 @@ const CODE_FOR_IBMI_EXTENSION_ID = 'halcyontechltd.code-for-ibmi';
 /** The slice of Code for i's `IBMi` connection this module actually calls. */
 interface MinimalIBMiConnection {
     runSQL(statements: string | string[], options?: { bindings?: (string | number | null)[] }): Promise<Record<string, string | number | null>[]>;
+    /** Runs a command in the connection's PASE shell. */
+    sendCommand?(options: { command: string }): Promise<{ code: number | null; stdout: string; stderr: string }>;
     /** The connection's own settings — only its library list is read here. */
     getConfig?(): { currentLibrary?: string; libraryList?: string[] } | undefined;
 };
@@ -51,26 +54,39 @@ export function getIBMiConnection(): MinimalIBMiConnection | undefined {
     return codeForIBMi?.exports?.instance?.getConnection();
 };
 
-/**
- * Extracts the file (and optional library) named by a REF() keyword — used as a fallback when a
- * referenced field's own REFFLD() doesn't name a file (or there's no REFFLD at all), so the file
- * comes from the record- or file-level REF() instead.
- * @param attributes - The record's or file's own DDS attributes
- */
-function findRefKeyword(attributes: DdsAttribute[] | undefined): { file: string; library?: string } | undefined {
-    const attr = attributes?.find(a => a.value.toUpperCase().startsWith('REF('));
-    if (!attr) {
-        return undefined;
-    };
+/** The file (and optional library and record format) named by a REF() keyword. */
+export interface RefKeywordTarget {
+    file: string;
+    library?: string;
+    recordFormat?: string;
+};
 
-    const match = attr.value.match(/^REF\(\s*(\S+)\s*\)$/i);
+/**
+ * Parses a REF() keyword's value, per the DDS reference: REF([library-name/]database-file-name
+ * [record-format-name]). The record format is optional and only says which of the file's formats
+ * to take field definitions from.
+ * @param value - The keyword as coded, e.g. "REF(*LIBL/HTPFREF)" or "REF(LIB/FILE1 RECORD2)"
+ */
+export function parseRefKeyword(value: string): RefKeywordTarget | undefined {
+    const match = value.trim().match(/^REF\(\s*(\S+?)(?:\s+(\S+?))?\s*\)$/i);
     if (!match) {
         return undefined;
     };
 
-    const qualifiedFile = match[1];
+    const [, qualifiedFile, recordFormat] = match;
     const [library, file] = qualifiedFile.includes('/') ? qualifiedFile.split('/') : [undefined, qualifiedFile];
-    return { file, library };
+    return { file, library, recordFormat };
+};
+
+/**
+ * Extracts the file (and optional library) named by a REF() keyword — used as a fallback when a
+ * referenced field's own REFFLD() doesn't name a file (or there's no REFFLD at all), so the file
+ * comes from the file-level REF() instead. REF() is a file-level keyword only, per the DDS reference.
+ * @param attributes - The file's own DDS attributes
+ */
+function findRefKeyword(attributes: DdsAttribute[] | undefined): RefKeywordTarget | undefined {
+    const attr = attributes?.find(a => a.value.trim().toUpperCase().startsWith('REF('));
+    return attr ? parseRefKeyword(attr.value) : undefined;
 };
 
 /**
@@ -153,9 +169,38 @@ function fieldCacheKey(recordName: string, fieldName: string): string {
     return `${recordName}.${fieldName}`;
 };
 
-/** Gets a previously-resolved referenced field's info, if any, for the given document. */
-export function getResolvedRef(documentUri: string, recordName: string, fieldName: string): ResolvedRefInfo | undefined {
-    return resolvedRefCache.get(documentUri)?.get(fieldCacheKey(recordName, fieldName));
+/** Data types (position 35) that make a field character: decimal positions aren't copied then. */
+const CHARACTER_TYPES = new Set(['A', 'X', 'M', 'W']);
+
+/**
+ * Applies a referenced field's own overrides to the referenced field's definition, per the DDS
+ * reference: a new length/decimals value replaces it, +n/-n changes it, a data type in position 35
+ * replaces it — and overriding it to a character type drops the decimal positions.
+ * @param base - The referenced field's definition, as resolved
+ * @param overrides - The referencing field's overrides, if any
+ */
+export function applyRefOverrides(base: ResolvedRefInfo, overrides: RefOverrides | undefined): ResolvedRefInfo {
+    if (!overrides) {
+        return base;
+    };
+
+    const type = overrides.type ?? base.type;
+    const length = overrides.length ?? base.length + (overrides.lengthDelta ?? 0);
+    const decimals = overrides.decimals
+        ?? (overrides.decimalsDelta !== undefined ? base.decimals + overrides.decimalsDelta
+            : overrides.type && CHARACTER_TYPES.has(overrides.type.toUpperCase()) ? 0 : base.decimals);
+    return { type, length, decimals };
+};
+
+/**
+ * Gets a previously-resolved referenced field's info, if any, for the given document — with the
+ * field's own overrides applied when given. The cache holds the referenced field's definition as
+ * resolved, so editing an override in the source never needs resolving again.
+ * @param overrides - The referencing field's overrides (length/decimals/type), if any
+ */
+export function getResolvedRef(documentUri: string, recordName: string, fieldName: string, overrides?: RefOverrides): ResolvedRefInfo | undefined {
+    const base = resolvedRefCache.get(documentUri)?.get(fieldCacheKey(recordName, fieldName));
+    return base ? applyRefOverrides(base, overrides) : undefined;
 };
 
 function setResolvedRef(documentUri: string, recordName: string, fieldName: string, info: ResolvedRefInfo): void {
@@ -195,21 +240,24 @@ export function getPendingReferencedFields(documentUri: string, elements: DdsEle
  * determined, field not found) rather than returning a sentinel — callers show it to the user.
  * @param documentUri - The DDS document's URI (as a string), used as the cache key
  * @param field - The referenced field to resolve
- * @param recordAttributes - The field's own record's attributes, for a record-level REF() fallback
  */
-export async function resolveReferencedField(documentUri: string, field: DdsField, recordAttributes: DdsAttribute[] | undefined): Promise<ResolvedRefInfo> {
-    const connection = getIBMiConnection();
-    if (!connection) {
-        throw new Error('No active IBM i connection. Connect via the Code for i extension first.');
-    };
-
+export async function resolveReferencedField(documentUri: string, field: DdsField): Promise<ResolvedRefInfo> {
     const target = field.refTarget ?? { fieldName: field.name };
     const fileRef = target.file
         ? { file: target.file, library: target.library }
-        : findRefKeyword(recordAttributes) ?? findRefKeyword(attributesFileLevel);
+        : findRefKeyword(attributesFileLevel);
 
-    if (!fileRef?.file) {
-        throw new Error(`Could not determine the referenced database file for field '${field.name}' (no file named in REFFLD() and no REF() keyword found).`);
+    // REFFLD(field *SRC) — or no file in REFFLD() and no REF() either, where *SRC is DDS's own
+    // default — references a field earlier in this same source: no IBM i connection needed.
+    if (!fileRef || fileRef.file.toUpperCase() === '*SRC') {
+        const resolved = resolveFromSource(documentUri, field, target.fieldName, target.recordFormat);
+        setResolvedRef(documentUri, field.recordname, field.name, resolved);
+        return resolved;
+    };
+
+    const connection = getIBMiConnection();
+    if (!connection) {
+        throw new Error('No active IBM i connection. Connect via the Code for i extension first.');
     };
 
     // REFFLD()/REF() names are always DDS-style short "system" names (max 10 chars) — for a native
@@ -241,6 +289,49 @@ export async function resolveReferencedField(documentUri: string, field: DdsFiel
     const resolved = mapSqlTypeToDds(String(row.DATA_TYPE), Number(row.LENGTH), Number(row.NUMERIC_SCALE ?? 0));
     setResolvedRef(documentUri, field.recordname, field.name, resolved);
     return resolved;
+};
+
+/**
+ * Resolves a referenced field against a field defined earlier in the same DDS source (*SRC), per
+ * the DDS reference: the referenced field must precede the referencing one. Looks in the given
+ * record format when REFFLD() names one; otherwise in the field's own record first, then in the
+ * records before it — the nearest preceding definition wins.
+ * @param documentUri - The DDS document's URI (as a string), for a referenced field's own resolution
+ * @param field - The referencing field
+ * @param fieldName - The referenced field's name
+ * @param recordFormat - The record format REFFLD() qualified the name with, if any
+ */
+function resolveFromSource(documentUri: string, field: DdsField, fieldName: string, recordFormat: string | undefined): ResolvedRefInfo {
+    const name = fieldName.toUpperCase();
+    const candidates = fieldsPerRecords
+        .filter(record => recordFormat ? record.record.toUpperCase() === recordFormat.toUpperCase() : true)
+        .flatMap(record => record.fields
+            .filter(f => f.name.toUpperCase() === name && f.lineIndex < field.lineIndex)
+            .map(f => ({ record: record.record, info: f })))
+        .sort((a, b) => {
+            const sameRecord = Number(b.record === field.recordname) - Number(a.record === field.recordname);
+            return sameRecord !== 0 ? sameRecord : b.info.lineIndex - a.info.lineIndex;
+        });
+
+    const source = candidates[0];
+    if (!source) {
+        const where = recordFormat ? `record ${recordFormat}` : 'this source';
+        throw new Error(`Field '${fieldName}' referenced by '${field.name}' not found before it in ${where} (no file in REFFLD() and no REF() keyword, so it's looked up in this same source).`);
+    };
+
+    if (source.info.referenced) {
+        // Itself a referenced field: its own definition is whatever it was resolved to.
+        const resolved = getResolvedRef(documentUri, source.record, source.info.name, source.info.refOverrides);
+        if (!resolved) {
+            throw new Error(`Field '${fieldName}' referenced by '${field.name}' is itself a referenced field not resolved yet. Resolve it first.`);
+        };
+        return resolved;
+    };
+
+    // A blank data type is zoned decimal when decimal positions are given, character otherwise.
+    const ownType = (source.info.type ?? '').trim();
+    const type = ownType || (source.info.decimals !== undefined ? 'S' : 'A');
+    return { type, length: source.info.length, decimals: source.info.decimals ?? 0 };
 };
 
 /**
@@ -308,4 +399,75 @@ export async function resolveDateSeparatorFormatFromSystem(): Promise<DateSepara
         throw new Error(`Unrecognized QDATSEP value '${raw}' on the connected IBM i.`);
     };
     return mapped;
+};
+
+/** Width of the keyword column in DSPEDTD's listing: the value starts this far after the keyword does. */
+const EDTD_LISTING_KEYWORD_WIDTH = 12;
+
+/**
+ * Parses the listing DSPEDTD prints for one edit description. Each line reads
+ * "label . . . :   KEYWORD     value" — e.g. "Integer mask . . . :   INTMASK     '   ,   ,  0'" —
+ * where the label is in the system's own language but the keyword is always the CRTEDTD parameter
+ * name, so values are picked by keyword. A value comes quoted when it's a character string (a mask,
+ * the status characters, the constants) and bare otherwise (the edit code, the decimal point).
+ * Returns undefined when the listing isn't for the edit code asked for.
+ * @param listing - DSPEDTD's printed output
+ * @param code - The edit code the listing should describe ('5'-'9')
+ */
+export function parseEditDescriptionListing(listing: string, code: string): UserEditDescription | undefined {
+    const values = new Map<string, string>();
+    for (const line of listing.split(/\r?\n/)) {
+        const match = line.match(/\s:\s+((EDTD|INTMASK|DECPNT|FRACMASK|CURSYM|NEGSTS|POSSTS|LFTCNS|RGTCNS)\b.*)$/);
+        if (!match || values.has(match[2])) {
+            continue;
+        };
+        const raw = match[1].slice(EDTD_LISTING_KEYWORD_WIDTH).replace(/\s+$/, '');
+        const quoted = raw.match(/^'(.*)'$/)?.[1];
+        values.set(match[2], quoted !== undefined ? quoted.replace(/''/g, "'") : raw.trim());
+    };
+
+    if (values.get('EDTD') !== code) {
+        return undefined;
+    };
+
+    const mask = (keyword: string) => {
+        const value = values.get(keyword);
+        return value === undefined || value.trim().toUpperCase() === '*NONE' ? null : value;
+    };
+    return {
+        integerMask: mask('INTMASK'),
+        decimalPoint: values.get('DECPNT') ?? '',
+        fractionMask: mask('FRACMASK'),
+        currencySymbol: values.get('CURSYM') ?? '',
+        negativeStatus: values.get('NEGSTS') ?? '',
+        positiveStatus: values.get('POSSTS') ?? '',
+        leftConstant: values.get('LFTCNS') ?? '',
+        rightConstant: values.get('RGTCNS') ?? ''
+    };
+};
+
+/**
+ * Reads the connected IBM i's user-defined edit descriptions (QEDIT5-QEDIT9, i.e. EDTCDE(5)-
+ * EDTCDE(9)) by running DSPEDTD for each one — there's no SQL service exposing them. A code whose
+ * edit description doesn't exist on the system, or whose listing can't be read, is just left out.
+ * Throws when there's no connection or it can't run commands — callers show it to the user.
+ */
+export async function resolveUserEditDescriptionsFromSystem(): Promise<UserEditDescriptions> {
+    const connection = getIBMiConnection();
+    if (!connection) {
+        throw new Error('No active IBM i connection. Connect via the Code for i extension first.');
+    };
+    if (!connection.sendCommand) {
+        throw new Error('The connected Code for i version cannot run the DSPEDTD command.');
+    };
+
+    const descriptions: UserEditDescriptions = {};
+    for (const code of USER_EDIT_CODES) {
+        const result = await connection.sendCommand({ command: `system "DSPEDTD EDTD(${code})"` });
+        const description = result.code === 0 ? parseEditDescriptionListing(result.stdout, code) : undefined;
+        if (description) {
+            descriptions[code] = description;
+        };
+    };
+    return descriptions;
 };
