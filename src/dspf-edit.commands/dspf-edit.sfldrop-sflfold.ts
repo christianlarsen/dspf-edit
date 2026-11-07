@@ -280,10 +280,10 @@ async function collectIndicators(commandType: string, keyNumber: string): Promis
             placeHolder: 'Indicator (1-99, optional N prefix)',
             validateInput: (value: string) => {
                 if (!value.trim()) return null;
-                if (!/^N?[0-9]{1,2}$/.test(value.trim())) {
+                if (!/^N?[0-9]{1,2}$/i.test(value.trim())) {
                     return 'Invalid indicator format. Use format like: 50, N50, 5, N99';
                 }
-                const num = parseInt(value.replace('N', ''));
+                const num = parseInt(value.trim().replace(/^N/i, ''), 10);
                 if (num < 1 || num > 99) {
                     return 'Indicator number must be between 1 and 99';
                 };

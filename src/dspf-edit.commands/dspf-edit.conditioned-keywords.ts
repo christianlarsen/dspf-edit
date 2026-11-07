@@ -405,13 +405,13 @@ async function giveValueLineOfItsOwn(editor: vscode.TextEditor, element: any, va
  * @param value - The value whose indicators to change
  */
 export async function changeKeywordValueIndicators(editor: vscode.TextEditor, element: any, value: KeywordValue): Promise<void> {
-    const lineIndex = await giveValueLineOfItsOwn(editor, element, value);
-    if (lineIndex === undefined) {
-        return;
-    };
-
-    await manageLineCondition(editor, { lineIndex }, valueKeywordText(value), value.requiresCondition);
-    // Moving the value to its own line is an edit too, even when the indicators were left alone.
+    // The value only gets a line of its own once there's a new condition to put on it, so
+    // dismissing the menus leaves the source as it was. Until then, its condition is read where it
+    // is now: none on the element's own line (those indicators condition the element).
+    await manageLineCondition(editor, { lineIndex: value.lineIndex }, valueKeywordText(value), value.requiresCondition, {
+        unconditioned: value.lineIndex === element.lineIndex,
+        prepare: () => giveValueLineOfItsOwn(editor, element, value)
+    });
     await vscode.commands.executeCommand('cursorRight');
     await vscode.commands.executeCommand('cursorLeft');
 };

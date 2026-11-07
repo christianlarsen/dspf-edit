@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { DdsNode } from './../dspf-edit.providers/dspf-edit.providers';
 import { getRecordSize, fieldsPerRecords, DdsSize, getDefaultSize, getAvailableDisplayFormats } from '../dspf-edit.model/dspf-edit.model';
-import { resolveRecordSizeForFormat } from '../dspf-edit.parser/dspf-edit.parser';
+import { resolveRecordSizeForFormat, parseWindowDefinition } from '../dspf-edit.parser/dspf-edit.parser';
 import { checkForEditorAndDocument, applyWorkspaceEdit, pickDisplayFormat, writeDisplayFormatCondition } from '../dspf-edit.utils/dspf-edit.helper';
 
 // TYPE DEFINITIONS
@@ -267,15 +267,10 @@ function getRecordInformation(recordName: string, format?: string): RecordInform
 
         if (windowAttribute) {
             // Extract WINDOW size directly from attribute
-            const windowMatch = windowAttribute.value.match(
-                /WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)(?:\s+[^)]*)?\s*\)/i
-            );
+            const definition = parseWindowDefinition(windowAttribute.value);
 
-            if (windowMatch) {
-                const startRow = parseInt(windowMatch[1], 10);
-                const startCol = parseInt(windowMatch[2], 10);
-                const rows = parseInt(windowMatch[3], 10);
-                const cols = parseInt(windowMatch[4], 10);
+            if (definition) {
+                const { startRow, startCol, numRows: rows, numCols: cols } = definition;
 
                 effectiveSize = {
                     rows,

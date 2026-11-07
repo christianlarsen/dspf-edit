@@ -10,6 +10,9 @@ import { recordExists, DspsizConfig,
     checkIfDspsizNeeded, collectDspsizConfiguration, generateDspsizLines,
     checkForEditorAndDocument, applyWorkspaceEdit, writeDisplayFormatCondition} from '../dspf-edit.utils/dspf-edit.helper';
 import { fileSizeAttributes, getAvailableDisplayFormats } from '../dspf-edit.model/dspf-edit.model';
+import { RUNTIME_WINDOW_ORIGIN } from '../dspf-edit.parser/dspf-edit.parser';
+import { WindowPositionFields, collectWindowPositionFields, windowPositionFieldLines } from './dspf-edit.window-position-fields';
+import { getNewWindowMode, NEW_WINDOW_DEFAULT_SIZE, NEW_WINDOW_DEFAULT_START } from '../dspf-edit.utils/dspf-edit.new-window-settings';
 
 // INTERFACES AND TYPES
 
@@ -27,9 +30,11 @@ interface WindowSize {
 };
 
 /**
- * Window positioning options.
+ * Window positioning options: a fixed line and position, relative to the cursor (CURSOR,
+ * WINDOW(*DFT ...)), or at the line and position the program sets in two P fields (FIELDS,
+ * WINDOW(&LIN &POS ...)).
  */
-type WindowPosition = 'CENTERED' | 'BOTTOM_CENTERED' | 'TOP_LEFT';
+type WindowPosition = 'CENTERED' | 'BOTTOM_CENTERED' | 'TOP_LEFT' | 'CURSOR' | 'FIELDS';
 
 /**
  * Window/Subfile window dimensions configuration.
@@ -39,6 +44,10 @@ interface WindowDimensions {
     startCol: number;
     numRows: number;
     numCols: number;
+    /** Placed by the system relative to the cursor, WINDOW(*DFT ...); startRow/startCol are then where STRSDA draws it */
+    relativeToCursor?: boolean;
+    /** Placed where the program says, in these P fields, WINDOW(&LIN &POS ...); startRow/startCol as with relativeToCursor */
+    positionFields?: WindowPositionFields;
 };
 
 /**
@@ -171,7 +180,7 @@ async function collectRecordConfiguration(needsDspsiz: boolean): Promise<NewReco
     let subfileConfig: SubfileConfig | undefined | null;
 
     if (recordType === 'WINDOW' || recordType === 'SFLWDW') {
-        windowConfig = await collectWindowConfiguration();
+        windowConfig = await collectWindowConfiguration(recordType === 'SFLWDW' ? SUBFILE_CONTROL_FIELD_NAMES : []);
         if (!windowConfig) return null;
     };
 
@@ -286,7 +295,24 @@ async function collectRecordType(): Promise<RecordType | null> {
  * Collects complete window configuration including size and position.
  * @returns Window configuration or null if cancelled
  */
-async function collectWindowConfiguration(): Promise<WindowConfig | null> {
+async function collectWindowConfiguration(takenFieldNames: string[]): Promise<WindowConfig | null> {
+    // Set in Configuration to create windows without asking: the default size, at a fixed position
+    // or relative to the cursor, and no title, all changed afterwards (the mouse in the preview,
+    // Change Window Title). It fits on any display size, so one unconditioned WINDOW line does.
+    const mode = getNewWindowMode();
+    if (mode !== 'ask') {
+        return {
+            dimensionsByFormat: [{
+                dimensions: {
+                    startRow: NEW_WINDOW_DEFAULT_START.row,
+                    startCol: NEW_WINDOW_DEFAULT_START.col,
+                    ...NEW_WINDOW_DEFAULT_SIZE,
+                    ...(mode === 'cursor' ? { relativeToCursor: true } : {})
+                }
+            }]
+        };
+    };
+
     // First, collect window size
     const windowSize = await collectWindowSize();
     if (!windowSize) return null;
@@ -295,6 +321,13 @@ async function collectWindowConfiguration(): Promise<WindowConfig | null> {
     const position = await collectWindowPosition();
     if (!position) return null;
 
+    // At the line and position in P fields: which ones. The record is new, so none exist yet.
+    let positionFields: WindowPositionFields | undefined;
+    if (position === 'FIELDS') {
+        positionFields = await collectWindowPositionFields(undefined, undefined, takenFieldNames);
+        if (!positionFields) return null;
+    };
+
     // Calculate actual dimensions for every declared display size (DSPSIZ format); when the file
     // declares more than one, the window keeps the same rows/cols in each but gets its own
     // position, appropriate to that format's screen size.
@@ -302,6 +335,9 @@ async function collectWindowConfiguration(): Promise<WindowConfig | null> {
     if (!dimensionsByFormat) {
         vscode.window.showErrorMessage("Cannot position window with these dimensions on the current screen size(s).");
         return null;
+    };
+    if (positionFields) {
+        dimensionsByFormat.forEach(entry => entry.dimensions.positionFields = positionFields);
     };
 
     // Collect window title (width is the same across every format, since only position varies)
@@ -370,7 +406,17 @@ async function collectWindowPosition(): Promise<WindowPosition | null> {
         {
             label: "TOP_LEFT",
             description: "Position at top-left corner",
-            detail: "Window will be positioned at row 1, column 2 (STRSDA never allows row 1 and column 1 together)"
+            detail: "Window will be positioned at row 1, column 2"
+        },
+        {
+            label: "CURSOR",
+            description: "Relative to the cursor (*DFT)",
+            detail: "The system places the window near the cursor when it's shown, so it doesn't hide that part of the screen"
+        },
+        {
+            label: "FIELDS",
+            description: "At the line and position in fields (&LIN &POS)",
+            detail: "The program sets the window's line and position in two P fields, created in the record"
         }
     ];
 
@@ -406,6 +452,13 @@ function calculateWindowDimensions(size: WindowSize, position: WindowPosition, m
         case 'TOP_LEFT':
             startRow = 1;
             startCol = 2;
+            break;
+
+        case 'CURSOR':
+        case 'FIELDS':
+            // Placed at run time: checked where STRSDA (and the preview) draw it.
+            startRow = RUNTIME_WINDOW_ORIGIN.row;
+            startCol = RUNTIME_WINDOW_ORIGIN.col;
             break;
 
         case 'CENTERED':
@@ -445,7 +498,8 @@ function calculateWindowDimensions(size: WindowSize, position: WindowPosition, m
         startRow,
         startCol,
         numRows: size.numRows,
-        numCols: size.numCols
+        numCols: size.numCols,
+        ...(position === 'CURSOR' ? { relativeToCursor: true } : {})
     };
 };
 
@@ -625,6 +679,7 @@ function generateRecordLines(config: NewRecordConfig): string[] {
                     lines.push(...generateWindowTitleLines(config.windowConfig.title));
                 }
                 lines.push(...generateWindowBorderLines());
+                lines.push(...windowPositionFieldLinesOf(config.windowConfig));
             }
             break;
 
@@ -648,11 +703,21 @@ function generateRecordLines(config: NewRecordConfig): string[] {
                 lines.push(generateSubfileSizeLine(config.subfileConfig.size));
                 lines.push(generateSubfilePageLine(config.subfileConfig.page));
                 lines.push(...generateSubfileOtherLines());
+                lines.push(...windowPositionFieldLinesOf(config.windowConfig));
             }
             break;
     };
 
     return lines;
+};
+
+/**
+ * The P fields a window placed by the program needs (WINDOW(&LIN &POS ...)), after the window
+ * record's keywords; none for any other window.
+ */
+function windowPositionFieldLinesOf(windowConfig: WindowConfig): string[] {
+    const fields = windowConfig.dimensionsByFormat[0]?.dimensions.positionFields;
+    return fields ? windowPositionFieldLines(fields) : [];
 };
 
 /**
@@ -680,11 +745,10 @@ function generateMainRecordLine(config: NewRecordConfig): string {
  */
 function generateWindowLines(dimensionsByFormat: FormatDimensions[]): string[] {
     return dimensionsByFormat.map(({ format, dimensions }) => {
-        const line = ' '.repeat(5) + 'A' + ' '.repeat(38) + 'WINDOW(' +
-            dimensions.startRow + ' ' +
-            dimensions.startCol + ' ' +
-            dimensions.numRows + ' ' +
-            dimensions.numCols + ')';
+        const start = dimensions.relativeToCursor ? '*DFT'
+            : dimensions.positionFields ? `&${dimensions.positionFields.row} &${dimensions.positionFields.col}`
+            : `${dimensions.startRow} ${dimensions.startCol}`;
+        const line = ' '.repeat(5) + 'A' + ' '.repeat(38) + `WINDOW(${start} ${dimensions.numRows} ${dimensions.numCols})`;
         return writeDisplayFormatCondition(line, format);
     });
 };
@@ -778,6 +842,9 @@ function generateSubfilePageLine(page: number): string {
  * Generates rest of subfile control lines.
  * @returns Formatted lines with RTVCSRLOC, OVERLAY, SFLCSRRRN, SFLDSP, SFLDSPCTL, SFLCLR, SLFEND(*MORE)
  */
+/** The hidden fields generateSubfileOtherLines gives a new subfile control record. */
+const SUBFILE_CONTROL_FIELD_NAMES = ['NRR', 'NBR', 'WSRECNAM', 'WSFLDNAM', 'WSFLRRN'];
+
 function generateSubfileOtherLines(): string[] {
     let lines : string[] = [];
     const lineStart = ' '.repeat(5) + 'A' + ' '.repeat(38);

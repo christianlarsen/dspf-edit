@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import { DdsNode } from './../dspf-edit.providers/dspf-edit.providers';
 import { DdsAttribute, fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { parseWindowDefinition } from '../dspf-edit.parser/dspf-edit.parser';
 import { validateRecordName } from './dspf-edit.new-record';
 import { findRecordInsertionPoint } from './dspf-edit.add-buttons';
 
@@ -62,9 +63,15 @@ async function handleAddCommandsRecordCommand(node: DdsNode): Promise<void> {
 
     // A reference-form WINDOW(otherRecordName) means this subfile's window is already owned by
     // another record — nothing to move, and creating a second commands record wouldn't have a
-    // window to draw in. Only a direct, numeric WINDOW() can be moved onto the new record.
+    // window to draw in. Only a window definition — a fixed one, or *DFT — can be moved onto the new record.
     const windowAttrs = recordInfo?.attributes?.filter(attr => attr.value.toUpperCase().startsWith('WINDOW(')) ?? [];
-    const numericWindowAttrs = windowAttrs.filter(attr => /^WINDOW\(\s*\d+\s+\d+\s+\d+\s+\d+(?:\s+[^)]*)?\s*\)$/i.test(attr.value));
+    const definitions = windowAttrs.map(attr => parseWindowDefinition(attr.value));
+    // One placed by P fields would need its fields moved along too.
+    if (definitions.some(definition => definition?.placement === 'fields')) {
+        vscode.window.showWarningMessage(`This subfile's window is placed by fields of its own (${windowAttrs[0].value}), which would have to move to the new record too. Move them by hand, or give the window a fixed position or *DFT first (Resize Window).`);
+        return;
+    };
+    const numericWindowAttrs = windowAttrs.filter((_, i) => definitions[i] !== undefined);
     if (windowAttrs.length > 0 && numericWindowAttrs.length === 0) {
         vscode.window.showWarningMessage(`This subfile's window is already owned by another record (${windowAttrs[0].value}).`);
         return;
@@ -163,7 +170,7 @@ async function insertCommandsRecord(
     for (const attr of windowAttrsToMove) {
         const line = document.lineAt(attr.lineIndex);
         const updatedLine = line.text.replace(
-            /WINDOW\(\s*\d+\s+\d+\s+\d+\s+\d+(?:\s+[^)]*)?\s*\)/i,
+            /WINDOW\s*\([^)]*\)/i,
             `WINDOW(${recordName})`
         );
         workspaceEdit.replace(document.uri, line.range, updatedLine);

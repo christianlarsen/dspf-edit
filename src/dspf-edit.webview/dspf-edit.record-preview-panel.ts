@@ -15,8 +15,10 @@ import { getOverlaySubfilePair, getOverlayKeepOnSwitch } from '../dspf-edit.util
 import { DdsTreeProvider, DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { ExtensionState } from '../dspf-edit.states/state';
 import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
-import { resolveRecordSizeForFormat, filterForActiveFormat, pickForActiveFormat } from '../dspf-edit.parser/dspf-edit.parser';
+import { resolveRecordSizeForFormat, filterForActiveFormat, pickForActiveFormat, parseWindowDefinition, rewriteWindowDefinition, describeRuntimeWindowPlacement, windowPositionFieldNames, WindowDefinition } from '../dspf-edit.parser/dspf-edit.parser';
 import { editWindowTitleForRecord } from '../dspf-edit.commands/dspf-edit.window-title';
+import { deleteUnusedWindowPositionFields } from '../dspf-edit.commands/dspf-edit.window-position-fields';
+import { describeFieldDefinition } from '../dspf-edit.commands/dspf-edit.hidden-fields';
 import { getConstantTextFromUser, insertNewConstant, updateExistingConstant } from '../dspf-edit.commands/dspf-edit.edit-constant';
 import { addFieldAtPosition } from '../dspf-edit.commands/dspf-edit.edit-field';
 import { addColorToMultipleElements } from '../dspf-edit.commands/dspf-edit.add-color';
@@ -745,7 +747,7 @@ function attributeGroupKey(value: string): string {
  * @param recordName - Name of the record to inspect
  * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
  */
-function findWindowAttribute(recordName: string, activeFormat?: string): { startRow: number; startCol: number; numRows: number; numCols: number; lineIndex: number; hasOwnMessageLine: boolean } | undefined {
+function findWindowAttribute(recordName: string, activeFormat?: string): (WindowDefinition & { lineIndex: number; hasOwnMessageLine: boolean }) | undefined {
     const record = fieldsPerRecords.find(r => r.record === recordName);
     const candidates = record?.attributes?.filter(a => a.value.toUpperCase().startsWith('WINDOW(')) ?? [];
     const attr = pickForActiveFormat(candidates, activeFormat);
@@ -753,21 +755,18 @@ function findWindowAttribute(recordName: string, activeFormat?: string): { start
         return undefined;
     };
 
-    const match = attr.value.match(/WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)((?:\s+[^)]*)?)\s*\)/i);
-    if (!match) {
+    const definition = parseWindowDefinition(attr.value);
+    if (!definition) {
         return undefined;
     };
 
     // Per the DDS reference (WINDOW keyword, "MSGLIN parameter"): a window's own last content line
     // is reserved as its message line by default — *NOMSGLIN is what opts OUT of that, moving error
     // messages back to the bottom of the physical display (or MSGLOC) instead.
-    const hasOwnMessageLine = !/\*NOMSGLIN\b/i.test(match[5] ?? '');
+    const hasOwnMessageLine = !/\*NOMSGLIN\b/i.test(definition.options);
 
     return {
-        startRow: parseInt(match[1], 10),
-        startCol: parseInt(match[2], 10),
-        numRows: parseInt(match[3], 10),
-        numCols: parseInt(match[4], 10),
+        ...definition,
         lineIndex: attr.lineIndex,
         hasOwnMessageLine
     };
@@ -775,7 +774,14 @@ function findWindowAttribute(recordName: string, activeFormat?: string): { start
 
 /** A window's title, extracted from its WDWTITLE() keyword. */
 interface WindowTitle {
+    /** The text to show; empty for a title taken from a field */
     text: string;
+    /** The P field the program fills the title with, (*TEXT &FIELD): drawn as a dotted box, since its text is only known at run time */
+    field?: string;
+    /** That field's length, for the box's width (the window's width when the field isn't defined) */
+    fieldLength?: number;
+    /** How that field is defined, e.g. "20A P", for the box's tooltip */
+    fieldDefinition?: string;
     position: 'TOP' | 'BOTTOM';
     align: 'LEFT' | 'CENTER' | 'RIGHT';
     /** The title's own *COLOR code (e.g. "GRN"), if coded — defaults to the border's color otherwise. */
@@ -793,13 +799,17 @@ interface WindowTitle {
  */
 function parseWdwTitleParams(value: string): {
     text?: string;
+    field?: string;
     position: 'TOP' | 'BOTTOM';
     align?: 'LEFT' | 'CENTER' | 'RIGHT';
     color?: string;
     dspatr?: string[];
 } {
     const upperValue = value.toUpperCase();
-    const text = value.match(/\(\s*\*TEXT\s+'([^']*)'\s*\)/i)?.[1];
+    // A quote in the text is written twice (''); a P field (*TEXT &FIELD) has no text to show,
+    // and STRSDA shows nothing in the border for it either.
+    const text = value.match(/\(\s*\*TEXT\s+'((?:[^']|'')*)'\s*\)/i)?.[1]?.replace(/''/g, "'");
+    const field = value.match(/\(\s*\*TEXT\s+&([A-Za-z@#$][A-Za-z0-9@#$_]*)\s*\)/i)?.[1]?.toUpperCase();
     const position = upperValue.includes('*BOTTOM') ? 'BOTTOM' : 'TOP';
     const align = upperValue.includes('*RIGHT') ? 'RIGHT'
         : upperValue.includes('*LEFT') ? 'LEFT'
@@ -809,7 +819,7 @@ function parseWdwTitleParams(value: string): {
     const dspatrList = upperValue.match(/\(\s*\*DSPATR((?:\s+\w+)+)\s*\)/)?.[1];
     const dspatr = dspatrList ? dspatrList.trim().split(/\s+/) : undefined;
 
-    return { text, position, align, color, dspatr };
+    return { text, field, position, align, color, dspatr };
 };
 
 /**
@@ -842,9 +852,11 @@ function findWindowTitles(recordName: string, activeFormat?: string): WindowTitl
             const inEffect = forPosition.filter(c => c.displayFormat === chosenFormat).map(c => c.params);
 
             const text = inEffect.find(p => p.text !== undefined)?.text;
-            if (text === undefined) {
+            const field = text === undefined ? inEffect.find(p => p.field)?.field : undefined;
+            if (text === undefined && !field) {
                 continue;
             };
+            const fieldInfo = field ? rec?.fields.find(f => f.name.toUpperCase() === field) : undefined;
 
             // Per the DDS reference: centered by default when embedded in the top border, left-aligned
             // by default in the bottom border — *LEFT/*RIGHT/*CENTER always overrides either default.
@@ -852,7 +864,13 @@ function findWindowTitles(recordName: string, activeFormat?: string): WindowTitl
             const color = inEffect.find(p => p.color)?.color;
             const dspatr = inEffect.find(p => p.dspatr)?.dspatr;
 
-            titles.push({ text, position, align, color, dspatr });
+            titles.push({
+                text: text ?? '',
+                field,
+                fieldLength: fieldInfo?.length,
+                fieldDefinition: fieldInfo ? describeFieldDefinition(fieldInfo) : undefined,
+                position, align, color, dspatr
+            });
         };
 
         if (titles.length > 0) {
@@ -1658,6 +1676,10 @@ export class RecordPreviewPanel {
             size: canvasSize,
             isWindow,
             windowFrame,
+            // For the info label: a window placed at run time says how, instead of its drawn position
+            windowPlacement: windowInfoForMsgLine?.placement === 'cursor' ? 'relative to the cursor (*DFT)'
+                : windowInfoForMsgLine?.placement === 'fields' ? `at ${windowInfoForMsgLine.positionText}`
+                : undefined,
             outerFrame,
             windowTitles,
             windowBorder,
@@ -2909,7 +2931,7 @@ export class RecordPreviewPanel {
             return;
         };
 
-        await this.rewriteWindowKeyword(windowRecordName, windowInfo.startRow, windowInfo.startCol, newRows, newCols);
+        await this.rewriteWindowKeyword(windowRecordName, { numRows: newRows, numCols: newCols });
     };
 
     /**
@@ -2924,7 +2946,53 @@ export class RecordPreviewPanel {
             return;
         };
 
-        await this.rewriteWindowKeyword(windowRecordName, newRow, newCol, windowInfo.numRows, windowInfo.numCols);
+        if (!(await this.confirmFixingWindowPosition(windowRecordName, windowInfo))) {
+            return;
+        };
+        await this.rewriteWindowKeyword(windowRecordName, { start: { row: newRow, col: newCol } });
+        await this.offerDeletingWindowPositionFields(windowRecordName, windowInfo);
+    };
+
+    /**
+     * After a window placed by P fields (WINDOW(&LIN &POS ...)) got a fixed position: offers to
+     * delete those fields, which it no longer uses.
+     */
+    private async offerDeletingWindowPositionFields(windowRecordName: string, previous: WindowDefinition): Promise<void> {
+        const { row, col } = windowPositionFieldNames(previous);
+        const names = [row, col].filter((name): name is string => !!name);
+        const { editor } = checkForEditorAndDocument();
+        if (names.length === 0 || !editor) {
+            return;
+        };
+        const deleted = await deleteUnusedWindowPositionFields(editor, windowRecordName, names);
+        if (deleted && deleted.length > 0) {
+            this.forceReparse(editor.document);
+        };
+    };
+
+    /**
+     * Moving or aligning a window placed at run time (WINDOW(*DFT ...), or P fields) gives it a
+     * fixed line and position, so it asks first. A fixed window needs no asking.
+     * @returns True to go ahead; when not, the preview is redrawn to put the window back
+     */
+    private async confirmFixingWindowPosition(windowRecordName: string, windowInfo: WindowDefinition): Promise<boolean> {
+        const placement = describeRuntimeWindowPlacement(windowInfo);
+        if (!placement) {
+            return true;
+        };
+        const choice = await vscode.window.showWarningMessage(
+            `${windowRecordName} is a window placed at run time, ${placement}. Moving it gives it a fixed position.`,
+            { modal: true },
+            'Give it a fixed position'
+        );
+        if (choice) {
+            return true;
+        };
+        const { editor } = checkForEditorAndDocument();
+        if (editor) {
+            this.forceReparse(editor.document);
+        };
+        return false;
     };
 
     /**
@@ -3066,7 +3134,11 @@ export class RecordPreviewPanel {
             return;
         };
 
-        await this.rewriteWindowKeyword(windowRecordName, position.row, position.col, windowInfo.numRows, windowInfo.numCols);
+        if (!(await this.confirmFixingWindowPosition(windowRecordName, windowInfo))) {
+            return;
+        };
+        await this.rewriteWindowKeyword(windowRecordName, { start: { row: position.row, col: position.col } });
+        await this.offerDeletingWindowPositionFields(windowRecordName, windowInfo);
     };
 
     /**
@@ -3365,14 +3437,15 @@ export class RecordPreviewPanel {
     };
 
     /**
-     * Rewrites the record's WINDOW(startRow startCol numRows numCols) keyword to the given values.
+     * Rewrites the record's WINDOW(startRow startCol numRows numCols) keyword with the given values,
+     * keeping what isn't given as coded (a *DFT or P-field start, when only resizing).
      * When the file declares more than one display format and the currently-effective WINDOW() line
      * is the shared unconditioned one, this splits it first (see `applyDisplayFormatSplitEdit`) so
      * the edit only affects the format currently being previewed, instead of silently changing every
      * format's window at once.
      * @param recordName - Name of the record whose WINDOW() line(s) to rewrite
      */
-    private async rewriteWindowKeyword(recordName: string, startRow: number, startCol: number, numRows: number, numCols: number): Promise<void> {
+    private async rewriteWindowKeyword(recordName: string, change: Parameters<typeof rewriteWindowDefinition>[1]): Promise<void> {
         const { editor } = checkForEditorAndDocument();
         if (!editor) {
             return;
@@ -3393,10 +3466,7 @@ export class RecordPreviewPanel {
             candidates,
             this.activeDisplayFormat,
             declaredFormats,
-            (existingLineText) => existingLineText.replace(
-                /WINDOW\s*\(\s*\d+\s+\d+\s+\d+\s+\d+(\s+[^)]*)?\s*\)/i,
-                (_match, suffix) => `WINDOW(${startRow} ${startCol} ${numRows} ${numCols}${suffix ?? ''})`
-            )
+            (existingLineText) => rewriteWindowDefinition(existingLineText, change)
         );
 
         if (!(await applyWorkspaceEdit(workspaceEdit, 'resize/move the window'))) {
@@ -4325,6 +4395,42 @@ export class RecordPreviewPanel {
             const fh = currentOuterFrame.rows * CHAR_H;
 
             const titleY = currentWindowTitle.position === 'BOTTOM' ? fy + fh - CHAR_H : fy;
+
+            // A title the program fills from a field, (*TEXT &FIELD): its text is only known at run
+            // time, so a dotted box shows where it goes and how long it can be — the field's length,
+            // at most the window's width.
+            if (currentWindowTitle.field) {
+                const maxChars = currentOuterFrame.cols - WINDOW_BORDER_LEFT - WINDOW_BORDER_RIGHT;
+                const chars = Math.min(currentWindowTitle.fieldLength || maxChars, maxChars) + (currentWindowTitle.padded ? 2 : 0);
+                const boxWidth = Math.min(chars * CHAR_W, fw - 4);
+                const boxX = currentWindowTitle.align === 'LEFT' ? fx + 2
+                    : currentWindowTitle.align === 'RIGHT' ? fx + fw - boxWidth - 2
+                    : fx + (fw - boxWidth) / 2;
+
+                // On a reverse-image border (a solid band of color) the box is transparent, so the
+                // band shows through, with its outline in the screen's background color. On a border
+                // of characters it covers them, as a real title would, with the outline in the
+                // title's color.
+                if (!currentWindowTitle.reverseImage) {
+                    ctx.fillStyle = '${bg}';
+                    ctx.fillRect(boxX, titleY, boxWidth, CHAR_H);
+                }
+                ctx.save();
+                ctx.strokeStyle = currentWindowTitle.reverseImage ? '${bg}' : currentWindowTitle.hexColor;
+                ctx.lineWidth = 1;
+                ctx.setLineDash([3, 3]);
+                ctx.strokeRect(boxX + 2.5, titleY + 2.5, boxWidth - 5, CHAR_H - 5);
+                ctx.restore();
+
+                currentTitleRects.push({
+                    x: boxX, y: titleY, width: boxWidth, height: CHAR_H,
+                    tooltip: (currentWindowTitle.position === 'BOTTOM' ? 'Footer' : 'Title') + ' from field &' + currentWindowTitle.field +
+                        (currentWindowTitle.fieldDefinition ? ' (' + currentWindowTitle.fieldDefinition + ')' : ' (not defined in the record)') +
+                        ', filled by the program. Click to change the window title'
+                });
+                continue;
+            }
+
             // WDWTITLE: padded with a space on each side only when it specifies its own *COLOR or
             // *DSPATR — otherwise the border characters flow right up to the title's own text
             // (DDS reference).
@@ -4634,13 +4740,17 @@ export class RecordPreviewPanel {
         selectedLineIndices = selection;
     }
 
-    function isOverTitle(ev) {
+    function titleRectAt(ev) {
         const rect = canvas.getBoundingClientRect();
         const px = ev.clientX - rect.left;
         const py = ev.clientY - rect.top;
-        return currentTitleRects.some(titleRect =>
+        return currentTitleRects.find(titleRect =>
             px >= titleRect.x && px < titleRect.x + titleRect.width &&
             py >= titleRect.y && py < titleRect.y + titleRect.height);
+    }
+
+    function isOverTitle(ev) {
+        return !!titleRectAt(ev);
     }
 
     function isOverMenuIcon(ev) {
@@ -5105,9 +5215,10 @@ export class RecordPreviewPanel {
                 canvas.title = 'Center horizontally';
                 return;
             }
-            if (isOverTitle(ev)) {
+            const hoveredTitle = titleRectAt(ev);
+            if (hoveredTitle) {
                 canvas.style.cursor = 'pointer';
-                canvas.title = 'Click to change the window title';
+                canvas.title = hoveredTitle.tooltip || 'Click to change the window title';
                 return;
             }
             const hit = findItemAt(ev);
@@ -5487,8 +5598,8 @@ export class RecordPreviewPanel {
 
             const baseInfo = message.size.rows + ' x ' + message.size.cols;
             info.textContent = message.windowFrame
-                ? baseInfo + '  —  window ' + message.windowFrame.rows + 'x' + message.windowFrame.cols +
-                  ' at (' + message.windowFrame.row + ',' + message.windowFrame.col + ')'
+                ? baseInfo + '  —  window ' + message.windowFrame.rows + 'x' + message.windowFrame.cols + ' ' +
+                  (message.windowPlacement || ('at (' + message.windowFrame.row + ',' + message.windowFrame.col + ')'))
                 : baseInfo;
 
             // Warning icon ahead of the screen size, only while referenced fields are pending.

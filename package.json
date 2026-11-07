@@ -1,14 +1,14 @@
 {
   "name": "dspf-edit",
   "displayName": "Display file DDS edit",
-  "description": "Extension that helps you create and modify your display file DDS on IBM i",
+  "description": "DSPF editor and visual designer for IBM i DDS display files: live 5250 screen preview, drag-and-drop fields and constants, windows, subfiles, indicators and colors, inside VS Code.",
   "icon": "assets/dds_extension_icon.png",
   "author": {
     "name": "Christian Larsen",
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "1.16.0",
+  "version": "1.17.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
@@ -18,16 +18,27 @@
   },
   "homepage": "https://github.com/christianlarsen/dspf-edit#readme",
   "keywords": [
-    "rpg",
-    "ibmi",
-    "rpgle",
-    "sqlrpgle",
-    "as400",
+    "dspf",
     "dds",
+    "ibmi",
+    "ibm i",
+    "as400",
+    "iseries",
+    "display file",
+    "display files",
+    "dspf editor",
+    "dspf designer",
+    "dds editor",
+    "screen designer",
+    "5250",
+    "green screen",
+    "subfile",
     "sda",
     "strsda",
-    "display",
-    "dspf"
+    "rpg",
+    "rpgle",
+    "sqlrpgle",
+    "display"
   ],
   "engines": {
     "vscode": "^1.75.0"
@@ -35,6 +46,7 @@
   "license": "MIT",
   "categories": [
     "Programming Languages",
+    "Visualization",
     "Other"
   ],
   "activationEvents": [

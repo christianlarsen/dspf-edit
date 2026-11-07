@@ -6,29 +6,100 @@
 
 import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
-import { DdsAttribute, FieldsPerRecord, fieldsPerRecords, getAvailableDisplayFormats } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument, applyWorkspaceEdit, writeDisplayFormatCondition } from '../dspf-edit.utils/dspf-edit.helper';
-import { pickForActiveFormat } from '../dspf-edit.parser/dspf-edit.parser';
-import { generateWindowTitleLines } from './dspf-edit.new-record';
+import { DdsAttribute, FieldInfo, FieldsPerRecord, fieldsPerRecords, getAvailableDisplayFormats } from '../dspf-edit.model/dspf-edit.model';
+import {
+    checkForEditorAndDocument, applyWorkspaceEdit, writeDisplayFormatCondition,
+    insertKeywordLines, replaceKeywordTextInLines, removeKeywordTextFromLines
+} from '../dspf-edit.utils/dspf-edit.helper';
+import { parseDocument, pickForActiveFormat, parseWindowDefinition } from '../dspf-edit.parser/dspf-edit.parser';
+import { validateFieldNameFormat } from './dspf-edit.edit-field';
+import { describeFieldDefinition, findField, hiddenFieldLine, insertHiddenFieldLines, isNamedByRecordKeywords, deleteUnusedFields } from './dspf-edit.hidden-fields';
 import { ExtensionState } from '../dspf-edit.states/state';
 
-type TitleAlign = 'LEFT' | 'CENTER' | 'RIGHT';
-type TitlePosition = 'TOP' | 'BOTTOM';
+/**
+ * The window's title and footer: the WDWTITLE keywords embedding a text in its top border and in
+ * its bottom border (*BOTTOM). Each text is either a literal, (*TEXT 'Title'), or a P field the
+ * program fills, (*TEXT &FIELD), which must be a character field with usage P in the window's
+ * record (DDS reference).
+ */
 
-/** The record's current WDWTITLE() keyword, if any, parsed for editing. */
-interface ExistingWindowTitle {
-    text: string;
-    align: TitleAlign;
+// INTERFACES AND TYPES
+
+export type TitleAlign = 'LEFT' | 'CENTER' | 'RIGHT';
+export type TitlePosition = 'TOP' | 'BOTTOM';
+
+/** Where a title's text comes from: written in the source, or a P field the program fills. */
+export type TitleSource = { kind: 'text'; text: string } | { kind: 'field'; name: string };
+
+/** A WDWTITLE keyword's parameters, as parseWindowTitleKeyword reads them. */
+export interface WindowTitleParts {
+    source?: TitleSource;
     position: TitlePosition;
-    lineIndex: number;
-    lastLineIndex: number;
+    /** Only when coded: the default depends on the position (see defaultAlign) */
+    align?: TitleAlign;
+    /** The (*COLOR ...) and (*DSPATR ...) parameters as coded, kept as they are when the text changes */
+    colorPart?: string;
+    dspatrPart?: string;
+};
+
+/** The title or footer the window has now: the first WDWTITLE in effect for that border. */
+interface ExistingWindowTitle extends WindowTitleParts {
+    attr: DdsAttribute;
+};
+
+// PARSING AND WRITING THE KEYWORD
+
+/**
+ * Reads a WDWTITLE keyword: its text (a literal, with '' for a quote, or &FIELD), border,
+ * alignment, color and display attributes.
+ * @param value - The keyword, e.g. "WDWTITLE((*TEXT &TTL1) (*COLOR RED) *BOTTOM)"
+ */
+export function parseWindowTitleKeyword(value: string): WindowTitleParts {
+    const upper = value.toUpperCase();
+    const literal = value.match(/\(\s*\*TEXT\s+'((?:[^']|'')*)'\s*\)/i)?.[1];
+    const field = value.match(/\(\s*\*TEXT\s+&([A-Za-z@#$][A-Za-z0-9@#$_]*)\s*\)/i)?.[1];
+    const source: TitleSource | undefined = literal !== undefined ? { kind: 'text', text: literal.replace(/''/g, "'") }
+        : field ? { kind: 'field', name: field.toUpperCase() }
+        : undefined;
+
+    return {
+        source,
+        position: /\*BOTTOM\b/.test(upper) ? 'BOTTOM' : 'TOP',
+        align: /\*RIGHT\b/.test(upper) ? 'RIGHT' : /\*LEFT\b/.test(upper) ? 'LEFT' : /\*CENTER\b/.test(upper) ? 'CENTER' : undefined,
+        colorPart: value.match(/\(\s*\*COLOR\s+\w+\s*\)/i)?.[0],
+        dspatrPart: value.match(/\(\s*\*DSPATR(?:\s+\w+)+\s*\)/i)?.[0]
+    };
+};
+
+/** Where a title is aligned when the keyword doesn't say: centered on top, left on the bottom border (DDS reference). */
+export function defaultAlign(position: TitlePosition): TitleAlign {
+    return position === 'BOTTOM' ? 'LEFT' : 'CENTER';
+};
+
+/**
+ * Writes a WDWTITLE keyword: WDWTITLE((*TEXT 'Title') [(*COLOR ..)] [(*DSPATR ..)] *CENTER [*BOTTOM]).
+ * The alignment is always written, as before; *TOP isn't, being the default.
+ */
+export function buildWindowTitleKeyword(parts: WindowTitleParts & { source: TitleSource }): string {
+    const text = parts.source.kind === 'text'
+        ? `(*TEXT '${parts.source.text.replace(/'/g, "''")}')`
+        : `(*TEXT &${parts.source.name})`;
+    const align = `*${parts.align ?? defaultAlign(parts.position)}`;
+    return `WDWTITLE(${[text, parts.colorPart, parts.dspatrPart, align, parts.position === 'BOTTOM' ? '*BOTTOM' : undefined]
+        .filter(Boolean).join(' ')})`;
+};
+
+/** How a title reads in the list: 'Customers' (quoted), '&TITULO (field)', or none. */
+function describeSource(source: TitleSource | undefined): string {
+    if (!source) {return 'none';}
+    return source.kind === 'text' ? `'${source.text}'` : `&${source.name} (field)`;
 };
 
 // COMMAND REGISTRATION
 
 /**
- * Registers the "Change Window Title" command for DDS window records.
- * Lets the user add, edit, or remove the WDWTITLE() keyword.
+ * Registers the "Change Window Title" command for DDS window records: a window listing the
+ * window's title and footer, to set, change or remove each.
  * @param context - The VS Code extension context
  */
 export function windowTitle(context: vscode.ExtensionContext): void {
@@ -56,11 +127,14 @@ async function handleWindowTitleCommand(node: DdsNode): Promise<void> {
     await editWindowTitleForRecord(element.name);
 };
 
+const EDIT_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('edit'), tooltip: 'Change' };
+const REMOVE_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('trash'), tooltip: 'Remove' };
+
 /**
- * Collects the new title text/alignment/position from the user and writes (or removes) the
- * WDWTITLE() keyword for the given window record. Shared by the tree context-menu command and by
- * clicking the title directly in the record preview.
- * @param recordName - Name of the window record to edit the title for
+ * Shows the window's title and footer, each with ✏️ (or selecting the row) to set or change it and
+ * 🗑️ to remove it. The list opens again after each change; Escape closes it. Shared by the tree
+ * context-menu command and by clicking the title directly in the record preview.
+ * @param recordName - Name of the window record to edit the titles of
  * @param activeFormat - Display format (e.g. "*DS3") currently being previewed, when called from the
  * preview panel; undefined when called from the tree, which has no notion of an "active" format.
  */
@@ -91,71 +165,61 @@ export async function editWindowTitleForRecord(recordName: string, activeFormat?
         };
 
         const windowAttr = pickForActiveFormat(windowCandidates, activeFormat)!;
-
-        const windowMatch = windowAttr.value.match(/WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)(?:\s+[^)]*)?\s*\)/i);
-        if (!windowMatch) {
+        const windowDefinition = parseWindowDefinition(windowAttr.value);
+        if (!windowDefinition) {
             vscode.window.showWarningMessage(
                 `Record '${recordName}' shares another record's window (WINDOW(${windowAttr.value.replace(/^WINDOW\(|\)$/g, '')})) — change the title on that record instead.`
             );
             return;
         };
-        const windowWidth = parseInt(windowMatch[4], 10);
-
-        const existing = findExistingWindowTitle(record, activeFormat);
-
-        const text = await collectTitleText(existing?.text, windowWidth);
-        if (text === null) {
-            return;
+        const context: TitleEditContext = {
+            editor,
+            recordName,
+            activeFormat,
+            windowWidth: windowDefinition.numCols,
+            hasFormatWindows: windowCandidates.length > 1
         };
 
-        if (text === '') {
-            if (!existing) {
-                vscode.window.showInformationMessage('No title entered.');
+        let focus: TitlePosition | undefined;
+        while (true) {
+            parseDocument(editor.document.getText());
+            const current = fieldsPerRecords.find(r => r.record === recordName);
+            if (!current) {
                 return;
             };
-            if (!(await removeWindowTitle(editor, existing))) {
+            const titles = findExistingWindowTitles(current, activeFormat);
+
+            const choice = await showTitleList(recordName, titles, focus);
+            if (!choice) {
                 return;
             };
-            vscode.window.showInformationMessage(`Removed window title for '${recordName}'.`);
-            return;
+            focus = choice.position;
+
+            const done = choice.action === 'remove'
+                ? await removeWindowTitle(context, current, titles[choice.position]!)
+                : await setWindowTitle(context, current, choice.position, titles[choice.position]);
+            if (!done) {
+                continue;
+            };
+            await vscode.commands.executeCommand('cursorRight');
+            await vscode.commands.executeCommand('cursorLeft');
         };
-
-        const align = await collectTitleAlign(existing?.align);
-        if (!align) {
-            return;
-        };
-
-        const position = await collectTitlePosition(existing?.position);
-        if (!position) {
-            return;
-        };
-
-        // A brand-new title (no existing WDWTITLE() line yet) only needs to be conditioned on the
-        // active format when this record actually has more than one declared format's window — a
-        // single declared format (or none) means "applies everywhere" already, unconditioned. And
-        // DDS forbids explicitly conditioning a line on the *primary* display size's own name (see
-        // writeDisplayFormatCondition in dspf-edit.helper.ts) — activeFormat can be the primary here
-        // (e.g. passed straight from the preview panel's currently-previewed format, bypassing
-        // pickTargetFormat's own already-safe choices), so that case also falls back to unconditioned.
-        const primaryFormat = getAvailableDisplayFormats()[0]?.name;
-        const conditionFormat = !existing && windowCandidates.length > 1 && activeFormat !== primaryFormat
-            ? activeFormat
-            : undefined;
-
-        const anchorLineIndex = windowAttr.lastLineIndex ?? windowAttr.lineIndex;
-        if (!(await applyWindowTitle(editor, anchorLineIndex, existing, text, align, position, conditionFormat))) {
-            return;
-        };
-
-        await vscode.commands.executeCommand('cursorRight');
-        await vscode.commands.executeCommand('cursorLeft');
-
-        vscode.window.showInformationMessage(`Window title updated for '${recordName}'.`);
 
     } catch (error) {
         console.error('Error changing window title:', error);
         vscode.window.showErrorMessage('An error occurred while changing the window title.');
     };
+};
+
+/** What the title edits need to know about the window. */
+interface TitleEditContext {
+    editor: vscode.TextEditor;
+    recordName: string;
+    activeFormat?: string;
+    /** The window's width: a literal title can't be longer, and a new title field is created this long */
+    windowWidth: number;
+    /** True when the record has a WINDOW line per display size, so a new title may need conditioning on one */
+    hasFormatWindows: boolean;
 };
 
 /**
@@ -179,182 +243,269 @@ async function pickTargetFormat(windowCandidates: DdsAttribute[]): Promise<{ for
     return selection ? { format: selection.format } : null;
 };
 
-// EXISTING TITLE LOOKUP
+// EXISTING TITLES
 
 /**
- * Finds and parses the record's WDWTITLE() keyword for the given display format, if any — the one
- * explicitly conditioned on `activeFormat`, else the shared unconditioned one, else the first
- * candidate (see `pickForActiveFormat`).
+ * The record's title and footer for the given display format: for each border, the first
+ * WDWTITLE in effect — when there are more, DDS combines them and the first one's parameters win.
  * @param record - The record's field/attribute info
- * @param activeFormat - Display format (e.g. "*DS3") to prefer, when the record has more than one
- * WDWTITLE() line (one per format)
+ * @param activeFormat - Display format (e.g. "*DS3") to prefer, when the record has a WDWTITLE per format
  */
-function findExistingWindowTitle(record: FieldsPerRecord, activeFormat?: string): ExistingWindowTitle | undefined {
-    const candidates = record.attributes?.filter(a => a.value.toUpperCase().startsWith('WDWTITLE(')) ?? [];
-    const attr = pickForActiveFormat(candidates, activeFormat);
-    if (!attr) {
-        return undefined;
-    };
+function findExistingWindowTitles(record: FieldsPerRecord, activeFormat?: string): Partial<Record<TitlePosition, ExistingWindowTitle>> {
+    const candidates = (record.attributes ?? [])
+        .filter(a => a.value.toUpperCase().startsWith('WDWTITLE('))
+        .map(attr => ({ attr, displayFormat: attr.displayFormat, parts: parseWindowTitleKeyword(attr.value) }));
 
-    const textMatch = attr.value.match(/WDWTITLE\(\(\*\w+\s+'([^']*)'\)/i);
-    if (!textMatch) {
-        return undefined;
+    const titles: Partial<Record<TitlePosition, ExistingWindowTitle>> = {};
+    for (const position of ['TOP', 'BOTTOM'] as const) {
+        const picked = pickForActiveFormat(candidates.filter(c => c.parts.position === position), activeFormat);
+        if (picked) {
+            titles[position] = { ...picked.parts, attr: picked.attr };
+        };
     };
-
-    const upperValue = attr.value.toUpperCase();
-
-    return {
-        text: textMatch[1],
-        align: upperValue.includes('*RIGHT') ? 'RIGHT' : upperValue.includes('*LEFT') ? 'LEFT' : 'CENTER',
-        position: upperValue.includes('*BOTTOM') ? 'BOTTOM' : 'TOP',
-        lineIndex: attr.lineIndex,
-        lastLineIndex: attr.lastLineIndex ?? attr.lineIndex
-    };
+    return titles;
 };
 
-// USER INPUT COLLECTION
+// THE LIST
+
+type TitleListItem = vscode.QuickPickItem & { position: TitlePosition };
 
 /**
- * Collects the new title text from the user, pre-filled with the current one if editing.
- * @param current - The record's current title text, if any
- * @param maxLength - Maximum title length, i.e. the window's width (WINDOW's numCols)
- * @returns The trimmed title (empty string means "remove the title"), or null if cancelled
+ * Shows the title and footer rows and resolves to what the user did with one: set or change it
+ * (the row, or its ✏️ button) or remove it (🗑️) — undefined when closed.
  */
-async function collectTitleText(current: string | undefined, maxLength: number): Promise<string | null> {
+function showTitleList(
+    recordName: string,
+    titles: Partial<Record<TitlePosition, ExistingWindowTitle>>,
+    focus: TitlePosition | undefined
+): Promise<{ action: 'set' | 'remove'; position: TitlePosition } | undefined> {
+    const items: TitleListItem[] = (['TOP', 'BOTTOM'] as const).map(position => {
+        const title = titles[position];
+        return {
+            position,
+            label: position === 'TOP' ? 'Title (top)' : 'Footer (bottom)',
+            description: describeSource(title?.source),
+            detail: title ? `Aligned ${(title.align ?? defaultAlign(position)).toLowerCase()}` : undefined,
+            buttons: title ? [EDIT_BUTTON, REMOVE_BUTTON] : [EDIT_BUTTON]
+        };
+    });
+
+    return new Promise(resolve => {
+        const quickPick = vscode.window.createQuickPick<TitleListItem>();
+        quickPick.title = `Window Title for ${recordName}`;
+        quickPick.placeholder = 'Select the title or the footer to set it — ✏️ changes, 🗑️ removes';
+        quickPick.items = items;
+        quickPick.activeItems = items.filter(item => item.position === focus);
+        quickPick.ignoreFocusOut = true;
+
+        let settled = false;
+        const finish = (result: { action: 'set' | 'remove'; position: TitlePosition } | undefined) => {
+            if (settled) {return;}
+            settled = true;
+            resolve(result);
+            quickPick.hide();
+        };
+
+        quickPick.onDidTriggerItemButton(event => {
+            finish({ action: event.button === REMOVE_BUTTON ? 'remove' : 'set', position: event.item.position });
+        });
+        quickPick.onDidAccept(() => {
+            const picked = quickPick.selectedItems[0];
+            finish(picked ? { action: 'set', position: picked.position } : undefined);
+        });
+        quickPick.onDidHide(() => {
+            finish(undefined);
+            quickPick.dispose();
+        });
+
+        quickPick.show();
+    });
+};
+
+// SETTING A TITLE
+
+/**
+ * Sets or changes the title of one border: a text or a field, and its alignment. A field the
+ * record doesn't have yet is created as a P field as long as the window is wide; one it has must
+ * be a character P field. A field the title no longer uses can then be deleted.
+ * @returns True when the source changed
+ */
+async function setWindowTitle(
+    context: TitleEditContext,
+    record: FieldsPerRecord,
+    position: TitlePosition,
+    existing: ExistingWindowTitle | undefined
+): Promise<boolean> {
+    const what = position === 'TOP' ? 'Title' : 'Footer';
+
+    const kind = await vscode.window.showQuickPick([
+        { label: 'Text', value: 'text' as const, description: existing?.source?.kind === 'text' ? '(current)' : undefined, detail: 'A text written in the source' },
+        { label: 'Field', value: 'field' as const, description: existing?.source?.kind === 'field' ? '(current)' : undefined, detail: 'A P field of the record the program fills, (*TEXT &FIELD)' }
+    ], {
+        title: `Window ${what} for ${context.recordName}`,
+        placeHolder: 'Where the text comes from',
+        ignoreFocusOut: true
+    });
+    if (!kind) {
+        return false;
+    };
+
+    const source = kind.value === 'text'
+        ? await collectTitleText(what, existing?.source, context.windowWidth)
+        : await collectTitleField(what, context.recordName, existing?.source, context.windowWidth);
+    if (!source) {
+        return false;
+    };
+
+    const align = await collectTitleAlign(what, existing?.align ?? defaultAlign(position));
+    if (!align) {
+        return false;
+    };
+
+    const keywordText = buildWindowTitleKeyword({ ...existing, position, source, align });
+    if (!(await writeWindowTitle(context, record, existing, keywordText))) {
+        return false;
+    };
+
+    // The field: created when missing; the old one offered for deletion when no longer used.
+    const created: string[] = [];
+    if (source.kind === 'field' && !findField(context.editor, context.recordName, source.name)) {
+        const line = hiddenFieldLine(source.name, { type: 'A', length: context.windowWidth, usage: 'P' });
+        if (!(await insertHiddenFieldLines(context.editor, context.recordName, [line]))) {
+            return true;
+        };
+        created.push(source.name);
+    };
+    const oldField = existing?.source?.kind === 'field' ? existing.source.name : undefined;
+    if (oldField && !(source.kind === 'field' && source.name === oldField)) {
+        await offerDeletingTitleField(context, oldField);
+    };
+
+    vscode.window.showInformationMessage(
+        `Window ${what.toLowerCase()} for '${context.recordName}' set to ${describeSource(source)}${created.length > 0 ? `; created field ${created[0]} (${context.windowWidth}A P)` : ''}.`
+    );
+    return true;
+};
+
+/**
+ * Asks for a literal title, at most as long as the window is wide.
+ * @returns The text, or undefined if cancelled or left empty
+ */
+async function collectTitleText(what: string, current: TitleSource | undefined, maxLength: number): Promise<TitleSource | undefined> {
     const value = await vscode.window.showInputBox({
-        title: 'Window Title',
-        prompt: `Enter the window title (max ${maxLength} characters — the window's width); leave empty to remove it`,
-        value: current ?? '',
-        placeHolder: 'Window Title',
+        title: `Window ${what} - Text`,
+        prompt: `Enter the ${what.toLowerCase()} (max ${maxLength} characters — the window's width)`,
+        value: current?.kind === 'text' ? current.text : '',
         ignoreFocusOut: true,
-        validateInput: (v) => validateWindowTitle(v, maxLength)
+        validateInput: input => {
+            const text = input.trim();
+            if (!text) {return 'Enter a text, or press Escape (🗑️ in the list removes it).';}
+            return text.length > maxLength ? `It can't be longer than ${maxLength} characters (the window's width).` : null;
+        }
     });
-
-    if (value === undefined) {
-        return null;
-    };
-    return value.trim();
+    const text = value?.trim();
+    return text ? { kind: 'text', text } : undefined;
 };
 
 /**
- * Validates window title length against the window's width, and that it doesn't contain a
- * single quote (which would break out of the DDS string literal).
- * @param value - Title to validate
- * @param maxLength - Maximum allowed length (the window's width)
+ * Asks for the name of the P field holding the title. A field the record has must be a character
+ * field with usage P (DDS reference); one it doesn't have is created.
+ * @returns The field, or undefined if cancelled
  */
-function validateWindowTitle(value: string, maxLength: number): string | null {
-    if (!value || value.trim() === '') {
-        return null;
-    };
-
-    const trimmedValue = value.trim();
-    if (trimmedValue.includes("'")) {
-        return "Title cannot contain a single quote (').";
-    };
-    if (trimmedValue.length > maxLength) {
-        return `Title cannot exceed ${maxLength} characters (the window's width).`;
-    };
-
-    return null;
+async function collectTitleField(what: string, recordName: string, current: TitleSource | undefined, windowWidth: number): Promise<TitleSource | undefined> {
+    const value = await vscode.window.showInputBox({
+        title: `Window ${what} - Field`,
+        prompt: `Field the program fills with the ${what.toLowerCase()}: a character P field of ${recordName}, created (${windowWidth}A P) if missing`,
+        value: current?.kind === 'field' ? current.name : (what === 'Title' ? 'WDWTITLE' : 'WDWFOOTER'),
+        ignoreFocusOut: true,
+        validateInput: input => {
+            const name = input.trim().toUpperCase();
+            if (!name) {return 'This field is required.';}
+            const formatError = validateFieldNameFormat(name);
+            if (formatError) {return formatError;}
+            const existing = fieldsPerRecords.find(r => r.record === recordName)?.fields.find(f => f.name.toUpperCase() === name);
+            const problem = existing ? titleFieldProblem(existing) : undefined;
+            return problem ? `${name} is already defined in ${recordName} as ${problem}; a title field must be character with usage P (e.g. ${windowWidth}A P).` : null;
+        }
+    });
+    const name = value?.trim().toUpperCase();
+    return name ? { kind: 'field', name } : undefined;
 };
 
 /**
- * Collects the title's horizontal alignment.
- * @param current - The record's current alignment, if editing an existing title
+ * Why an existing field can't hold a window title — how it's defined instead — or undefined when it
+ * can: a character field (A, or no data type) with usage P.
  */
-async function collectTitleAlign(current: TitleAlign | undefined): Promise<TitleAlign | null> {
-    const options: (vscode.QuickPickItem & { value: TitleAlign })[] = [
-        { label: 'Center', value: 'CENTER' },
-        { label: 'Left', value: 'LEFT' },
-        { label: 'Right', value: 'RIGHT' }
-    ];
+export function titleFieldProblem(field: FieldInfo): string | undefined {
+    const fits = !field.referenced
+        && ['A', ''].includes((field.type || '').toUpperCase())
+        && (field.usage || '').toUpperCase() === 'P';
+    return fits ? undefined : describeFieldDefinition(field);
+};
+
+/** Asks for the title's alignment, the current one first. */
+async function collectTitleAlign(what: string, current: TitleAlign): Promise<TitleAlign | undefined> {
+    const options: (vscode.QuickPickItem & { value: TitleAlign })[] = (['CENTER', 'LEFT', 'RIGHT'] as const).map(value => ({
+        label: value.charAt(0) + value.slice(1).toLowerCase(),
+        description: value === current ? '(current)' : undefined,
+        value
+    }));
+    options.sort((a, b) => Number(b.value === current) - Number(a.value === current));
 
     const selection = await vscode.window.showQuickPick(options, {
-        title: `Window Title - Horizontal Alignment (current: ${current ?? 'CENTER'})`,
-        placeHolder: 'Select the title alignment',
+        title: `Window ${what} - Alignment`,
+        placeHolder: 'Select the alignment',
         ignoreFocusOut: true
     });
-
-    return selection?.value ?? null;
-};
-
-/**
- * Collects the title's vertical position (top or bottom border of the window).
- * @param current - The record's current position, if editing an existing title
- */
-async function collectTitlePosition(current: TitlePosition | undefined): Promise<TitlePosition | null> {
-    const options: (vscode.QuickPickItem & { value: TitlePosition })[] = [
-        { label: 'Top', value: 'TOP' },
-        { label: 'Bottom', value: 'BOTTOM' }
-    ];
-
-    const selection = await vscode.window.showQuickPick(options, {
-        title: `Window Title - Vertical Position (current: ${current ?? 'TOP'})`,
-        placeHolder: 'Select the title position',
-        ignoreFocusOut: true
-    });
-
-    return selection?.value ?? null;
+    return selection?.value;
 };
 
 // DDS SOURCE UPDATE
 
 /**
- * Writes the new WDWTITLE() keyword, replacing the existing one's line(s) if present, or
- * inserting a new line right after the WINDOW() keyword otherwise.
- * @param editor - The active text editor
- * @param anchorLineIndex - Line to insert after, when there's no existing title (the WINDOW keyword's own last line)
- * @param existing - The record's current title, if any, to replace
- * @param text - The new title text
- * @param align - The new horizontal alignment
- * @param position - The new vertical position
- * @param conditionFormat - Display format to condition a brand-new title line on (only used when
- * `existing` is undefined); undefined leaves it unconditioned, applying to every declared format
+ * Writes the keyword: in place of the existing one, or on a line of its own after the window's
+ * WINDOW and WDWTITLE keywords. A new one on a record with a window per display size is
+ * conditioned on the format being worked on — except the primary one, which DDS doesn't allow
+ * conditioning on (see writeDisplayFormatCondition).
  */
-async function applyWindowTitle(
-    editor: vscode.TextEditor,
-    anchorLineIndex: number,
-    existing: ExistingWindowTitle | undefined,
-    text: string,
-    align: TitleAlign,
-    position: TitlePosition,
-    conditionFormat?: string
-): Promise<boolean> {
-    const lines = generateWindowTitleLines(text, align, position);
-    const workspaceEdit = new vscode.WorkspaceEdit();
-    const uri = editor.document.uri;
-
+async function writeWindowTitle(context: TitleEditContext, record: FieldsPerRecord, existing: ExistingWindowTitle | undefined, keywordText: string): Promise<boolean> {
+    const { editor } = context;
     if (existing) {
-        const range = new vscode.Range(
-            existing.lineIndex, 0,
-            existing.lastLineIndex, editor.document.lineAt(existing.lastLineIndex).text.length
-        );
-        workspaceEdit.replace(uri, range, lines.join('\n'));
-    } else {
-        if (conditionFormat && lines.length > 0) {
-            lines[0] = writeDisplayFormatCondition(lines[0], conditionFormat);
-        };
-        const insertPosition = new vscode.Position(anchorLineIndex + 1, 0);
-        workspaceEdit.insert(uri, insertPosition, lines.join('\n') + '\n');
+        return replaceKeywordTextInLines(editor, existing.attr.lineIndex, existing.attr.lastLineIndex ?? existing.attr.lineIndex, existing.attr.value, keywordText);
     };
 
-    return applyWorkspaceEdit(workspaceEdit, 'update the window title');
+    const windowKeywords = (record.attributes ?? []).filter(a => /^(WINDOW|WDWTITLE)\(/i.test(a.value));
+    const insertionPoint = Math.max(...windowKeywords.map(a => a.lastLineIndex ?? a.lineIndex)) + 1;
+    if (!(await insertKeywordLines(editor, insertionPoint, keywordText))) {
+        return false;
+    };
+
+    const primaryFormat = getAvailableDisplayFormats()[0]?.name;
+    if (context.hasFormatWindows && context.activeFormat && context.activeFormat !== primaryFormat) {
+        const line = editor.document.lineAt(insertionPoint);
+        const workspaceEdit = new vscode.WorkspaceEdit();
+        workspaceEdit.replace(editor.document.uri, line.range, writeDisplayFormatCondition(line.text, context.activeFormat));
+        return applyWorkspaceEdit(workspaceEdit, 'condition the window title on its display size');
+    };
+    return true;
 };
 
-/**
- * Removes the record's existing WDWTITLE() keyword line(s) entirely.
- * @param editor - The active text editor
- * @param existing - The title to remove
- */
-async function removeWindowTitle(editor: vscode.TextEditor, existing: ExistingWindowTitle): Promise<boolean> {
-    const workspaceEdit = new vscode.WorkspaceEdit();
-    const uri = editor.document.uri;
+/** Removes one border's title, then offers to delete its field if nothing else uses it. */
+async function removeWindowTitle(context: TitleEditContext, record: FieldsPerRecord, existing: ExistingWindowTitle): Promise<boolean> {
+    const { attr } = existing;
+    const onRecordLine = attr.lineIndex === record.startIndex;
+    if (!(await removeKeywordTextFromLines(context.editor, attr.lineIndex, attr.lastLineIndex ?? attr.lineIndex, attr.value, onRecordLine))) {
+        return false;
+    };
+    if (existing.source?.kind === 'field') {
+        await offerDeletingTitleField(context, existing.source.name);
+    };
+    return true;
+};
 
-    const range = new vscode.Range(
-        existing.lineIndex, 0,
-        existing.lastLineIndex + 1, 0
-    );
-    workspaceEdit.delete(uri, range);
-
-    return applyWorkspaceEdit(workspaceEdit, 'remove the window title');
+/** Offers to delete a title field no keyword of the record names any more. */
+async function offerDeletingTitleField(context: TitleEditContext, name: string): Promise<void> {
+    if (findField(context.editor, context.recordName, name) && !isNamedByRecordKeywords(context.editor, context.recordName, name)) {
+        await deleteUnusedFields(context.editor, context.recordName, 'WDWTITLE', [name]);
+    };
 };

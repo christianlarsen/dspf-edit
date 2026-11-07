@@ -13,6 +13,7 @@ import { resolveDecimalFormatFromSystem, resolveDateSeparatorFormatFromSystem, r
 import { resetUserEditDescriptions, setUserEditDescriptions } from '../dspf-edit.utils/dspf-edit.user-edit-codes';
 import { RecordPreviewPanel } from './dspf-edit.record-preview-panel';
 import { getColumnRulerEnabled, setColumnRulerEnabled } from '../dspf-edit.utils/dspf-edit.column-ruler-settings';
+import { NEW_WINDOW_MODE_OPTIONS, NewWindowMode, getNewWindowMode, setNewWindowMode } from '../dspf-edit.utils/dspf-edit.new-window-settings';
 import { refreshColumnRuler } from '../dspf-edit.listeners/dspf-edit.column-ruler';
 
 /**
@@ -88,6 +89,17 @@ export class PreviewColorsPanel {
         PreviewColorsPanel.current?.panel.webview.postMessage({ type: 'updateColumnRuler', value: getColumnRulerEnabled() });
     };
 
+    /**
+     * Tells the open panel's own script the colors every swatch should show — after a reset. Via
+     * postMessage for the same reason as updateDecimalFormatRadio: resetting a color back to the
+     * default the panel was opened with gives byte-identical html, so `refresh()` wouldn't reload
+     * it, and the swatch kept showing the color picked before the reset.
+     */
+    private updateColorSwatches(): void {
+        const colors = Object.fromEntries(PREVIEW_COLOR_SETTINGS.map(setting => [setting.key, readColorSetting(setting.key, setting.defaultHex)]));
+        this.panel.webview.postMessage({ type: 'updateColors', colors });
+    };
+
     /** Same as updateDecimalFormatRadio, for the date separator's radios. */
     private updateDateSeparatorRadio(): void {
         this.panel.webview.postMessage({ type: 'updateDateSeparator', value: getDateSeparatorFormat() });
@@ -101,12 +113,12 @@ export class PreviewColorsPanel {
                 break;
             case 'resetColor':
                 await resetPreviewColors(message.key);
-                this.refresh();
+                this.updateColorSwatches();
                 RecordPreviewPanel.refreshTheme();
                 break;
             case 'resetAll':
                 await resetPreviewColors();
-                this.refresh();
+                this.updateColorSwatches();
                 RecordPreviewPanel.refreshTheme();
                 break;
             case 'setDecimalFormat':
@@ -157,6 +169,9 @@ export class PreviewColorsPanel {
                 break;
             case 'setOverlayKeepOnSwitch':
                 await setOverlayKeepOnSwitch(!!message.value);
+                break;
+            case 'setNewWindowMode':
+                await setNewWindowMode(message.value as NewWindowMode);
                 break;
             case 'setOverlaySubfilePair':
                 await setOverlaySubfilePair(!!message.value);
@@ -209,6 +224,15 @@ export class PreviewColorsPanel {
         <label class="radio-label">
             <input type="radio" name="decimalFormat" value="${opt.value}" ${opt.value === currentDecimalFormat ? 'checked' : ''}>
             ${opt.label} — <span class="hex">${opt.example}</span>
+        </label>
+    </div>`).join('');
+
+        const currentNewWindowMode = getNewWindowMode();
+        const newWindowModeRows = NEW_WINDOW_MODE_OPTIONS.map(opt => `
+    <div class="row">
+        <label class="radio-label">
+            <input type="radio" name="newWindowMode" value="${opt.value}" ${opt.value === currentNewWindowMode ? 'checked' : ''}>
+            ${opt.label}
         </label>
     </div>`).join('');
 
@@ -334,6 +358,12 @@ ${dateSeparatorRows}
 
 <hr class="section">
 
+<h2>New Window Records</h2>
+<p class="hint">How New Record creates a window, or a subfile in a window. Without asking, the window is created at its default size, to be sized and moved with the mouse in the preview, and its title is set afterwards with Change Window Title.</p>
+${newWindowModeRows}
+
+<hr class="section">
+
 <h2>Preview Overlay</h2>
 <p class="hint">Records shown dimmed behind the one being previewed.</p>
 <div class="row">
@@ -425,6 +455,12 @@ ${dateSeparatorRows}
         vscode.postMessage({ type: 'setOverlaySubfilePair', value: ev.target.checked });
     });
 
+    document.querySelectorAll('input[name="newWindowMode"]').forEach(input => {
+        input.addEventListener('change', () => {
+            vscode.postMessage({ type: 'setNewWindowMode', value: input.value });
+        });
+    });
+
     // Reset/Fetch don't reload the panel's html (see updateDecimalFormatRadio's comment on the
     // extension side for why) — they instead send this message so the already-live radios get
     // updated directly, without depending on a reload happening at all.
@@ -432,6 +468,15 @@ ${dateSeparatorRows}
         if (event.data?.type === 'updateDecimalFormat') {
             document.querySelectorAll('input[name="decimalFormat"]').forEach(input => {
                 input.checked = input.value === event.data.value;
+            });
+        };
+        if (event.data?.type === 'updateColors') {
+            document.querySelectorAll('input[type="color"]').forEach(input => {
+                const value = event.data.colors[input.dataset.key];
+                if (value) {
+                    input.value = value;
+                    input.nextElementSibling.textContent = value;
+                };
             });
         };
         if (event.data?.type === 'updateColumnRuler') {

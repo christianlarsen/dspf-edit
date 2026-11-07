@@ -24,6 +24,8 @@ export interface HiddenFieldDefinition {
     type: 'A' | 'S';
     length: number;
     decimals?: number;
+    /** H (hidden) unless given; P for a program-to-system field, as WINDOW's line and position need */
+    usage?: 'H' | 'P';
 };
 
 // READING
@@ -39,7 +41,7 @@ export function findField(editor: vscode.TextEditor, recordName: string, name: s
 
 /** How a definition reads, e.g. "10A H" or "4S 0 H". */
 export function formatDefinition(definition: HiddenFieldDefinition): string {
-    return `${definition.length}${definition.type}${definition.decimals !== undefined ? ` ${definition.decimals}` : ''} H`;
+    return `${definition.length}${definition.type}${definition.decimals !== undefined ? ` ${definition.decimals}` : ''} ${definition.usage ?? 'H'}`;
 };
 
 /** How an existing field is defined, e.g. "5A B" or "4S 0 H", or "a referenced field". A blank data type is character. */
@@ -60,12 +62,13 @@ export function isNamedByRecordKeywords(editor: vscode.TextEditor, recordName: s
 
 // EDITING
 
-/** The source line of a hidden field, with an optional keyword on it (e.g. "SFLRCDNBR(CURSOR)"). */
+/** The source line of a hidden (or P) field, with an optional keyword on it (e.g. "SFLRCDNBR(CURSOR)"). */
 export function hiddenFieldLine(name: string, definition: HiddenFieldDefinition, keywordText?: string): string {
+    const usage = definition.usage ?? 'H';
     const line = generateNewFieldLine({
         name,
         position: { row: 0, column: 0 },
-        usage: { type: 'H', description: 'Hidden' },
+        usage: { type: usage, description: usage === 'P' ? 'Program-to-system' : 'Hidden' },
         isReferenced: false,
         typeConfig: { type: definition.type, size: { length: definition.length, decimals: definition.decimals } }
     });
@@ -90,10 +93,12 @@ export async function insertHiddenFieldLines(editor: vscode.TextEditor, recordNa
     };
 
     let insertionPoint = findElementInsertionPoint(editor, { lineIndex: recordInfo.startIndex });
-    let hidden = recordInfo.fields.find(f => f.lineIndex === insertionPoint && (f.usage || '').toUpperCase() === 'H');
+    // Hidden and program-to-system fields alike: neither is shown, and both usually go there.
+    const isUnshown = (usage?: string) => ['H', 'P'].includes((usage || '').toUpperCase());
+    let hidden = recordInfo.fields.find(f => f.lineIndex === insertionPoint && isUnshown(f.usage));
     while (hidden) {
         insertionPoint = findElementInsertionPoint(editor, { lineIndex: hidden.lineIndex });
-        hidden = recordInfo.fields.find(f => f.lineIndex === insertionPoint && (f.usage || '').toUpperCase() === 'H');
+        hidden = recordInfo.fields.find(f => f.lineIndex === insertionPoint && isUnshown(f.usage));
     };
 
     const text = lines.join('\n');

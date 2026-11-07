@@ -28,7 +28,7 @@ Each attribute can itself be conditioned by indicators, with the same AND/OR sup
 
 To set or change the condition, open **Attributes** or **Colors** and use the ✏️ button of the row. On one the element already has, it opens the same menu as **Indicators** on a field: up to nine indicators per condition, and up to nine conditions joined with OR.
 
-Indicators condition a whole source line. If the attribute or color shares its line with something else — the field's own line, another keyword, or other attributes in the same `DSPATR()` — it is first moved to a line of its own, keeping the condition it had, so that nothing else changes.
+Indicators condition a whole source line. If the attribute or color shares its line with something else — the field's own line, another keyword, or other attributes in the same `DSPATR()` — it is moved to a line of its own, keeping the condition it had, so that nothing else changes. It's only moved when the new condition is applied: cancelling leaves the source as it was.
 
 ## Copying the format of an element
 

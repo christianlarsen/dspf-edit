@@ -1321,6 +1321,113 @@ function setDefaultScreenSize(): void {
 };
 
 /**
+ * Where STRSDA draws the border corner of a window whose position is only known at run time
+ * (WINDOW(*DFT ...), or WINDOW(&line &position ...)): row 2, column 2. The preview puts it there too.
+ */
+export const RUNTIME_WINDOW_ORIGIN = { row: 2, col: 2 };
+
+/** How a window definition record says where its window goes. */
+export type WindowPlacement =
+    /** WINDOW(4 20 ...): a fixed line and position */
+    | 'fixed'
+    /** WINDOW(*DFT ...): the system places it relative to the cursor */
+    | 'cursor'
+    /** WINDOW(&LIN &POS ...), or one of them a number: read from P fields at run time */
+    | 'fields';
+
+/** A window definition record's WINDOW() keyword, as parsed by parseWindowDefinition. */
+export interface WindowDefinition {
+    placement: WindowPlacement;
+    /** The start line and position as coded: '4 20', '*DFT', '&LIN &POS' */
+    positionText: string;
+    /** Where the border corner is drawn: as coded when fixed, RUNTIME_WINDOW_ORIGIN for a part known only at run time */
+    startRow: number;
+    startCol: number;
+    numRows: number;
+    numCols: number;
+    /** Whatever follows the size, as coded, with its leading space: ' *NOMSGLIN *NORSTCSR', or '' */
+    options: string;
+};
+
+const WINDOW_POSITION_PART = String.raw`(\d+|&[A-Za-z@#$][A-Za-z0-9@#$_]*)`;
+const WINDOW_DEFINITION_PATTERN = new RegExp(
+    String.raw`WINDOW\s*\(\s*(?:(\*DFT)|${WINDOW_POSITION_PART}\s+${WINDOW_POSITION_PART})\s+(\d+)\s+(\d+)((?:\s+[^)]*)?)\s*\)`,
+    'i'
+);
+
+/**
+ * Parses the definition form of the WINDOW keyword, in its three ways of placing the window:
+ * WINDOW(4 20 9 30), WINDOW(*DFT 9 30) and WINDOW(&LIN &POS 9 30) — each of line and position
+ * can be a number or a P field. Undefined for WINDOW(other-record), or no WINDOW at all.
+ * @param text - The keyword, or a source line containing it
+ */
+export function parseWindowDefinition(text: string): WindowDefinition | undefined {
+    const match = WINDOW_DEFINITION_PATTERN.exec(text);
+    if (!match) return undefined;
+
+    const [, dft, rowPart, colPart, rows, cols, options] = match;
+    const runtime = (part: string | undefined) => part === undefined || part.startsWith('&');
+    return {
+        placement: dft ? 'cursor' : (runtime(rowPart) || runtime(colPart)) ? 'fields' : 'fixed',
+        positionText: dft ? '*DFT' : `${rowPart.toUpperCase()} ${colPart.toUpperCase()}`,
+        startRow: runtime(rowPart) ? RUNTIME_WINDOW_ORIGIN.row : parseInt(rowPart, 10),
+        startCol: runtime(colPart) ? RUNTIME_WINDOW_ORIGIN.col : parseInt(colPart, 10),
+        numRows: parseInt(rows, 10),
+        numCols: parseInt(cols, 10),
+        options: (options ?? '').trimEnd()
+    };
+};
+
+/** Where a window starts, when writing it: a line and position, *DFT, or the P fields holding them. */
+export type WindowStart = { row: number; col: number } | 'cursor' | { fields: { row: string; col: string } };
+
+/**
+ * The P fields a window's line and position are read from, by name without the '&' — undefined for
+ * a number (or for both, with *DFT or a fixed position).
+ */
+export function windowPositionFieldNames(definition: WindowDefinition): { row?: string; col?: string } {
+    if (definition.placement !== 'fields') return {};
+    const [row, col] = definition.positionText.split(' ');
+    const fieldName = (part: string) => part.startsWith('&') ? part.substring(1) : undefined;
+    return { row: fieldName(row), col: fieldName(col) };
+};
+
+/**
+ * Rewrites the WINDOW definition keyword in a source line. What isn't given is kept as coded —
+ * so resizing a window placed at run time (*DFT, or P fields) keeps it placed that way.
+ * @param lineText - The source line with the WINDOW keyword
+ * @param change - The new size, and the new start: a line and position, 'cursor' for *DFT, or the
+ * names of the P fields holding them (WINDOW(&LIN &POS ...))
+ * @returns The line, unchanged when it has no WINDOW definition
+ */
+export function rewriteWindowDefinition(
+    lineText: string,
+    change: { numRows?: number; numCols?: number; start?: WindowStart }
+): string {
+    const current = parseWindowDefinition(lineText);
+    if (!current) return lineText;
+
+    const position = change.start === undefined ? current.positionText
+        : change.start === 'cursor' ? '*DFT'
+        : 'fields' in change.start ? `&${change.start.fields.row} &${change.start.fields.col}`
+        : `${change.start.row} ${change.start.col}`;
+    return lineText.replace(WINDOW_DEFINITION_PATTERN,
+        `WINDOW(${position} ${change.numRows ?? current.numRows} ${change.numCols ?? current.numCols}${current.options})`);
+};
+
+/**
+ * Describes where a window placed at run time goes, for messages: 'relative to the cursor
+ * (*DFT)' or 'at &LIN &POS'. Undefined for a fixed one.
+ */
+export function describeRuntimeWindowPlacement(definition: WindowDefinition): string | undefined {
+    switch (definition.placement) {
+        case 'cursor': return 'relative to the cursor (*DFT)';
+        case 'fields': return `at ${definition.positionText}`;
+        default: return undefined;
+    };
+};
+
+/**
  * NEW: Processes record sizes after all elements have been parsed
  * Assigns default size or WINDOW-specific size to each record.
  * Handles both forms of the WINDOW() keyword: the direct
@@ -1513,15 +1620,10 @@ function extractWindowSize(attributes?: DdsAttribute[], activeFormat?: string): 
     const windowAttribute = pickWindowAttribute(attributes, activeFormat);
     if (!windowAttribute) return undefined;
 
-    // WINDOW(startRow startCol numRows numCols [*NOMSGLIN | *RESTORE | *PRINT])
-    const windowMatch = windowAttribute.value.match(
-        /WINDOW\s*\(\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)(?:\s+[^)]*)?\s*\)/i
-    );
-    if (windowMatch) {
-        const startRow = parseInt(windowMatch[1], 10);
-        const startCol = parseInt(windowMatch[2], 10);
-        const rows = parseInt(windowMatch[3], 10);
-        const cols = parseInt(windowMatch[4], 10);
+    // WINDOW(startRow startCol numRows numCols [*NOMSGLIN ...]), with *DFT or P fields for the start
+    const definition = parseWindowDefinition(windowAttribute.value);
+    if (definition) {
+        const { startRow, startCol, numRows: rows, numCols: cols } = definition;
 
         return {
             size: {
