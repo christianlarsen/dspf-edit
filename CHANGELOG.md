@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.16.1] - 2026-11-07
+### Fixed
+- Indicators: the box asking for the next indicator said "Press ESC to finish", but pressing `Escape` discarded the indicators already entered, so nothing changed ([#108](https://github.com/christianlarsen/dspf-edit/issues/108)). `Escape` now finishes and keeps them, like leaving the box empty and pressing `Enter`. On the first box it still cancels. The box now shows the indicators added so far.
+- Indicators: **Clear all and start over**, cancelled, removed that condition. It now leaves it as it was.
+- Indicators: a lowercase `n` (`n50`) was rejected as an invalid indicator. It's now read as `N50`. `5` and `05` are now seen as the same indicator when checking for repeated ones.
+- Attributes, Colors, Command Keys, Error Messages, Overlay and Subfile End: setting the indicators of one that shared its line with something else (the field's own line, another keyword, or other values in the same keyword) moved it to a line of its own before asking for them, so cancelling still changed the source. It's now moved only when the new condition is applied.
+
 ## [1.16.0] - 2026-11-02
 ### Changed
 - Fields: **Error Messages** now opens one window listing the field's error messages, like the **Attributes** and **Colors** windows. Each row shows the message, the indicators that show it and its response indicator.

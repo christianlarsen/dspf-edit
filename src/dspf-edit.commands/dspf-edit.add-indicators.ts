@@ -126,11 +126,29 @@ async function handleAddIndicatorsCommand(node: DdsNode): Promise<void> {
  * @param requireCondition - True for a keyword DDS doesn't allow without indicators, such as
  * SFLEND: the menu then never removes its last condition, and taking all its indicators off means
  * removing the keyword itself
+ * @param placement - For a keyword that may still have to be moved to a line of its own before
+ * its condition can change: `unconditioned` when the condition read from `element.lineIndex`
+ * isn't its own (it shares the element's definition line), and `prepare`, called only once there
+ * is a condition to apply, makes that move and gives the line to apply it to — so nothing in the
+ * source changes when the menus are dismissed.
  */
-export async function manageLineCondition(editor: vscode.TextEditor, element: { lineIndex: number }, elementName: string, requireCondition: boolean = false): Promise<void> {
+export async function manageLineCondition(
+    editor: vscode.TextEditor,
+    element: { lineIndex: number },
+    elementName: string,
+    requireCondition: boolean = false,
+    placement: { unconditioned?: boolean; prepare?: () => Promise<number | undefined> } = {}
+): Promise<void> {
     // Read the element's full condition: every OR'd AND-group, including continuation lines
-    const { groups } = findIndicatorConditionBlock(editor, element.lineIndex);
-    const applyGroups = (newGroups: IndicatorAssignment[][]) => applyConditionGroups(editor, element, newGroups, elementName, requireCondition);
+    const groups = placement.unconditioned ? [] : findIndicatorConditionBlock(editor, element.lineIndex).groups;
+    const applyGroups = async (newGroups: IndicatorAssignment[][]): Promise<boolean> => {
+        if (requireCondition && newGroups.every(group => group.length === 0)) {
+            vscode.window.showWarningMessage(`${elementName} needs at least one indicator. To take it off, remove the keyword itself.`);
+            return false;
+        };
+        const lineIndex = placement.prepare ? await placement.prepare() : element.lineIndex;
+        return lineIndex !== undefined && applyGroupsToElement(editor, { lineIndex }, newGroups);
+    };
 
     // Show a summary menu — one row per existing OR'd condition, editable/removable
     // individually — instead of the old flat "Add AND/Add OR/Modify/Remove a group/Replace
@@ -176,7 +194,7 @@ export async function manageLineCondition(editor: vscode.TextEditor, element: { 
             vscode.window.showInformationMessage('No indicators selected.');
             return;
         };
-        if (!(await applyGroupsToElement(editor, element, [...groups, newGroup]))) {
+        if (!(await applyGroups([...groups, newGroup]))) {
             return;
         };
         await refreshEditorView();
@@ -191,30 +209,11 @@ export async function manageLineCondition(editor: vscode.TextEditor, element: { 
         return;
     };
 
-    if (!(await applyGroupsToElement(editor, element, [newGroup]))) {
+    if (!(await applyGroups([newGroup]))) {
         return;
     };
     await refreshEditorView();
     vscode.window.showInformationMessage(`Set indicators (${formatIndicatorsSummary(newGroup)}) for ${elementName}.`);
-};
-
-/**
- * Sets a line's condition, as applyGroupsToElement does — unless that would leave a keyword that
- * requires a condition with none, which is refused with a message instead.
- * @returns False when refused or when the edit couldn't be applied
- */
-async function applyConditionGroups(
-    editor: vscode.TextEditor,
-    element: { lineIndex: number },
-    groups: IndicatorAssignment[][],
-    elementName: string,
-    requireCondition: boolean
-): Promise<boolean> {
-    if (requireCondition && groups.every(group => group.length === 0)) {
-        vscode.window.showWarningMessage(`${elementName} needs at least one indicator. To take it off, remove the keyword itself.`);
-        return false;
-    };
-    return applyGroupsToElement(editor, element, groups);
 };
 
 /**
@@ -650,57 +649,72 @@ function formatIndicatorsSummary(indicators: IndicatorAssignment[]): string {
 // USER INTERACTION FUNCTIONS
 
 /**
- * Collects indicators from user through interactive selection.
+ * Reads what was typed in an indicator input box — '50', 'N50', '5', with the N in either case
+ * (n50 is as good as N50) — as an indicator, or undefined when it isn't one (01-99).
+ * @param input - The text typed
+ * @param position - The indicator's position in its AND-group, 1-based
+ */
+export function parseIndicatorInput(input: string, position: number): IndicatorAssignment | undefined {
+    const match = /^(N?)([0-9]{1,2})$/.exec(input.trim().toUpperCase());
+    if (!match) return undefined;
+    const num = parseInt(match[2], 10);
+    if (num < 1 || num > 99) return undefined;
+    const value = num.toString().padStart(2, '0');
+    const isNegated = match[1] === 'N';
+    return { position, indicator: (isNegated ? 'N' : '') + value, isNegated, value };
+};
+
+/**
+ * Validates an indicator input box's text (see parseIndicatorInput): null when it's fine,
+ * otherwise the message to show. An empty box is fine, as it's how the user finishes.
+ * @param input - The text typed
+ * @param taken - Indicators the condition already has, as 'N50'/'05', which can't be repeated
+ */
+function validateIndicatorInput(input: string, taken: string[]): string | null {
+    if (!input.trim()) return null;
+    if (!/^N?[0-9]{1,2}$/i.test(input.trim())) {
+        return 'Invalid indicator format. Use format like: 50, N50, 01, N99';
+    };
+    const parsed = parseIndicatorInput(input, 1);
+    if (!parsed) {
+        return 'Indicator number must be between 01 and 99';
+    };
+    if (taken.includes(parsed.indicator)) {
+        return 'This indicator is already added';
+    };
+    return null;
+};
+
+/**
+ * Collects indicators from user through interactive selection. Leaving a box empty and pressing
+ * Enter finishes; so does Escape once at least one indicator has been entered, keeping them. Escape
+ * on the very first box cancels.
  * @param maxIndicators - Maximum number of indicators that can be added
- * @returns Array of selected indicators
+ * @returns Array of selected indicators — empty when cancelled
  */
 async function collectIndicatorsFromUser(maxIndicators: number = MAX_AND_INDICATORS): Promise<IndicatorAssignment[]> {
     const indicators: IndicatorAssignment[] = [];
 
     while (indicators.length < maxIndicators) {
         const indicatorInput = await vscode.window.showInputBox({
-            title: `Add Indicator ${indicators.length + 1}/${maxIndicators} (Press ESC to finish)`,
-            prompt: `Enter indicator (e.g., '50', 'N50', '01', 'N99', or leave empty to finish)`,
+            title: indicators.length === 0
+                ? `Add Indicator 1/${maxIndicators}`
+                : `Add Indicator ${indicators.length + 1}/${maxIndicators} — added so far: ${formatIndicatorsSummary(indicators)}`,
+            prompt: indicators.length === 0
+                ? `Enter indicator (e.g., '50', 'N50', '01', 'N99'), Escape to cancel`
+                : `Enter another indicator, or leave empty and press Enter (or Escape) to finish`,
             placeHolder: 'Indicator (01-99, optional N prefix)',
-            validateInput: (value: string) => {
-                if (!value.trim()) return null; // Empty is OK to finish
-                if (!/^N?([0-9]{1,2})$/.test(value.trim())) {
-                    return 'Invalid indicator format. Use format like: 50, N50, 01, N99';
-                };
-                const num = parseInt(value.replace(/^N/, ''));
-                if (num < 1 || num > 99) {
-                    return 'Indicator number must be between 01 and 99';
-                };
-                // Check for duplicates
-                const cleanValue = value.trim().toUpperCase();
-                if (indicators.some(ind => ind.indicator === cleanValue)) {
-                    return 'This indicator is already added';
-                };
-                return null;
-            }
+            validateInput: (value: string) => validateIndicatorInput(value, indicators.map(ind => ind.indicator))
         });
 
-        if (indicatorInput === undefined) {
-            // User cancelled
-            return [];
-        };
+        // Escape: cancels on the first box, finishes (keeping what was entered) on the rest.
+        if (indicatorInput === undefined) break;
 
-        const trimmedInput = indicatorInput.trim();
-        if (!trimmedInput) {
-            // User finished entering indicators
-            break;
-        };
+        // Empty: finished entering indicators
+        const indicator = parseIndicatorInput(indicatorInput, indicators.length + 1);
+        if (!indicator) break;
 
-        // Parse indicator
-        const isNegated = trimmedInput.startsWith('N');
-        const value = trimmedInput.replace(/^N/, '').padStart(2, '0');
-
-        indicators.push({
-            position: indicators.length + 1,
-            indicator: trimmedInput.toUpperCase(),
-            isNegated,
-            value
-        });
+        indicators.push(indicator);
     };
 
     return indicators;
@@ -712,7 +726,7 @@ async function collectIndicatorsFromUser(maxIndicators: number = MAX_AND_INDICAT
  * existing one, or clear the whole group and start over.
  * @param groups - The element's current OR'd AND-groups
  * @param groupIndex - Which group to modify
- * @param applyGroups - Sets the element's whole condition (see applyConditionGroups)
+ * @param applyGroups - Sets the element's whole condition (see manageLineCondition)
  */
 async function modifyGroup(
     groups: IndicatorAssignment[][],
@@ -744,7 +758,11 @@ async function modifyGroup(
     };
 
     if (selectedIndicator === 'Clear all and start over') {
+        // Cancelling leaves the condition as it was; removing it is the trash button's job.
         const newIndicators = await collectIndicatorsFromUser(MAX_AND_INDICATORS);
+        if (newIndicators.length === 0) {
+            return true;
+        };
         if (!(await applyGroupChange(newIndicators))) {
             return false;
         };
@@ -781,35 +799,15 @@ async function modifyGroup(
                     title: `Change indicator at position ${indicatorIndex + 1}`,
                     prompt: `Enter new indicator value (e.g., '50', 'N50', '01', 'N99')`,
                     value: currentIndicators[indicatorIndex].indicator,
-                    validateInput: (value: string) => {
-                        if (!value.trim()) return 'Indicator value is required';
-                        if (!/^N?([0-9]{1,2})$/.test(value.trim())) {
-                            return 'Invalid indicator format. Use format like: 50, N50, 01, N99';
-                        }
-                        const num = parseInt(value.replace(/^N/, ''));
-                        if (num < 1 || num > 99) {
-                            return 'Indicator number must be between 01 and 99';
-                        }
-                        // Check for duplicates (excluding current position)
-                        const cleanValue = value.trim().toUpperCase();
-                        if (currentIndicators.some((ind, idx) => idx !== indicatorIndex && ind.indicator === cleanValue)) {
-                            return 'This indicator is already used in another position';
-                        }
-                        return null;
-                    }
+                    validateInput: (value: string) => value.trim()
+                        ? validateIndicatorInput(value, currentIndicators.filter((_, idx) => idx !== indicatorIndex).map(ind => ind.indicator))
+                        : 'Indicator value is required'
                 });
 
-                if (newValue) {
-                    const isNegated = newValue.startsWith('N');
-                    const value = newValue.replace(/^N/, '').padStart(2, '0');
-
+                const indicator = newValue === undefined ? undefined : parseIndicatorInput(newValue, indicatorIndex + 1);
+                if (indicator) {
                     const updatedIndicators = [...currentIndicators];
-                    updatedIndicators[indicatorIndex] = {
-                        position: indicatorIndex + 1,
-                        indicator: newValue.toUpperCase(),
-                        isNegated,
-                        value
-                    };
+                    updatedIndicators[indicatorIndex] = indicator;
 
                     if (!(await applyGroupChange(updatedIndicators))) {
                         return false;

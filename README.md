@@ -168,10 +168,10 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.16.0** - 2026-11-02
-- Changed: **Error Messages** and **Command Keys** now open one window listing what the field or record has, like **Attributes** and **Colors**: change, set the indicators of (AND/OR conditions included) or remove each one, or add a new one.
-- Error messages from a message file (`ERRMSGID`) can now be added, changed and removed too.
-- Command keys that won't compile are caught: a key that is CA in one place and CF in another, or that is at both file and record level. STRSDA doesn't check either; CRTDSPF fails.
+**1.16.1** - 2026-11-07
+- Fixed: when entering indicators, `Escape` discarded the ones already entered, although the box said "Press ESC to finish" ([#108](https://github.com/christianlarsen/dspf-edit/issues/108)). It now keeps them.
+- Fixed: a lowercase `n` (`n50`) is now accepted as `N50`.
+- Fixed: cancelling the indicators of an attribute, color or other keyword no longer moves it to a line of its own anyway, and cancelling **Clear all and start over** no longer removes the condition.
 
 ---
 

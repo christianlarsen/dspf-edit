@@ -9,6 +9,14 @@ Fields, constants, and attributes can be conditioned by response/status indicato
 
 Right-click a field, constant, or attribute and choose **Indicators** (or the equivalent **Add / Remove / Change indicators** entry) to add a condition, change an existing one, or remove it.
 
+## Entering indicators
+
+Indicators are entered one at a time, each in its own box: `50`, or `N50` for *not* 50. The `N` can be typed in lowercase (`n50`), and a single digit is read as two (`5` is `05`).
+
+- After each indicator, another box asks for the next one, showing the ones added so far.
+- To finish, leave the box empty and press `Enter`, or press `Escape`: the indicators entered are kept.
+- `Escape` on the first box cancels, and nothing changes.
+
 ## AND conditions
 
 Up to DDS's limit of **9 ANDed indicators** on a single condition is supported. Beyond 3 — the number that fits on one DDS line — the extra indicators spill onto continuation lines automatically; you don't need to manage line-wrapping yourself.
