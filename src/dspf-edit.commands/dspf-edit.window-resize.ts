@@ -8,13 +8,17 @@ import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fileSizeAttributes, fieldsPerRecords, getAvailableDisplayFormats, getSizeForFormat } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { parseWindowDefinition, rewriteWindowDefinition, describeRuntimeWindowPlacement, windowPositionFieldNames, RUNTIME_WINDOW_ORIGIN, WindowDefinition } from '../dspf-edit.parser/dspf-edit.parser';
+import { WindowPositionFields, collectWindowPositionFields, createMissingWindowPositionFields, deleteUnusedWindowPositionFields } from './dspf-edit.window-position-fields';
 
 // INTERFACES AND TYPES
 
 /**
- * Window positioning options.
+ * Window positioning options: a fixed line and position (CENTERED, BOTTOM_CENTERED), relative to
+ * the cursor (CURSOR, WINDOW(*DFT ...)), at the line and position the program sets in two P fields
+ * (FIELDS, WINDOW(&LIN &POS ...)), or as it is now (KEEP, only for a window placed at run time).
  */
-type WindowPosition = 'CENTERED' | 'BOTTOM_CENTERED';
+type WindowPosition = 'CENTERED' | 'BOTTOM_CENTERED' | 'CURSOR' | 'FIELDS' | 'KEEP';
 
 /**
  * Window resize operation types.
@@ -33,6 +37,12 @@ interface CurrentWindowDimensions {
     /** Display format (e.g. "*DS3") this line is conditioned on, or undefined if unconditioned
      * (applies to every declared format). */
     format?: string;
+    /** How the start is written: as given (fixed), *DFT (cursor), P fields (fields), or left as coded (keep) */
+    start?: 'fixed' | 'cursor' | 'fields' | 'keep';
+    /** The P fields the start is written with, when `start` is 'fields' */
+    fields?: WindowPositionFields;
+    /** The WINDOW keyword as it is now, when this is an existing one */
+    definition?: WindowDefinition;
 };
 
 /**
@@ -48,6 +58,8 @@ interface WindowResizeConfig {
     autoAdjustConfig?: {
         position: WindowPosition;
     };
+    /** The P fields holding the line and position, when the position chosen is FIELDS */
+    positionFields?: WindowPositionFields;
 };
 
 /**
@@ -112,14 +124,31 @@ async function handleWindowResizeCommand(node: DdsNode): Promise<void> {
 
         // Show current window information
         const currentInfo = currentWindows.length === 1
-            ? `Current: ${currentWindows[0].numRows}x${currentWindows[0].numCols} at (${currentWindows[0].startRow},${currentWindows[0].startCol})`
+            ? `Current: ${currentWindows[0].numRows}x${currentWindows[0].numCols} ${describeWindowPlace(currentWindows[0])}`
             : `Current: ${currentWindows[0].numRows}x${currentWindows[0].numCols} (${currentWindows.length} display sizes declared)`;
 
-        // Collect resize configuration from user
-        const resizeConfig = await collectWindowResizeConfiguration(currentInfo, element);
+        // Collect resize configuration from user. A window placed at run time (*DFT, or P fields)
+        // can stay that way.
+        const runtimePlacement = currentWindows.map(w => w.definition && describeRuntimeWindowPlacement(w.definition)).find(Boolean);
+        const resizeConfig = await collectWindowResizeConfiguration(currentInfo, element, runtimePlacement);
         if (!resizeConfig) {
             // User cancelled the operation
             return;
+        };
+
+        // At the line and position in P fields: which ones, offering those the window uses now.
+        const oldFieldNames = currentWindows.flatMap(w => {
+            const fields = w.definition ? windowPositionFieldNames(w.definition) : {};
+            return [fields.row, fields.col].filter((name): name is string => !!name);
+        });
+        const position = resizeConfig.newDimensions?.position ?? resizeConfig.autoAdjustConfig?.position;
+        if (position === 'FIELDS') {
+            const currentFields = currentWindows[0].definition ? windowPositionFieldNames(currentWindows[0].definition) : {};
+            const fields = await collectWindowPositionFields(element.name, currentFields);
+            if (!fields) {
+                return;
+            };
+            resizeConfig.positionFields = fields;
         };
 
         // Calculate new dimensions for every existing WINDOW line, each positioned according to its
@@ -138,16 +167,27 @@ async function handleWindowResizeCommand(node: DdsNode): Promise<void> {
         if (!(await applyWindowResize(editor, newDimensionsList))) {
             return;
         };
+
+        // The P fields: the new ones created when missing, the old ones no longer used offered for deletion.
+        const newFields = resizeConfig.positionFields;
+        const created = newFields ? await createMissingWindowPositionFields(editor, element.name, newFields) : [];
+        if (created === undefined) {
+            return;
+        };
+        const noLongerUsed = position === 'KEEP' ? [] : [...new Set(oldFieldNames)].filter(name => name !== newFields?.row && name !== newFields?.col);
+        if ((await deleteUnusedWindowPositionFields(editor, element.name, noLongerUsed)) === undefined) {
+            return;
+        };
         await vscode.commands.executeCommand('cursorRight');
         await vscode.commands.executeCommand('cursorLeft');
 
         // Show success message
         const operationLabel = resizeConfig.operation === 'CHANGE_SIZE' ? 'resized' : 'auto-adjusted';
         const dimensionsSummary = newDimensionsList.length === 1
-            ? `${newDimensionsList[0].numRows}x${newDimensionsList[0].numCols} at (${newDimensionsList[0].startRow},${newDimensionsList[0].startCol})`
-            : newDimensionsList.map(d => `${d.format ?? 'default'}: ${d.numRows}x${d.numCols} at (${d.startRow},${d.startCol})`).join(', ');
+            ? `${newDimensionsList[0].numRows}x${newDimensionsList[0].numCols} ${describeWindowPlace(newDimensionsList[0])}`
+            : newDimensionsList.map(d => `${d.format ?? 'default'}: ${d.numRows}x${d.numCols} ${describeWindowPlace(d)}`).join(', ');
         vscode.window.showInformationMessage(
-            `Successfully ${operationLabel} window '${element.name}' — ${dimensionsSummary}.`
+            `Successfully ${operationLabel} window '${element.name}' — ${dimensionsSummary}${created.length > 0 ? `; created ${created.join(', ')}` : ''}.`
         );
 
     } catch (error) {
@@ -164,7 +204,7 @@ async function handleWindowResizeCommand(node: DdsNode): Promise<void> {
  * @param element - The record element for context
  * @returns Window resize configuration or null if user cancelled
  */
-async function collectWindowResizeConfiguration(currentInfo: string, element: any): Promise<WindowResizeConfig | null> {
+async function collectWindowResizeConfiguration(currentInfo: string, element: any, runtimePlacement?: string): Promise<WindowResizeConfig | null> {
     // Step 1: Choose resize operation
     const operation = await collectResizeOperation(currentInfo);
     if (!operation) return null;
@@ -174,7 +214,7 @@ async function collectWindowResizeConfiguration(currentInfo: string, element: an
         const newSize = await collectNewWindowSize();
         if (!newSize) return null;
 
-        const position = await collectWindowPosition();
+        const position = await collectWindowPosition(runtimePlacement);
         if (!position) return null;
 
         return {
@@ -187,7 +227,7 @@ async function collectWindowResizeConfiguration(currentInfo: string, element: an
         };
     } else {
         // Step 2b: Collect position for auto-adjust
-        const position = await collectWindowPosition();
+        const position = await collectWindowPosition(runtimePlacement);
         if (!position) return null;
 
         return {
@@ -266,11 +306,19 @@ async function collectNewWindowSize(): Promise<{ numRows: number; numCols: numbe
 };
 
 /**
- * Collects window positioning preference.
+ * Collects window positioning preference: a fixed line and position, or relative to the cursor
+ * (*DFT); and, for a window placed at run time already, keeping it as it is.
+ * @param runtimePlacement - How the window is placed at run time now (see
+ * describeRuntimeWindowPlacement); undefined when it has a fixed position
  * @returns Window position or null if cancelled
  */
-async function collectWindowPosition(): Promise<WindowPosition | null> {
+async function collectWindowPosition(runtimePlacement?: string): Promise<WindowPosition | null> {
     const positionOptions: vscode.QuickPickItem[] = [
+        ...(runtimePlacement ? [{
+            label: "KEEP",
+            description: "Keep it where it is",
+            detail: `The window stays placed at run time, ${runtimePlacement}`
+        }] : []),
         {
             label: "CENTERED",
             description: "Center the window on screen",
@@ -280,6 +328,16 @@ async function collectWindowPosition(): Promise<WindowPosition | null> {
             label: "BOTTOM_CENTERED",
             description: "Center horizontally, position at bottom",
             detail: "Window will be centered horizontally and positioned at the bottom"
+        },
+        {
+            label: "CURSOR",
+            description: "Relative to the cursor (*DFT)",
+            detail: "The system places the window near the cursor when it's shown, so it doesn't hide that part of the screen"
+        },
+        {
+            label: "FIELDS",
+            description: "At the line and position in fields (&LIN &POS)",
+            detail: "The program sets the window's line and position in two P fields of the record, created if missing"
         }
     ];
 
@@ -337,16 +395,17 @@ function findCurrentWindowDimensions(editor: vscode.TextEditor, element: any): C
 
     const results: CurrentWindowDimensions[] = [];
     for (const windowAttribute of windowAttributes) {
-        // WINDOW(startRow startCol numRows numCols)
-        const match = windowAttribute.value.match(/WINDOW\((\d+) (\d+) (\d+) (\d+)(?: [^)]*)?\)/);
-        if (match) {
+        // WINDOW(startRow startCol numRows numCols), with *DFT or P fields for the start
+        const definition = parseWindowDefinition(windowAttribute.value);
+        if (definition) {
             results.push({
-                startRow: parseInt(match[1]),
-                startCol: parseInt(match[2]),
-                numRows: parseInt(match[3]),
-                numCols: parseInt(match[4]),
+                startRow: definition.startRow,
+                startCol: definition.startCol,
+                numRows: definition.numRows,
+                numCols: definition.numCols,
                 windowLine: windowAttribute.lineIndex,
-                format: windowAttribute.displayFormat
+                format: windowAttribute.displayFormat,
+                definition
             });
         };
     };
@@ -441,6 +500,18 @@ function analyzeRecordContent(editor: vscode.TextEditor, element: any, maxRows: 
 
 // DIMENSION CALCULATION FUNCTIONS
 
+/** Where a window goes, for messages: 'at (4,20)', or how it's placed at run time. */
+function describeWindowPlace(window: CurrentWindowDimensions): string {
+    if (window.start === 'cursor') {
+        return 'relative to the cursor (*DFT)';
+    };
+    if (window.start === 'fields' && window.fields) {
+        return `at &${window.fields.row} &${window.fields.col}`;
+    };
+    const keptDefinition = window.start === 'fixed' ? undefined : window.definition;
+    return (keptDefinition && describeRuntimeWindowPlacement(keptDefinition)) || `at (${window.startRow},${window.startCol})`;
+};
+
 /**
  * Calculates new dimensions for a single existing WINDOW() line, positioned within its own declared
  * format's screen bounds (or the file default, when unconditioned).
@@ -483,7 +554,9 @@ async function calculateNewDimensionsForWindow(
     return {
         ...positioned,
         windowLine: currentWindow.windowLine,
-        format: currentWindow.format
+        format: currentWindow.format,
+        definition: currentWindow.definition,
+        fields: config.positionFields
     };
 };
 
@@ -508,8 +581,18 @@ function calculateWindowPosition(
 
     let startRow: number;
     let startCol: number;
+    let start: CurrentWindowDimensions['start'] = 'fixed';
 
     switch (position) {
+        case 'CURSOR':
+        case 'FIELDS':
+        case 'KEEP':
+            // Placed at run time: checked where STRSDA (and the preview) draw it.
+            startRow = RUNTIME_WINDOW_ORIGIN.row;
+            startCol = RUNTIME_WINDOW_ORIGIN.col;
+            start = position === 'CURSOR' ? 'cursor' : position === 'FIELDS' ? 'fields' : 'keep';
+            break;
+
         case 'CENTERED':
             startRow = Math.floor((maxRows - size.numRows) / 2) + 1;
             startCol = Math.floor((maxCols - size.numCols) / 2) + 1;
@@ -548,7 +631,8 @@ function calculateWindowPosition(
         startCol,
         numRows: size.numRows,
         numCols: size.numCols,
-        windowLine : 0
+        windowLine : 0,
+        start
     };
 };
 
@@ -569,14 +653,17 @@ async function applyWindowResize(
     const uri = editor.document.uri;
 
     // Replace the WINDOW keyword parameters, preserving any trailing suffix (e.g. *NOMSGLIN)
-    const oldWindowPattern = /WINDOW\(\d+\s+\d+\s+\d+\s+\d+(\s+[^)]*)?\)/;
-
+    // (a start placed at run time is left as coded when kept).
     for (const newDimensions of newDimensionsList) {
         const line = editor.document.lineAt(newDimensions.windowLine);
-        const updatedLine = line.text.replace(
-            oldWindowPattern,
-            (_match, suffix) => `WINDOW(${newDimensions.startRow} ${newDimensions.startCol} ${newDimensions.numRows} ${newDimensions.numCols}${suffix ?? ''})`
-        );
+        const updatedLine = rewriteWindowDefinition(line.text, {
+            numRows: newDimensions.numRows,
+            numCols: newDimensions.numCols,
+            start: newDimensions.start === 'keep' ? undefined
+                : newDimensions.start === 'cursor' ? 'cursor'
+                : newDimensions.start === 'fields' && newDimensions.fields ? { fields: newDimensions.fields }
+                : { row: newDimensions.startRow, col: newDimensions.startCol }
+        });
         workspaceEdit.replace(uri, line.range, updatedLine);
     };
 

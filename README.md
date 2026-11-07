@@ -168,10 +168,14 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.16.1** - 2026-11-07
+**1.17.0** - 2026-11-07
+- Added: windows placed at run time, from **New Record** and **Change Window Size**: relative to the cursor (`WINDOW(*DFT rows columns)`), or at the line and position the program sets in two `P` fields (`WINDOW(&LIN &POS rows columns)`), created as `3S 0P`. Such windows are now recognized and previewed where STRSDA shows them.
+- Added: a **Configuration** setting to have **New Record** create windows without asking for their size and position (`WINDOW(2 2 10 40)` or `WINDOW(*DFT 10 40)`), to be sized and moved with the mouse.
+- Changed: **Change Window Title** lists the window's title and footer, each a text or a `P` field the program fills (`WDWTITLE((*TEXT &FIELD))`), to set, change or remove.
 - Fixed: when entering indicators, `Escape` discarded the ones already entered, although the box said "Press ESC to finish" ([#108](https://github.com/christianlarsen/dspf-edit/issues/108)). It now keeps them.
 - Fixed: a lowercase `n` (`n50`) is now accepted as `N50`.
 - Fixed: cancelling the indicators of an attribute, color or other keyword no longer moves it to a line of its own anyway, and cancelling **Clear all and start over** no longer removes the condition.
+- Fixed: resetting a preview color in **Configuration** now updates its swatch too.
 
 ---
 

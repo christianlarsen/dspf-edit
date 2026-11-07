@@ -8,12 +8,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
-## [1.16.1] - 2026-11-07
+## [1.17.0] - 2026-11-07
+### Added
+- Windows: a window can be placed at run time. **New Record** and **Change Window Size** offer two more positions:
+  - **Relative to the cursor (*DFT)**, `WINDOW(*DFT rows columns)`: the system places the window near the cursor, so it doesn't hide the part of the screen being worked on.
+  - **At the line and position in fields (&LIN &POS)**, `WINDOW(&LIN &POS rows columns)`: the program sets them in two `P` fields of the record. It asks for their names (`WDWLIN` and `WDWPOS` by default) and creates the missing ones as `3S 0P`. An existing field must be signed numeric, usage `P`, up to 3 digits, as the DDS reference requires.
+  - For a window already placed at run time, **Change Window Size** offers **Keep it where it is** first, which only changes its size. When a window stops using its line and position fields (from **Change Window Size**, or moving it in the preview), it asks whether to delete them.
+  - The preview's info bar shows how such a window is placed instead of a position.
+- Configuration: a **New Window Records** section says how **New Record** creates a window, or a subfile in a window: **Ask for size and position** (as before, the default), or without asking, as `WINDOW(2 2 10 40)` (**Create at a fixed position**) or `WINDOW(*DFT 10 40)` (**Create relative to the cursor**). Without asking, the window is then sized and moved with the mouse in the preview, and its title set with **Change Window Title**; a subfile in a window still asks for what belongs to the subfile.
+- Windows: the title and the footer can be taken from a field the program fills, `WDWTITLE((*TEXT &FIELD))`, and a window can have both at once. See **Changed** below.
+
+### Changed
+- Windows: **Change Window Title** now opens a list with the window's **Title (top)** and **Footer (bottom)**, each with ✏️ to set or change it and 🗑️ to remove it. Before, it only changed one title, so a window couldn't get both.
+  - Each one is a **Text** written in the source, or a **Field**: a `P` field of the record the program fills. A missing field is created as a character `P` field as long as the window is wide; an existing one must be character with usage `P`. When a title stops using a field, it asks whether to delete it.
+  - The title's own `*COLOR` and `*DSPATR` are kept when it changes. Before, they were lost.
+  - A single quote can now be part of a title's text; it's written twice (`''`), as DDS requires.
+  - In the preview, a title taken from a field shows as a dotted box in the border where it goes, as long as the field (at most the window's width). On a border of characters it covers them, as a real title would; on a reverse-image border it's transparent, so the band of color shows through. Hovering it shows the field and its definition; clicking it opens **Change Window Title**.
+
 ### Fixed
+- Windows: records with `WINDOW(*DFT rows columns)`, or with the line and position in `P` fields (`WINDOW(&LIN &POS rows columns)`), weren't recognized as windows: the preview showed them as full screens, and **Change Window Size** and **Change Window Title** said the record had no `WINDOW` keyword. They're now drawn with the border corner on row 2, column 2, as STRSDA does, since their real position is only known at run time. Resizing them keeps `*DFT` or the fields; moving or aligning them in the preview asks first, since it gives them a fixed position.
+- **Add Commands Record** can now move a `WINDOW(*DFT ...)` window onto the new record. One placed by `P` fields is refused with a message, since its fields would have to move too.
 - Indicators: the box asking for the next indicator said "Press ESC to finish", but pressing `Escape` discarded the indicators already entered, so nothing changed ([#108](https://github.com/christianlarsen/dspf-edit/issues/108)). `Escape` now finishes and keeps them, like leaving the box empty and pressing `Enter`. On the first box it still cancels. The box now shows the indicators added so far.
 - Indicators: **Clear all and start over**, cancelled, removed that condition. It now leaves it as it was.
 - Indicators: a lowercase `n` (`n50`) was rejected as an invalid indicator. It's now read as `N50`. `5` and `05` are now seen as the same indicator when checking for repeated ones.
 - Attributes, Colors, Command Keys, Error Messages, Overlay and Subfile End: setting the indicators of one that shared its line with something else (the field's own line, another keyword, or other values in the same keyword) moved it to a line of its own before asking for them, so cancelling still changed the source. It's now moved only when the new condition is applied.
+- Configuration: after changing a preview color and resetting it with ↺ (or **Reset All to Default**), its swatch kept showing the changed color, although the preview went back to the default one.
 
 ## [1.16.0] - 2026-11-02
 ### Changed

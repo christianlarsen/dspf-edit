@@ -1,6 +1,6 @@
 ---
 title: Configuration
-description: Numeric formatting, preview overlay, source editor and preview color settings.
+description: Numeric formatting, new window records, preview overlay, source editor and preview color settings.
 ---
 
 ## Numeric (decimal) formatting
@@ -24,6 +24,16 @@ This only affects how numeric fields are *rendered in the preview* — it doesn'
 - **Reset to Default** forgets the edit descriptions that were read, along with resetting the decimal convention.
 - Until they are fetched, or if a code could not be read, a field using it previews with no editing.
 - What was read belongs to the system it was read from. After connecting to a different IBM i, fetch again.
+
+## New window records
+
+The **New Window Records** section of the **⚙ Configuration** panel says how **New Record** creates a window record, or a subfile in a window. Changes save immediately.
+
+- **Ask for size and position** (the default): it asks for the window's size, its position and its title.
+- **Create at a fixed position**: it asks nothing about the window and creates it as `WINDOW(2 2 10 40)`.
+- **Create relative to the cursor**: the same, as `WINDOW(*DFT 10 40)`.
+
+Without asking, the window is then sized and moved with the mouse in the [Screen Preview](/dspf-edit/guides/screen-preview/), and its title set with **Change Window Title**. A subfile in a window still asks for what belongs to the subfile. To place a window at the line and position in fields (`WINDOW(&LIN &POS ...)`), use **Change Window Size** afterwards. See [Windows](/dspf-edit/guides/windows/).
 
 ## Preview overlay
 

@@ -9,6 +9,8 @@ Records are the second level of the [Schema Tree](/dspf-edit/guides/schema-tree/
 
 Right-click the **Records** node, or the **File** node, and choose **New Record**.
 
+For a window, or a subfile in a window, it asks for the window's size, position and title — unless the **New Window Records** setting says to create it without asking, at its default size. See [Configuration](/dspf-edit/guides/configuration/#new-window-records).
+
 ## Copy / Delete a record
 
 Right-click a record and choose **Copy Record** or **Delete Record**.
@@ -25,7 +27,7 @@ Right-click a record for **Add constant** and **Add field** (see [Constants](/ds
 
 Available on a subfile control (**SFLCTL**) record. Creates a new, empty record right after it, meant to hold the subfile's function-key legend (e.g. "F3=Exit", "F12=Cancel") — conventionally kept on a separate record from the `SFLCTL` itself.
 
-If the `SFLCTL` declares its own `WINDOW(startRow startCol rows cols)` directly, that window (and any `WDWTITLE()`/`WDWBORDER()` that go with it) is moved onto the new record, and the `SFLCTL` is left with a `WINDOW(newRecordName)` reference — the same "commands record owns the shared window, `SFLCTL` borrows it" pattern real-world DDS commonly uses, since the legend text then lives in the same window as the subfile it describes. See [Subfiles](/dspf-edit/guides/subfiles/).
+If the `SFLCTL` declares its own `WINDOW(startRow startCol rows cols)` (or `WINDOW(*DFT rows cols)`) directly, that window (and any `WDWTITLE()`/`WDWBORDER()` that go with it) is moved onto the new record, and the `SFLCTL` is left with a `WINDOW(newRecordName)` reference — the same "commands record owns the shared window, `SFLCTL` borrows it" pattern real-world DDS commonly uses, since the legend text then lives in the same window as the subfile it describes. See [Subfiles](/dspf-edit/guides/subfiles/).
 
 After adding the record, use **Add Constant** on it to add the function-key texts.
 
@@ -67,11 +69,11 @@ It isn't offered on subfile records (`SFL`).
 
 ## Resizing (window records)
 
-For a `WINDOW` record, **Change Window Size** resizes the window. The command is aware of every display size the file declares (`*DS3`/`*DS4`, ...) and resizes all of them together, keeping the record consistent across formats. You can also resize directly by dragging in the [Screen Preview](/dspf-edit/guides/screen-preview/).
+For a `WINDOW` record, **Change Window Size** resizes the window. The command is aware of every display size the file declares (`*DS3`/`*DS4`, ...) and resizes all of them together, keeping the record consistent across formats. Its position list also offers **Relative to the cursor (*DFT)** and **At the line and position in fields (&LIN &POS)** — see [Placed at run time](/dspf-edit/guides/windows/#placed-at-run-time). You can also resize directly by dragging in the [Screen Preview](/dspf-edit/guides/screen-preview/).
 
 ## Change Window Title (window records)
 
-**Change Window Title** edits the record's `WDWTITLE`. When the record declares more than one display size, the command targets the size currently being worked on.
+**Change Window Title** lists the window's title (top border) and footer (bottom border), each a text or a `P` field the program fills, to set, change or remove — see [Windows](/dspf-edit/guides/windows/#title). When the record declares more than one display size, the command targets the size currently being worked on.
 
 ## Sort elements
 

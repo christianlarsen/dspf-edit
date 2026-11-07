@@ -12,10 +12,38 @@ description: WINDOW records with real positioning, resizing, titles, and shared 
 - In the preview, drag a window's border to resize it, or drag its body to move it.
 - From the [Schema Tree](/dspf-edit/guides/schema-tree/), right-click the window record and choose **Change Window Size**. This is aware of every display size the file declares (`*DS3`/`*DS4`, ...) and resizes all of them together. See [Multiple Display Sizes](/dspf-edit/guides/display-sizes/).
 
+## Placed at run time
+
+A window doesn't need a fixed line and position:
+
+- `WINDOW(*DFT rows columns)` lets the system place it relative to the cursor when it's shown, so it doesn't hide the part of the screen being worked on.
+- `WINDOW(&LIN &POS rows columns)` takes the line and position from two `P` fields of the record, which the program sets before showing it. They must be signed numeric, up to 3 digits (`3S 0P`). Either of them can also be a number.
+
+**New Record** can also create windows without asking for their size and position, at a fixed position or relative to the cursor, to be sized and moved afterwards with the mouse — see [New window records](/dspf-edit/guides/configuration/#new-window-records).
+
+To create one, choose the position in **New Record**: **Relative to the cursor (*DFT)**, or **At the line and position in fields (&LIN &POS)**. The second one asks for the two fields' names (`WDWLIN` and `WDWPOS` by default) and creates them in the record as `3S 0P`.
+
+To change an existing window, use **Change Window Size**, whose position list has the same two choices:
+
+- With **At the line and position in fields**, a field the record doesn't have yet is created as `3S 0P`. One it has must already be defined that way, or it's refused, saying how it's defined.
+- For a window already placed at run time, the list starts with **Keep it where it is**, which only changes its size.
+- When the window stops using its line and position fields, it asks whether to delete them, since the program may still use them.
+
+- The preview draws these windows with the border corner on row 2, column 2, as STRSDA does, since their real position is only known when the program runs.
+- Resizing such a window in the preview keeps `*DFT` or the fields. Moving or aligning it asks first, because it gives the window a fixed line and position instead; for one placed by fields, it then asks whether to delete them.
+- The preview's info bar shows how it's placed (`window 8x30 relative to the cursor (*DFT)`, `window 8x30 at &LIN &POS`) instead of a position.
+
 ## Title
 
 - If the window has a `WDWTITLE`, it's shown in the preview. A window can have one title on the top border and another on the bottom border (`*BOTTOM`), and both are shown. When more than one `WDWTITLE` targets the same border, their parameters are combined, and the first one wins if a parameter is repeated.
-- Click a title directly in the preview to edit it, or right-click the record in the tree and choose **Change Window Title**. When the record declares more than one display size, the command targets the size currently being worked on. When the window has more than one title, the command edits the first `WDWTITLE` in the source.
+- Right-click the record in the tree and choose **Change Window Title**, or click a title directly in the preview. A list shows the window's **Title (top)** and **Footer (bottom)**: select one, or its ✏️ button, to set or change it, and its 🗑️ button to remove it. The list opens again after each change; `Escape` closes it.
+- Setting one asks first where its text comes from:
+  - **Text**: written in the source, `WDWTITLE((*TEXT 'Customers'))`, at most as long as the window is wide. A single quote can be typed as it is; it's written twice (`''`), as DDS requires.
+  - **Field**: a `P` field of the record the program fills, `WDWTITLE((*TEXT &TITULO))`. A field the record doesn't have yet is created as a character `P` field as long as the window is wide (e.g. `30A P`); one it has must already be character with usage `P`, or it's refused.
+- Then it asks for the alignment. The title's own color and display attributes (`*COLOR`, `*DSPATR`), if any, are kept.
+- When a title stops using a field (removed, or changed to a text or another field), it asks whether to delete the field, since the program may still use it.
+- A title taken from a field is only known at run time, so the preview draws a dotted box in the border where it goes, as long as the field (at most the window's width). On a border of characters, the box covers them, as a real title would; on a reverse-image border, it's transparent, so the band of color shows through. Hovering it shows the field and how it's defined (`Title from field &TITULO (20A P)`), and clicking it opens **Change Window Title**.
+- When the record declares more than one display size, the command targets the size currently being worked on. When a border has more than one `WDWTITLE`, the command changes the first one in the source, the one whose parameters win.
 
 ## Centering and aligning
 
