@@ -32,6 +32,7 @@ Each record node shows its own record-level attributes, and lists its constants 
 - **Command keys** — the same window for the record's keys, see [Command Keys](/dspf-edit/guides/command-keys/).
 - **Add / Remove / Change indicators** — see [Indicators and Conditions](/dspf-edit/guides/indicators/).
 - **Resizing** (window records only) — aware of every declared display size, resizing all of them at once.
+- **Change Window Position** (window records only) — moves the window without changing its size: fixed, relative to the cursor (`*DFT`), or at a line and/or position in fields.
 - **Change Window Title** (window records only) — targets the size currently being worked on, when the record declares more than one.
 - **Sort elements.**
 - **Preview Screen Layout** — also available as an inline button on the record. See [Screen Preview](/dspf-edit/guides/screen-preview/).

@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { parseDocument, parseWindowDefinition, rewriteWindowDefinition, windowPositionFieldNames } from '../dspf-edit.parser/dspf-edit.parser';
-import { windowPositionFieldProblem, windowPositionFieldLines } from '../dspf-edit.commands/dspf-edit.window-position-fields';
+import { windowPositionFieldProblem, windowPositionFieldLines, windowStartText, windowStartFieldNames } from '../dspf-edit.commands/dspf-edit.window-position-fields';
 import { fieldsPerRecords } from '../dspf-edit.model/dspf-edit.model';
 
 suite('Parser: WINDOW placement', () => {
@@ -65,6 +65,16 @@ suite('Parser: WINDOW placement', () => {
             'WINDOW(&WDWLIN &WDWPOS 8 30 *NOMSGLIN)');
     });
 
+    test('rewrites the start with only the line, or only the position, in a P field', () => {
+        assert.strictEqual(rewriteWindowDefinition('WINDOW(5 10 8 30)', { start: { fields: { row: 'WDWLIN', col: 20 } } }),
+            'WINDOW(&WDWLIN 20 8 30)');
+        assert.strictEqual(rewriteWindowDefinition('WINDOW(&LIN &POS 8 30 *NORSTCSR)', { start: { fields: { row: 5, col: 'POS' } } }),
+            'WINDOW(5 &POS 8 30 *NORSTCSR)');
+        const mixed = parseWindowDefinition('WINDOW(5 &POS 8 30)')!;
+        assert.strictEqual(mixed.placement, 'fields');
+        assert.strictEqual(mixed.startRow, 5);
+    });
+
     test('names the P fields a window is placed by', () => {
         assert.deepStrictEqual(windowPositionFieldNames(parseWindowDefinition('WINDOW(&LIN &POS 8 30)')!), { row: 'LIN', col: 'POS' });
         assert.deepStrictEqual(windowPositionFieldNames(parseWindowDefinition('WINDOW(&LIN 20 8 30)')!), { row: 'LIN', col: undefined });
@@ -91,6 +101,14 @@ suite('Window position fields', () => {
         assert.strictEqual(windowPositionFieldProblem(fieldOf('     A            LIN            4S 0P')), '4S 0 P');
         assert.strictEqual(windowPositionFieldProblem(fieldOf('     A            LIN            3S 0H')), '3S 0 H');
         assert.strictEqual(windowPositionFieldProblem(fieldOf('     A            LIN            3A  P')), '3A P');
+    });
+
+    test('writes a start with one part fixed, and creates only the field it uses', () => {
+        assert.strictEqual(windowStartText({ row: 'LIN', col: 'POS' }), '&LIN &POS');
+        assert.strictEqual(windowStartText({ row: 'LIN', col: 20 }), '&LIN 20');
+        assert.strictEqual(windowStartText({ row: 5, col: 'POS' }), '5 &POS');
+        assert.deepStrictEqual(windowStartFieldNames({ row: 5, col: 'POS' }), ['POS']);
+        assert.deepStrictEqual(windowPositionFieldLines({ row: 'WDWLIN', col: 20 }), ['     A            WDWLIN         3S 0P']);
     });
 
     test('creates them as 3S 0P', () => {

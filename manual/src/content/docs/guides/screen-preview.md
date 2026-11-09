@@ -123,7 +123,7 @@ Both the subfile pairing and keeping overlays when switching records can be turn
 `WINDOW` records are drawn at their real screen position and can be resized/moved directly with the mouse. The window's `WDWTITLE` is shown if present, including a second title on the bottom border (`*BOTTOM`). Windows shared via `WINDOW(record-name)` are supported.
 
 - Click a window's title to edit it.
-- Hovering a window reveals its "⋮" actions menu and a one-click "center horizontally" icon. The menu's **Align...** places the window left, center or right, and top, center or bottom on the screen — see [Windows](/dspf-edit/guides/windows/#centering-and-aligning).
+- Hovering a window reveals its "⋮" actions menu and a one-click "center horizontally" icon. The menu's **Align...** places the window left, center or right, and top, center or bottom on the screen — see [Windows](/dspf-edit/guides/windows/#centering-and-aligning). Its **Change Position...** opens **Change Window Position**, to place it relative to the cursor (`*DFT`), at a line and/or position in fields, or anywhere else — see [Changing the position](/dspf-edit/guides/windows/#changing-the-position).
 
 An active `ERRMSG()` (or `ERRMSGID()` — see below) on a window shows on the window's own reserved message line (its last content row) when the window doesn't specify `*NOMSGLIN` — matching real DDS behavior — instead of always appearing at the bottom of the physical screen.
 

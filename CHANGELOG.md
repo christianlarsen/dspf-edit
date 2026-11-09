@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.17.1] - 2026-11-09
+### Added
+- Windows: **Change Window Position**, on a window record's right-click menu and as **Change Position...** in the window's "⋮" **Actions** menu in the preview. It moves the window without changing its size: **Centered**, **Centered at the bottom**, **At a line and position** you type, **Relative to the cursor (*DFT)**, or **At the line and/or position in fields**. Until now, the only way to change how a window was placed was **Change Window Size**, which asked for the size again. It changes every display size the file declares, each checked against its own screen. As with **Change Window Size**, missing fields are created and unused ones are offered for deletion.
+- Windows: with **At the line and/or position in fields**, only the line or only the position can be a field, `WINDOW(&LIN 20 rows columns)` or `WINDOW(5 &POS rows columns)`, as the DDS reference allows. It first asks which ones the program sets, then the field's name or the number for each. Only the fields used are created. Offered by **New Record**, **Change Window Size** and **Change Window Position**. The window's rows and columns are always numbers: the DDS reference doesn't allow fields for them.
+
+### Changed
+- Windows: **Change Window Size** now offers the window's current rows and columns, instead of empty boxes.
+
 ## [1.17.0] - 2026-11-07
 ### Added
 - Windows: a window can be placed at run time. **New Record** and **Change Window Size** offer two more positions:
