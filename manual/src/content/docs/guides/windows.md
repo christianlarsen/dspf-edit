@@ -10,28 +10,51 @@ description: WINDOW records with real positioning, resizing, titles, and shared 
 ## Resizing and moving
 
 - In the preview, drag a window's border to resize it, or drag its body to move it.
-- From the [Schema Tree](/dspf-edit/guides/schema-tree/), right-click the window record and choose **Change Window Size**. This is aware of every display size the file declares (`*DS3`/`*DS4`, ...) and resizes all of them together. See [Multiple Display Sizes](/dspf-edit/guides/display-sizes/).
+- From the [Schema Tree](/dspf-edit/guides/schema-tree/), right-click the window record and choose **Change Window Size**. This is aware of every display size the file declares (`*DS3`/`*DS4`, ...) and resizes all of them together. See [Multiple Display Sizes](/dspf-edit/guides/display-sizes/). The boxes for the rows and columns start with the window's current ones.
+- To move it without changing its size, choose **Change Window Position**, or **Change Position...** in the window's "⋮" menu in the preview. See [Changing the position](#changing-the-position).
 
 ## Placed at run time
 
 A window doesn't need a fixed line and position:
 
 - `WINDOW(*DFT rows columns)` lets the system place it relative to the cursor when it's shown, so it doesn't hide the part of the screen being worked on.
-- `WINDOW(&LIN &POS rows columns)` takes the line and position from two `P` fields of the record, which the program sets before showing it. They must be signed numeric, up to 3 digits (`3S 0P`). Either of them can also be a number.
+- `WINDOW(&LIN &POS rows columns)` takes the line and position from two `P` fields of the record, which the program sets before showing it. They must be signed numeric, up to 3 digits (`3S 0P`). Either of them can also be a number: `WINDOW(&LIN 20 rows columns)` takes only the line from a field, and `WINDOW(5 &POS rows columns)` only the position.
+
+The rows and columns of the window are always numbers: the DDS reference doesn't allow fields for them, since the compiler checks that every field of the record fits in the window.
 
 **New Record** can also create windows without asking for their size and position, at a fixed position or relative to the cursor, to be sized and moved afterwards with the mouse — see [New window records](/dspf-edit/guides/configuration/#new-window-records).
 
-To create one, choose the position in **New Record**: **Relative to the cursor (*DFT)**, or **At the line and position in fields (&LIN &POS)**. The second one asks for the two fields' names (`WDWLIN` and `WDWPOS` by default) and creates them in the record as `3S 0P`.
+To create one, choose the position in **New Record**: **Relative to the cursor (*DFT)**, or **At the line and/or position in fields (&LIN &POS)**. The second one asks first which ones the program sets:
 
-To change an existing window, use **Change Window Size**, whose position list has the same two choices:
+- **Line and position** (`&LIN &POS`): it asks for the two fields' names (`WDWLIN` and `WDWPOS` by default).
+- **Only the line** (`&LIN 20`): it asks for the line's field, and then the position, as a number.
+- **Only the position** (`5 &POS`): it asks for the line, as a number, and then the position's field.
 
-- With **At the line and position in fields**, a field the record doesn't have yet is created as `3S 0P`. One it has must already be defined that way, or it's refused, saying how it's defined.
+The fields are created in the record as `3S 0P`. A number must leave room for the window on the smallest display size the file declares.
+
+To change an existing window, use **Change Window Position** (see below) or **Change Window Size**, whose position lists have the same choices:
+
+- With **At the line and/or position in fields**, a field the record doesn't have yet is created as `3S 0P`. One it has must already be defined that way, or it's refused, saying how it's defined. The fields and numbers the window has now are offered.
 - For a window already placed at run time, the list starts with **Keep it where it is**, which only changes its size.
 - When the window stops using its line and position fields, it asks whether to delete them, since the program may still use them.
 
 - The preview draws these windows with the border corner on row 2, column 2, as STRSDA does, since their real position is only known when the program runs.
 - Resizing such a window in the preview keeps `*DFT` or the fields. Moving or aligning it asks first, because it gives the window a fixed line and position instead; for one placed by fields, it then asks whether to delete them.
 - The preview's info bar shows how it's placed (`window 8x30 relative to the cursor (*DFT)`, `window 8x30 at &LIN &POS`) instead of a position.
+
+## Changing the position
+
+**Change Window Position** moves a window without changing its size. Right-click the window record in the tree, or open the window's "⋮" menu in the preview and choose **Change Position...**. The list's title shows where the window is now:
+
+- **CENTERED**: in the middle of the screen.
+- **BOTTOM_CENTERED**: centered horizontally, at the bottom.
+- **FIXED**: at the line and position you type. A window can't start on line 1 and position 1 at the same time.
+- **CURSOR**: relative to the cursor, `WINDOW(*DFT rows columns)`.
+- **FIELDS**: at the line and/or position in fields, as described in [Placed at run time](#placed-at-run-time).
+
+It changes every display size the file declares, each checked against its own screen; if the window doesn't fit on one at that position, it says which, and nothing changes. When the window stops using a field for its line or position, it asks whether to delete it. From the preview, it's the same command, so, unlike moving or aligning the window with the mouse, it also changes every display size, not only the one being previewed.
+
+On a record shown in another record's window (`WINDOW(record-name)`), the tree command asks to change the position on that record instead. From the preview, it changes that record's window directly.
 
 ## Title
 

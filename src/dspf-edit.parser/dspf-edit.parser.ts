@@ -1378,8 +1378,11 @@ export function parseWindowDefinition(text: string): WindowDefinition | undefine
     };
 };
 
-/** Where a window starts, when writing it: a line and position, *DFT, or the P fields holding them. */
-export type WindowStart = { row: number; col: number } | 'cursor' | { fields: { row: string; col: string } };
+/**
+ * Where a window starts, when writing it: a line and position, *DFT, or the P fields holding them —
+ * each of line and position a field name (without the '&') or, when only one is a field, a number.
+ */
+export type WindowStart = { row: number; col: number } | 'cursor' | { fields: { row: string | number; col: string | number } };
 
 /**
  * The P fields a window's line and position are read from, by name without the '&' — undefined for
@@ -1397,7 +1400,7 @@ export function windowPositionFieldNames(definition: WindowDefinition): { row?: 
  * so resizing a window placed at run time (*DFT, or P fields) keeps it placed that way.
  * @param lineText - The source line with the WINDOW keyword
  * @param change - The new size, and the new start: a line and position, 'cursor' for *DFT, or the
- * names of the P fields holding them (WINDOW(&LIN &POS ...))
+ * names of the P fields holding them (WINDOW(&LIN &POS ...), or WINDOW(&LIN 20 ...) with one a number)
  * @returns The line, unchanged when it has no WINDOW definition
  */
 export function rewriteWindowDefinition(
@@ -1409,7 +1412,7 @@ export function rewriteWindowDefinition(
 
     const position = change.start === undefined ? current.positionText
         : change.start === 'cursor' ? '*DFT'
-        : 'fields' in change.start ? `&${change.start.fields.row} &${change.start.fields.col}`
+        : 'fields' in change.start ? [change.start.fields.row, change.start.fields.col].map(part => typeof part === 'string' ? `&${part}` : String(part)).join(' ')
         : `${change.start.row} ${change.start.col}`;
     return lineText.replace(WINDOW_DEFINITION_PATTERN,
         `WINDOW(${position} ${change.numRows ?? current.numRows} ${change.numCols ?? current.numCols}${current.options})`);

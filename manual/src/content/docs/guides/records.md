@@ -69,7 +69,11 @@ It isn't offered on subfile records (`SFL`).
 
 ## Resizing (window records)
 
-For a `WINDOW` record, **Change Window Size** resizes the window. The command is aware of every display size the file declares (`*DS3`/`*DS4`, ...) and resizes all of them together, keeping the record consistent across formats. Its position list also offers **Relative to the cursor (*DFT)** and **At the line and position in fields (&LIN &POS)** — see [Placed at run time](/dspf-edit/guides/windows/#placed-at-run-time). You can also resize directly by dragging in the [Screen Preview](/dspf-edit/guides/screen-preview/).
+For a `WINDOW` record, **Change Window Size** resizes the window. The command is aware of every display size the file declares (`*DS3`/`*DS4`, ...) and resizes all of them together, keeping the record consistent across formats. The rows and columns start with the window's current ones. Its position list also offers **Relative to the cursor (*DFT)** and **At the line and/or position in fields (&LIN &POS)** — see [Placed at run time](/dspf-edit/guides/windows/#placed-at-run-time). You can also resize directly by dragging in the [Screen Preview](/dspf-edit/guides/screen-preview/).
+
+## Change Window Position (window records)
+
+For a `WINDOW` record, **Change Window Position** moves the window without changing its size: centered, centered at the bottom, at a line and position you type, relative to the cursor (`*DFT`), or at the line and/or position in fields (`&LIN &POS`, `&LIN 20`, `5 &POS`). Like **Change Window Size**, it changes every display size the file declares — see [Changing the position](/dspf-edit/guides/windows/#changing-the-position).
 
 ## Change Window Title (window records)
 

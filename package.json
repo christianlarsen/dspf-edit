@@ -8,7 +8,7 @@
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "1.17.0",
+  "version": "1.17.1",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
@@ -195,6 +195,10 @@
         "title": "Change Window Size"
       },
       {
+        "command": "dspf-edit.window-position",
+        "title": "Change Window Position"
+      },
+      {
         "command": "dspf-edit.window-title",
         "title": "Change Window Title"
       },
@@ -377,6 +381,11 @@
           "command": "dspf-edit.window-title",
           "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
           "group": "records_navigation1@5"
+        },
+        {
+          "command": "dspf-edit.window-position",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
+          "group": "records_navigation1@6"
         },
         {
           "command": "dspf-edit.add-buttons",

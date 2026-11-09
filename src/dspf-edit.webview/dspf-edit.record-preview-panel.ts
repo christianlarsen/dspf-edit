@@ -18,6 +18,7 @@ import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 import { resolveRecordSizeForFormat, filterForActiveFormat, pickForActiveFormat, parseWindowDefinition, rewriteWindowDefinition, describeRuntimeWindowPlacement, windowPositionFieldNames, WindowDefinition } from '../dspf-edit.parser/dspf-edit.parser';
 import { editWindowTitleForRecord } from '../dspf-edit.commands/dspf-edit.window-title';
 import { deleteUnusedWindowPositionFields } from '../dspf-edit.commands/dspf-edit.window-position-fields';
+import { changeWindowPositionForRecord } from '../dspf-edit.commands/dspf-edit.window-resize';
 import { describeFieldDefinition } from '../dspf-edit.commands/dspf-edit.hidden-fields';
 import { getConstantTextFromUser, insertNewConstant, updateExistingConstant } from '../dspf-edit.commands/dspf-edit.edit-constant';
 import { addFieldAtPosition } from '../dspf-edit.commands/dspf-edit.edit-field';
@@ -3011,13 +3012,15 @@ export class RecordPreviewPanel {
 
     /**
      * Shows the window's action menu, opened from the "⋮" button drawn in the frame's corner:
-     * "Change Title..." and "Align..." (every alignment; centering horizontally also has its own
-     * one-click icon next to the menu button).
+     * "Change Title...", "Align..." (every alignment; centering horizontally also has its own
+     * one-click icon next to the menu button) and "Change Position..." (the tree's Change Window
+     * Position: fixed, relative to the cursor, or in P fields).
      */
     private async showWindowMenu(): Promise<void> {
         const options: (vscode.QuickPickItem & { action: string })[] = [
             { label: '$(edit) Change Title...', action: 'editTitle' },
-            { label: '$(arrow-both) Align...', action: 'align' }
+            { label: '$(arrow-both) Align...', action: 'align' },
+            { label: '$(move) Change Position...', action: 'position' }
         ];
 
         const selection = await vscode.window.showQuickPick(options, {
@@ -3033,6 +3036,12 @@ export class RecordPreviewPanel {
             await this.editWindowTitle();
         } else if (selection.action === 'align') {
             await this.showWindowAlignMenu();
+        } else if (selection.action === 'position') {
+            await changeWindowPositionForRecord(this.resolveWindowRecordName());
+            const { editor } = checkForEditorAndDocument();
+            if (editor) {
+                this.forceReparse(editor.document);
+            };
         };
     };
 

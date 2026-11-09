@@ -11,7 +11,7 @@ import { recordExists, DspsizConfig,
     checkForEditorAndDocument, applyWorkspaceEdit, writeDisplayFormatCondition} from '../dspf-edit.utils/dspf-edit.helper';
 import { fileSizeAttributes, getAvailableDisplayFormats } from '../dspf-edit.model/dspf-edit.model';
 import { RUNTIME_WINDOW_ORIGIN } from '../dspf-edit.parser/dspf-edit.parser';
-import { WindowPositionFields, collectWindowPositionFields, windowPositionFieldLines } from './dspf-edit.window-position-fields';
+import { WindowPositionFields, collectWindowPositionFields, windowPositionFieldLines, windowStartText } from './dspf-edit.window-position-fields';
 import { getNewWindowMode, NEW_WINDOW_DEFAULT_SIZE, NEW_WINDOW_DEFAULT_START } from '../dspf-edit.utils/dspf-edit.new-window-settings';
 
 // INTERFACES AND TYPES
@@ -31,8 +31,8 @@ interface WindowSize {
 
 /**
  * Window positioning options: a fixed line and position, relative to the cursor (CURSOR,
- * WINDOW(*DFT ...)), or at the line and position the program sets in two P fields (FIELDS,
- * WINDOW(&LIN &POS ...)).
+ * WINDOW(*DFT ...)), or at the line and/or position the program sets in P fields (FIELDS,
+ * WINDOW(&LIN &POS ...), WINDOW(&LIN 20 ...), WINDOW(5 &POS ...)).
  */
 type WindowPosition = 'CENTERED' | 'BOTTOM_CENTERED' | 'TOP_LEFT' | 'CURSOR' | 'FIELDS';
 
@@ -46,7 +46,7 @@ interface WindowDimensions {
     numCols: number;
     /** Placed by the system relative to the cursor, WINDOW(*DFT ...); startRow/startCol are then where STRSDA draws it */
     relativeToCursor?: boolean;
-    /** Placed where the program says, in these P fields, WINDOW(&LIN &POS ...); startRow/startCol as with relativeToCursor */
+    /** Placed where the program says, in these P fields, WINDOW(&LIN &POS ...); startRow/startCol as with relativeToCursor, but a fixed part as given */
     positionFields?: WindowPositionFields;
 };
 
@@ -321,17 +321,22 @@ async function collectWindowConfiguration(takenFieldNames: string[]): Promise<Wi
     const position = await collectWindowPosition();
     if (!position) return null;
 
-    // At the line and position in P fields: which ones. The record is new, so none exist yet.
+    // At the line and/or position in P fields: which ones, and any fixed part. The record is new,
+    // so no field exists yet. A fixed part has to fit the smallest declared display size.
     let positionFields: WindowPositionFields | undefined;
     if (position === 'FIELDS') {
-        positionFields = await collectWindowPositionFields(undefined, undefined, takenFieldNames);
+        const formats = getAvailableDisplayFormats();
+        const screen = formats.length > 0
+            ? { rows: Math.min(...formats.map(f => f.rows)), cols: Math.min(...formats.map(f => f.cols)) }
+            : { rows: fileSizeAttributes.maxRow1 || 24, cols: fileSizeAttributes.maxCol1 || 80 };
+        positionFields = await collectWindowPositionFields(undefined, undefined, takenFieldNames, screen);
         if (!positionFields) return null;
     };
 
     // Calculate actual dimensions for every declared display size (DSPSIZ format); when the file
     // declares more than one, the window keeps the same rows/cols in each but gets its own
     // position, appropriate to that format's screen size.
-    const dimensionsByFormat = calculateWindowDimensionsForAllFormats(windowSize, position);
+    const dimensionsByFormat = calculateWindowDimensionsForAllFormats(windowSize, position, positionFields);
     if (!dimensionsByFormat) {
         vscode.window.showErrorMessage("Cannot position window with these dimensions on the current screen size(s).");
         return null;
@@ -415,8 +420,8 @@ async function collectWindowPosition(): Promise<WindowPosition | null> {
         },
         {
             label: "FIELDS",
-            description: "At the line and position in fields (&LIN &POS)",
-            detail: "The program sets the window's line and position in two P fields, created in the record"
+            description: "At the line and/or position in fields (&LIN &POS)",
+            detail: "The program sets the window's line, its position, or both, in P fields created in the record"
         }
     ];
 
@@ -439,7 +444,7 @@ async function collectWindowPosition(): Promise<WindowPosition | null> {
  * @param maxCols Screen columns to position within
  * @returns Calculated dimensions or null if invalid
  */
-function calculateWindowDimensions(size: WindowSize, position: WindowPosition, maxRows: number, maxCols: number): WindowDimensions | null {
+function calculateWindowDimensions(size: WindowSize, position: WindowPosition, maxRows: number, maxCols: number, positionFields?: WindowPositionFields): WindowDimensions | null {
     // Validate that window fits on screen
     if (size.numRows > maxRows || size.numCols > maxCols) {
         return null;
@@ -456,9 +461,10 @@ function calculateWindowDimensions(size: WindowSize, position: WindowPosition, m
 
         case 'CURSOR':
         case 'FIELDS':
-            // Placed at run time: checked where STRSDA (and the preview) draw it.
-            startRow = RUNTIME_WINDOW_ORIGIN.row;
-            startCol = RUNTIME_WINDOW_ORIGIN.col;
+            // Placed at run time: checked where STRSDA (and the preview) draw it — but a part
+            // that isn't a field (WINDOW(&LIN 20 ...)) where it's coded.
+            startRow = typeof positionFields?.row === 'number' ? positionFields.row : RUNTIME_WINDOW_ORIGIN.row;
+            startCol = typeof positionFields?.col === 'number' ? positionFields.col : RUNTIME_WINDOW_ORIGIN.col;
             break;
 
         case 'CENTERED':
@@ -515,13 +521,13 @@ function calculateWindowDimensions(size: WindowSize, position: WindowPosition, m
  * @returns One entry per declared format (or a single unconditioned entry), or null if the window
  * doesn't fit on at least one declared screen
  */
-function calculateWindowDimensionsForAllFormats(size: WindowSize, position: WindowPosition): FormatDimensions[] | null {
+function calculateWindowDimensionsForAllFormats(size: WindowSize, position: WindowPosition, positionFields?: WindowPositionFields): FormatDimensions[] | null {
     const declaredFormats = getAvailableDisplayFormats();
 
     if (declaredFormats.length <= 1) {
         const maxRows = declaredFormats[0]?.rows ?? (fileSizeAttributes.maxRow1 || 24);
         const maxCols = declaredFormats[0]?.cols ?? (fileSizeAttributes.maxCol1 || 80);
-        const dimensions = calculateWindowDimensions(size, position, maxRows, maxCols);
+        const dimensions = calculateWindowDimensions(size, position, maxRows, maxCols, positionFields);
         return dimensions ? [{ dimensions }] : null;
     };
 
@@ -533,7 +539,7 @@ function calculateWindowDimensionsForAllFormats(size: WindowSize, position: Wind
 
     const perFormat: FormatDimensions[] = [];
     for (const format of declaredFormats) {
-        const dimensions = calculateWindowDimensions(size, position, format.rows, format.cols);
+        const dimensions = calculateWindowDimensions(size, position, format.rows, format.cols, positionFields);
         if (!dimensions) {
             return null;
         };
@@ -746,7 +752,7 @@ function generateMainRecordLine(config: NewRecordConfig): string {
 function generateWindowLines(dimensionsByFormat: FormatDimensions[]): string[] {
     return dimensionsByFormat.map(({ format, dimensions }) => {
         const start = dimensions.relativeToCursor ? '*DFT'
-            : dimensions.positionFields ? `&${dimensions.positionFields.row} &${dimensions.positionFields.col}`
+            : dimensions.positionFields ? windowStartText(dimensions.positionFields)
             : `${dimensions.startRow} ${dimensions.startCol}`;
         const line = ' '.repeat(5) + 'A' + ' '.repeat(38) + `WINDOW(${start} ${dimensions.numRows} ${dimensions.numCols})`;
         return writeDisplayFormatCondition(line, format);
