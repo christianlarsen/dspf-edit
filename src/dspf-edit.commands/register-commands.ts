@@ -29,6 +29,8 @@ import { addSubfileRecordNumber } from './dspf-edit.subfile-record-number';
 import { addChginpdft } from './dspf-edit.add-chginpdft';
 import { setReferenceFile } from './dspf-edit.set-reference-file';
 import { addValidityCheck } from './dspf-edit.add-validity-check';
+import { keyingOptions } from './dspf-edit.keying-options';
+import { splitFieldLines } from './dspf-edit.split-field-lines';
 import { editingKeywords } from './dspf-edit.add-editing-keywords';
 import { addErrorMessage } from './dspf-edit.add-error-messages';
 import { addIndicators } from './dspf-edit.add-indicators';
@@ -72,6 +74,8 @@ export const commands = [
     { name: 'addChginpdft', handler: addChginpdft, needsTreeProvider: false },
     { name: 'setReferenceFile', handler: setReferenceFile, needsTreeProvider: false },
     { name: 'addValidityCheck', handler: addValidityCheck, needsTreeProvider: false },
+    { name: 'keyingOptions', handler: keyingOptions, needsTreeProvider: false },
+    { name: 'splitFieldLines', handler: splitFieldLines, needsTreeProvider: false },
     { name: 'addEditingKeywords', handler: editingKeywords, needsTreeProvider: false },
     { name: 'addErrorMessage', handler: addErrorMessage, needsTreeProvider: false },
     { name: 'addIndicators', handler: addIndicators, needsTreeProvider: false },

@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.18.0] - 2026-11-14
+### Added
+- Fields: **Keying Options**, on an input field's right-click menu and in the preview's **Actions** menu. A window with the keyboard-control codes of `CHECK`: **ME** mandatory entry, **ER** automatic record advance, **MF** mandatory fill, **FE** field exit key required, **RB** right adjust blank fill and **RZ** right adjust zero fill. Check the ones the field should have; each is written on a line of its own (`CHECK(ME)`, `CHECK(FE)`), as STRSDA does. ✏️ sets indicators on **ME** and **ER**, the only ones DDS allows them on. Combinations DDS doesn't allow (`RB` with `RZ`, `MF` with `RB`/`RZ`, any of them with `WRDWRAP` or `CNTFLD`) are refused. Other `CHECK` codes the field has are kept.
+- Fields: **Split Into Lines**, on an input field's right-click menu and in the preview's **Actions** menu. Shows a long character field as a box of several lines with `CNTFLD(width)`. It checks the width against the field's length and the room left on the display or window, warns when other fields would be inside the box, and can change the width or put the field back on one line. Not offered where DDS doesn't allow `CNTFLD`.
+- Source checks: indicators typed in the wrong columns are now underlined as warnings, also listed in the **Problems** panel. `50` in columns 8-9 instead of 9-10 isn't indicator 50: the preview showed it as indicator 0. Each line's columns 7-16 are checked: `A`/`O`/blank in column 7, and each indicator as `N` or blank plus two digits (`01`-`99`) in columns 8-10, 11-13 and 14-16. A display size name such as `*DS4` must start in column 9 and be declared in `DSPSIZ`. An `O` (OR) in column 7 on the first line of a condition, with nothing above to OR it with, is flagged too. Where a CRTDSPF listing confirmed it, the warning carries the compiler's message ID and is shown as an error when the file isn't created: `CPD7410` for a character other than `N` in columns 8, 11 or 14 (such as `*DS4` starting in column 8), `CPD7606` for an indicator that isn't `01`-`99`, `CPD7821` (a warning; the compiler takes it as blank) for the `O`. When the indicators are right but only misplaced, a **Quick Fix** moves them to their columns.
+
+### Changed
+- **Edit field** offers to remove `CNTFLD` when a field becomes numeric, as it does with `CHECK(LC)` and `LOWER`.
+
+### Fixed
+- **Validity Checks** could be added to output-only fields (usage `O` or blank), which DDS doesn't allow: the check looked at the data type instead of the usage. It now says they only apply to input fields (usage `I` or `B`).
+
 ## [1.17.1] - 2026-11-09
 ### Added
 - Windows: **Change Window Position**, on a window record's right-click menu and as **Change Position...** in the window's "⋮" **Actions** menu in the preview. It moves the window without changing its size: **Centered**, **Centered at the bottom**, **At a line and position** you type, **Relative to the cursor (*DFT)**, or **At the line and/or position in fields**. Until now, the only way to change how a window was placed was **Change Window Size**, which asked for the size again. It changes every display size the file declares, each checked against its own screen. As with **Change Window Size**, missing fields are created and unused ones are offered for deletion.

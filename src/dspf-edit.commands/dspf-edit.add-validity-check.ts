@@ -74,8 +74,10 @@ async function handleAddValidityCheckCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        // Only "input" and "input/output" fields cam have validity checks
-        if (node.ddsElement.type === 'O') {
+        // Only input (I) and input/output (B) fields can have validity checks — usage, not data
+        // type; a blank usage is output-only in a display file.
+        const usage = ((node.ddsElement as any).usage || '').trim().toUpperCase();
+        if (usage !== 'I' && usage !== 'B') {
             vscode.window.showWarningMessage('Validity checks cannot be added to output fields.');
             return;
         };

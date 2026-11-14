@@ -1787,9 +1787,10 @@ const NUMERIC_ONLY_KEYWORD_PATTERNS = [/^EDTCDE\(/i, /^EDTWRD\(/i, /^EDTMSK\(/i]
 
 /**
  * Field-level keywords that only make sense on a character field — offered for automatic removal
- * (after confirmation) when a field switches from alphanumeric to numeric.
+ * (after confirmation) when a field switches from alphanumeric to numeric. CNTFLD (split into
+ * lines) needs data type A.
  */
-const ALPHA_ONLY_KEYWORD_PATTERNS = [/^CHECK\(.*\bLC\b.*\)$/i, /^LOWER\b/i];
+const ALPHA_ONLY_KEYWORD_PATTERNS = [/^CHECK\(.*\bLC\b.*\)$/i, /^LOWER\b/i, /^CNTFLD\(/i];
 
 /**
  * Whether a field currently reads as numeric, per the same DDS Type/decimal-positions default rule
