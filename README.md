@@ -61,6 +61,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
 ### 📏 Column ruler
   - While editing the source by hand, shows the DDS format line (`.....AAN01N02N03T.Name++++++RLen++TDpBLinPos...`) above the line being edited and outlines each column area, so a value in the wrong columns stands out. Hover an area to see its name.
   - Off by default: `Shift+F4` or the "⚙ Configuration" panel turns it on and off.
+  - Indicators in the wrong columns (e.g. `50` typed one column early), and display size names such as `*DS4` out of place, are underlined as warnings, with a Quick Fix that moves them to their columns.
 
 ### 🧭 Schema navigation
   - Two levels are shown: **File** and **Records**.
@@ -123,6 +124,8 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
     - Change position (absolute position/relative to existing constant/field).
     - Apply colors/attributes.
     - Add validity checks.
+    - Keying options (`CHECK`): mandatory entry, automatic record advance, mandatory fill, field exit required, right adjust blank/zero fill.
+    - Split into lines (`CNTFLD`): shows a long input field as a box of several lines.
     - Add editing keywords.
     - Error messages: lists the field's messages, own text (`ERRMSG`) or from a message file (`ERRMSGID`), to add, change, remove or condition them with indicators.
     - Add / Remove / Change indicators, including more than 3 ANDed indicators (up to DDS's limit of 9, spilling onto continuation lines automatically) and OR'd conditions (add/remove whole OR'd groups, or edit indicators within one).
@@ -169,10 +172,11 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.17.1** - 2026-11-09
-- Added: **Change Window Position**, from a window record's right-click menu or the window's **Actions** menu in the preview, moves a window without changing its size: centered, centered at the bottom, at a line and position you type, relative to the cursor (`*DFT`), or at the line and/or position in fields.
-- Added: only the line or only the position of a window can be a field, `WINDOW(&LIN 20 rows columns)` or `WINDOW(5 &POS rows columns)`.
-- Changed: **Change Window Size** now offers the window's current rows and columns.
+**1.18.0** - 2026-11-14
+- Added: **Keying Options** for input fields: mandatory entry, automatic record advance, mandatory fill, field exit required, right adjust blank/zero fill (`CHECK`), one per line as STRSDA writes them, with indicators on `ME` and `ER`.
+- Added: **Split Into Lines** shows a long input field as a box of several lines (`CNTFLD`), checking the width against the field and the display or window.
+- Added: indicators in the wrong columns (e.g. `50` one column early, `*DS4` in column 8, `O` on a condition's first line) are underlined, with the compiler's message ID where confirmed and a Quick Fix that moves them to their columns.
+- Fixed: **Validity Checks** could be added to output-only fields.
 
 ---
 

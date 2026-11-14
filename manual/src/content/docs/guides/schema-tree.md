@@ -63,6 +63,8 @@ Right-click a field for:
 - **Change position** — absolute, or relative to an existing constant/field.
 - **Apply colors/attributes.**
 - **Add validity checks.**
+- **Keying Options** — mandatory entry, automatic record advance, field exit... (`CHECK`); see [Fields](/dspf-edit/guides/fields/#keying-options).
+- **Split Into Lines** — shows a long field as a box of several lines (`CNTFLD`); see [Fields](/dspf-edit/guides/fields/#split-into-lines).
 - **Add editing keywords.**
 - **Error messages** — lists the field's messages, own text (`ERRMSG`) or from a message file (`ERRMSGID`); see [Fields](/dspf-edit/guides/fields/#error-messages).
 - **Add / Remove / Change indicators** — same AND/OR support as constants. See [Indicators and Conditions](/dspf-edit/guides/indicators/).

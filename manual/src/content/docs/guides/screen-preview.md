@@ -38,7 +38,7 @@ Select a field or constant — or several, with `Ctrl`/`Cmd`+click or with [a re
 - **Add color/attribute**, **Copy**, or **Delete** — applied to every selected element at once when multiple are selected.
 - With **more than one** selected, **Align...** lines them up — see [Aligning a selection](#aligning-a-selection) below.
 - With a **single** one selected, **Copy Format...** copies its colors, attributes, indicators and/or number editing; then **Paste Format of NAME** applies them to the selection, one element or several — see [Copying the format of an element](/dspf-edit/guides/colors-attributes/#copying-the-format-of-an-element).
-- A **single** selected field or constant additionally gets **Rename.../Edit Text...**, **Indicators...**, and (for fields) **Validity Checks...**, **Editing Keywords...**, and **Error Messages...** — the same commands available from the tree's context menu, so most of what you'd do from the tree is also reachable straight from the preview.
+- A **single** selected field or constant additionally gets **Rename.../Edit Text...**, **Indicators...**, and (for fields) **Validity Checks...**, **Keying Options...**, **Split Into Lines...**, **Editing Keywords...**, and **Error Messages...** — the same commands available from the tree's context menu, so most of what you'd do from the tree is also reachable straight from the preview.
 
 ![Multi-select actions menu in the preview](/dspf-edit/screenshots/captura6.png)
 
@@ -135,7 +135,7 @@ See [Windows](/dspf-edit/guides/windows/) for the full reference.
 
 ## Field wrapping
 
-A field coded with `CNTFLD(n)` wraps across multiple lines in the preview, `n` characters each, all starting at its original column — matching how RDi previews it.
+A field coded with `CNTFLD(n)` wraps across multiple lines in the preview, `n` characters each, all starting at its original column — matching how RDi previews it. Use **Split Into Lines** on the field to add or change it.
 
 A field with no `CNTFLD()` that's simply too long to fit between its start column and the record's (or window's) right edge wraps automatically too, matching real DDS/STRSDA: it fills out the rest of the starting line, then continues at column 1 using the full line width on each following line, until its whole length is placed.
 

@@ -8,7 +8,7 @@
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "1.17.1",
+  "version": "1.18.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
@@ -175,6 +175,14 @@
         "title": "Validity Checks"
       },
       {
+        "command": "dspf-edit.keying-options",
+        "title": "Keying Options"
+      },
+      {
+        "command": "dspf-edit.split-field-lines",
+        "title": "Split Into Lines"
+      },
+      {
         "command": "dspf-edit.add-editing-keywords",
         "title": "Editing Keywords"
       },
@@ -338,19 +346,29 @@
           "group": "fields_constants_navigation3@3"
         },
         {
-          "command": "dspf-edit.add-editing-keywords",
+          "command": "dspf-edit.keying-options",
           "when": "view == dspf-edit.schema-view && viewItem =~ /^field\\b(?!.*\\b(hidden|message|p2s)\\b)/",
           "group": "fields_constants_navigation3@4"
         },
         {
-          "command": "dspf-edit.add-error-message",
+          "command": "dspf-edit.split-field-lines",
           "when": "view == dspf-edit.schema-view && viewItem =~ /^field\\b(?!.*\\b(hidden|message|p2s)\\b)/",
           "group": "fields_constants_navigation3@5"
         },
         {
+          "command": "dspf-edit.add-editing-keywords",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /^field\\b(?!.*\\b(hidden|message|p2s)\\b)/",
+          "group": "fields_constants_navigation3@6"
+        },
+        {
+          "command": "dspf-edit.add-error-message",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /^field\\b(?!.*\\b(hidden|message|p2s)\\b)/",
+          "group": "fields_constants_navigation3@7"
+        },
+        {
           "command": "dspf-edit.add-indicators",
           "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem =~ /\\bfield\\b/)",
-          "group": "fields_constants_navigation3@6"
+          "group": "fields_constants_navigation3@8"
         },
         {
           "command": "dspf-edit.add-indicators",

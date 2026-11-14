@@ -14,6 +14,7 @@ import { registerColumnRuler } from './dspf-edit.listeners/dspf-edit.column-rule
 import { PreviewColorsPanel } from './dspf-edit.webview/dspf-edit.preview-colors-panel';
 import { setReferencedLengthResolver } from './dspf-edit.parser/dspf-edit.parser';
 import { getResolvedRef } from './dspf-edit.ibmi/dspf-edit.ibmi-integration';
+import { registerValidation } from './dspf-edit.validation/dspf-edit.validation';
 
 // Activate extension
 export function activate(context: vscode.ExtensionContext) {
@@ -57,6 +58,9 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Register all commands
 	registerCommands(context, treeProvider);
+
+	// Warnings for source the compiler would reject or misread (for now, the indicator columns 7-16)
+	registerValidation(context);
 
 	// Column ruler above the line being edited (off by default; Shift+F4 or the Configuration panel)
 	registerColumnRuler(context, () => PreviewColorsPanel.updateColumnRulerIfOpen());

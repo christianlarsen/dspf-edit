@@ -51,6 +51,14 @@ export interface KeywordValueSpec {
     add: (editor: vscode.TextEditor, element: any, codes: string[]) => Promise<boolean>;
     /** Removes every value the element has. */
     removeAll: (editor: vscode.TextEditor, element: any) => Promise<boolean>;
+    /** Whether a value can be conditioned by indicators — every one can when omitted. A value that
+     * can't gets no pencil button (unless the source already conditions it, so it can be undone). */
+    canCondition?: (code: string) => boolean;
+    /** Checks the values the element would end up with when the checkboxes are applied; a message
+     * when they can't go together, and the window comes back with the checkboxes as they were. */
+    validate?: (codes: string[]) => string | undefined;
+    /** Overrides the window's placeholder text. */
+    placeholder?: string;
 };
 
 /** One row of the window: a value the element has (`valueIndex` into its current values), or one
@@ -96,9 +104,18 @@ export async function manageKeywordValues(editor: vscode.TextEditor, element: an
 
         const outcome = await showKeywordValueWindow(items, items.filter(isChecked), values.length > 0, {
             title: `${capitalize(spec.nounPlural)} for ${elementName}`,
-            placeholder: `Check the ${spec.nounPlural} it should have and press Enter — pencil sets indicators, trash removes`
+            placeholder: spec.placeholder ?? `Check the ${spec.nounPlural} it should have and press Enter — pencil sets indicators, trash removes`
         }, items.find(item => item.code === focusCode));
         if (!outcome) return;
+
+        if (outcome.action === 'apply' && spec.validate) {
+            const problem = spec.validate([...new Set(outcome.checked.map(item => item.code))]);
+            if (problem) {
+                vscode.window.showWarningMessage(problem);
+                rememberToggles(items, outcome.checked, toggledOn, toggledOff);
+                continue;
+            };
+        };
 
         if (outcome.action === 'apply') {
             await applyKeywordValueChecks(editor, element, spec, items, outcome.checked);
@@ -148,8 +165,9 @@ function buildKeywordValueItems(values: KeywordValue[], spec: KeywordValueSpec):
         valueIndex: index,
         label: spec.describe(value.code),
         description: value.conditionText ? `When ${value.conditionText}` : 'Always (no indicators)',
-        buttons: [EDIT_BUTTON, REMOVE_BUTTON]
+        buttons: canCondition(value.code) || value.conditionText ? [EDIT_BUTTON, REMOVE_BUTTON] : [REMOVE_BUTTON]
     });
+    const canCondition = (code: string) => spec.canCondition?.(code) ?? true;
 
     const items: KeywordValueItem[] = [];
     for (const code of spec.codes) {
@@ -158,7 +176,7 @@ function buildKeywordValueItems(values: KeywordValue[], spec: KeywordValueSpec):
             code,
             valueIndex: -1,
             label: spec.describe(code),
-            buttons: [ADD_WITH_INDICATORS_BUTTON]
+            buttons: canCondition(code) ? [ADD_WITH_INDICATORS_BUTTON] : []
         }]));
     };
     values.forEach((value, index) => {

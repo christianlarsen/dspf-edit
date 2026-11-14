@@ -43,6 +43,31 @@ A numeric field can have up to 63 digits.
 
 `VALUES` entries are validated against the field as you type them: a character field requires each value in single quotes (e.g. `'A' 'B'`) and rejects one longer than the field itself, while a numeric field requires plain, unquoted numbers — matching the DDS rule that every entry in the list must match the field's own type, never a mix of both. `VALUES` also isn't offered on a floating-point field, which DDS doesn't allow it on at all.
 
+## Keying options
+
+**Keying Options** (on input-capable fields, usage `I` or `B`) opens a window with the keyboard-control codes of the `CHECK` keyword, each with a checkbox, checked when the field has it:
+
+| Code | Meaning |
+|------|---------|
+| `ME` | Mandatory entry: at least one character must be typed. |
+| `ER` | Automatic record advance: typing the last position sends the record, as if Enter were pressed. |
+| `MF` | Mandatory fill: if the field is changed, every position must be filled. |
+| `FE` | Field exit key required: the user must press Field Exit (or Field+/Field-) to leave the field. |
+| `RB` | Right adjust, blank fill. |
+| `RZ` | Right adjust, zero fill. |
+
+Check the ones the field should have and press `Enter`: each new one is written on a line of its own, `CHECK(ME)` then `CHECK(FE)`, as STRSDA does; the unchecked ones are removed. Only `ME` and `ER` can be conditioned by indicators, as the DDS reference says, so only their rows have a ✏️ to set indicators. Other `CHECK` codes the field may have (`AB`, `LC`, `VN`, `M10`...) are left as they are, even when they share the same `CHECK()`.
+
+Combinations DDS doesn't allow are refused before anything is written: `RB` with `RZ`, `MF` with `RB` or `RZ`, and `MF`, `RB` or `RZ` on a field with `WRDWRAP` or split into lines (`CNTFLD`).
+
+## Split into lines
+
+**Split Into Lines** (on input-capable character fields) turns a long field into a box of several lines, with `CNTFLD(width)`: the field is shown `width` columns at a time, each line below the previous one, starting at the same column. A 90-character field with `CNTFLD(30)` is a box of 3 lines of 30 columns.
+
+It asks for the columns per line, which must be less than the field's length and fit to the right of the field and, with the lines it takes, above the bottom of the display or window. If other fields or constants would end up inside the box, it lists them and asks before going ahead. On a field already split, it offers to change the width or to put it back on one line.
+
+As the DDS reference requires, it isn't offered for numeric fields, output-only fields or fields in a subfile, nor on a field with `AUTO(RAB/RAZ)`, `CHECK(AB MF RB RZ RLTB)`, `CHOICE`, `DSPATR(OID/SP)` or `EDTMSK`. **Edit field** offers to remove `CNTFLD` when the field becomes numeric.
+
 ## Editing keywords
 
 **Add editing keywords** applies DDS edit keywords (e.g. `EDTCDE()`/`EDTWRD()`) that control how the field's value is formatted for display. The [Screen Preview](/dspf-edit/guides/screen-preview/) renders `EDTCDE()`-edited numeric fields using the decimal convention configured in [Configuration](/dspf-edit/guides/configuration/). The user-defined edit codes (`5` to `9`) are previewed once fetched from the IBM i, from that same section.

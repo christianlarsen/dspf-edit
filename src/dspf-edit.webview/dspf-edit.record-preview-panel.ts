@@ -3211,6 +3211,8 @@ export class RecordPreviewPanel {
             if (kind === 'field') {
                 options.push(
                     { label: '$(check) Validity Checks...', command: 'add-validity-check' },
+                    { label: '$(keyboard) Keying Options...', command: 'keying-options' },
+                    { label: '$(list-flat) Split Into Lines...', command: 'split-field-lines' },
                     { label: '$(symbol-numeric) Editing Keywords...', command: 'add-editing-keywords' },
                     { label: '$(warning) Error Messages...', command: 'add-error-message' }
                 );
