@@ -26,6 +26,7 @@ import { addSflDropSflFold } from './dspf-edit.sfldrop-sflfold';
 import { addOverlaySflEnd } from './dspf-edit.overlay-sflend';
 import { addCursorLocation } from './dspf-edit.cursor-location';
 import { addSubfileRecordNumber } from './dspf-edit.subfile-record-number';
+import { subfileColumns } from './dspf-edit.subfile-columns';
 import { addChginpdft } from './dspf-edit.add-chginpdft';
 import { setReferenceFile } from './dspf-edit.set-reference-file';
 import { addValidityCheck } from './dspf-edit.add-validity-check';
@@ -71,6 +72,7 @@ export const commands = [
     { name: 'addOverlaySflEnd', handler: addOverlaySflEnd, needsTreeProvider: false },
     { name: 'addCursorLocation', handler: addCursorLocation, needsTreeProvider: false },
     { name: 'addSubfileRecordNumber', handler: addSubfileRecordNumber, needsTreeProvider: false },
+    { name: 'subfileColumns', handler: subfileColumns, needsTreeProvider: false },
     { name: 'addChginpdft', handler: addChginpdft, needsTreeProvider: false },
     { name: 'setReferenceFile', handler: setReferenceFile, needsTreeProvider: false },
     { name: 'addValidityCheck', handler: addValidityCheck, needsTreeProvider: false },

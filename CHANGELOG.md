@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.19.0] - 2026-11-17
+### Added
+- Subfiles: the preview now shows a horizontal subfile (`SFLLIN` on the `SFLCTL` record) in several columns of records, as the system does. As many records fit side by side as the display or window width allows, `SFLLIN` positions apart, and they fill each column top to bottom before the next one. `SFLPAG` is rounded up to fill the last line, as the DDS reference describes. Before, `SFLLIN` was ignored and the records were shown in a single column. With several display sizes, each size uses its own `SFLLIN`.
+- Subfiles: **Subfile Columns**, on a `SFLCTL` record's right-click menu. Adds `SFLLIN` with the spaces between columns, written with four digits (`SFLLIN(0005)`) as STRSDA does, changes them, or removes it. Not offered on a message subfile or when a field of the subfile record has `SFLCSRPRG`, which DDS doesn't allow.
+- Source checks: `SFLDROP` or `SFLFOLD` on a subfile where `SFLPAG` equals `SFLSIZ` is shown as an error with the compiler's message ID, `CPF7885`. The system doesn't page such a subfile itself, so there's nothing to truncate or fold. Two **Quick Fixes**: make `SFLSIZ` one more than `SFLPAG`, or remove the keyword. With several display sizes, it's only flagged when they're equal on every size, since CRTDSPF compiles it cleanly when they're equal on only one (the keyword is just ignored there).
+
+### Changed
+- Subfiles: when `SFLPAG` equals `SFLSIZ` for the display size being previewed, the preview no longer offers the `SFLDROP`/`SFLFOLD` fold and truncate key, since the system ignores it.
+
 ## [1.18.0] - 2026-11-14
 ### Added
 - Fields: **Keying Options**, on an input field's right-click menu and in the preview's **Actions** menu. A window with the keyboard-control codes of `CHECK`: **ME** mandatory entry, **ER** automatic record advance, **MF** mandatory fill, **FE** field exit key required, **RB** right adjust blank fill and **RZ** right adjust zero fill. Check the ones the field should have; each is written on a line of its own (`CHECK(ME)`, `CHECK(FE)`), as STRSDA does. ✏️ sets indicators on **ME** and **ER**, the only ones DDS allows them on. Combinations DDS doesn't allow (`RB` with `RZ`, `MF` with `RB`/`RZ`, any of them with `WRDWRAP` or `CNTFLD`) are refused. Other `CHECK` codes the field has are kept.

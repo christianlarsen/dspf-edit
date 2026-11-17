@@ -15,6 +15,7 @@ import { getOverlaySubfilePair, getOverlayKeepOnSwitch } from '../dspf-edit.util
 import { DdsTreeProvider, DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { ExtensionState } from '../dspf-edit.states/state';
 import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
+import { layoutSubfileInstances } from '../dspf-edit.utils/dspf-edit.subfile-layout';
 import { resolveRecordSizeForFormat, filterForActiveFormat, pickForActiveFormat, parseWindowDefinition, rewriteWindowDefinition, describeRuntimeWindowPlacement, windowPositionFieldNames, WindowDefinition } from '../dspf-edit.parser/dspf-edit.parser';
 import { editWindowTitleForRecord } from '../dspf-edit.commands/dspf-edit.window-title';
 import { deleteUnusedWindowPositionFields } from '../dspf-edit.commands/dspf-edit.window-position-fields';
@@ -1081,9 +1082,11 @@ function extractSflFoldToggleCommand(attributes: DdsAttribute[] | undefined, exi
  * "CA03 cond. on N50") — narrowing that down to the one that currently applies (by display format,
  * then by indicator state) is the caller's job, the same way it's already done for every other
  * conditionable item in the preview (see `isItemDisplayed`/`filterForActiveFormat`).
+ * The SFLDROP/SFLFOLD key is left out when SFLPAG equals SFLSIZ, since the system ignores it then.
  * @param recordName - Name of the record being previewed
+ * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
  */
-function getEffectiveFunctionKeyCommands(recordName: string): FunctionKeyCommand[] {
+function getEffectiveFunctionKeyCommands(recordName: string, activeFormat?: string): FunctionKeyCommand[] {
     const record = fieldsPerRecords.find(r => r.record === recordName);
     const recordCommands = extractFunctionKeyCommands(record?.attributes);
 
@@ -1099,8 +1102,10 @@ function getEffectiveFunctionKeyCommands(recordName: string): FunctionKeyCommand
 
     // SFLDROP/SFLFOLD are only ever valid on the SFLCTL record — whichever of `record`/`pairRecord` that is.
     const sflToggleExcluded = new Set([...overriddenNumbers, ...fileCommands.map(cmd => cmd.keyNumber)]);
-    const sflToggleCommand = extractSflFoldToggleCommand(record?.attributes, sflToggleExcluded)
-        ?? extractSflFoldToggleCommand(pairRecord?.attributes, sflToggleExcluded);
+    const sflToggleCommand = subfilePageEqualsSize(recordName, activeFormat)
+        ? undefined
+        : extractSflFoldToggleCommand(record?.attributes, sflToggleExcluded)
+            ?? extractSflFoldToggleCommand(pairRecord?.attributes, sflToggleExcluded);
 
     return [...recordCommands, ...pairCommands, ...fileCommands, ...(sflToggleCommand ? [sflToggleCommand] : [])];
 };
@@ -1144,6 +1149,24 @@ function sflControlAttributesFor(recordName: string): DdsAttribute[] | undefined
 };
 
 /**
+ * Whether a subfile's SFLPAG equals its SFLSIZ for the active display format. The system then
+ * doesn't page the subfile itself, and SFLDROP/SFLFOLD are ignored (DDS reference; CRTDSPF rejects
+ * them with CPF7885 — see dspf-edit.subfile-keywords.ts).
+ * @param recordName - Name of an SFL record or its SFLCTL record
+ * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
+ */
+function subfilePageEqualsSize(recordName: string, activeFormat?: string): boolean {
+    const attributes = sflControlAttributesFor(recordName) ?? [];
+    const read = (keyword: string): number | undefined => {
+        const candidates = attributes.filter(a => a.value.toUpperCase().startsWith(`${keyword}(`));
+        const match = pickForActiveFormat(candidates, activeFormat)?.value.match(/^\w+\(\s*(\d+)\s*\)$/);
+        return match ? parseInt(match[1], 10) : undefined;
+    };
+    const pag = read('SFLPAG');
+    return pag !== undefined && pag === read('SFLSIZ');
+};
+
+/**
  * The key number (e.g. "10") that toggles a subfile's fold/truncate state — from either SFLDROP or
  * SFLFOLD, whichever the SFLCTL record declares — if the given record (an SFL detail record or its
  * SFLCTL pair, either name works) has one. Used both to gate the truncation row filter (see
@@ -1152,10 +1175,15 @@ function sflControlAttributesFor(recordName: string): DdsAttribute[] | undefined
  * explicit CAxx/CFxx(...) or was synthesized because there wasn't one (see
  * extractSflFoldToggleCommand). Per the DDS reference, both keywords are ignored entirely when the
  * whole record already fits on one display line — the row filter itself already handles that as a
- * no-op (there's nothing to truncate), so no extra check for it is needed here.
+ * no-op (there's nothing to truncate), so no extra check for it is needed here. They're also
+ * ignored when SFLPAG equals SFLSIZ (see subfilePageEqualsSize): then there's no toggle at all.
  * @param recordName - Name of the record being previewed (SFL or SFLCTL)
+ * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
  */
-function findSflFoldToggleKeyNumber(recordName: string): string | undefined {
+function findSflFoldToggleKeyNumber(recordName: string, activeFormat?: string): string | undefined {
+    if (subfilePageEqualsSize(recordName, activeFormat)) {
+        return undefined;
+    };
     for (const attr of sflControlAttributesFor(recordName) ?? []) {
         const match = attr.value.match(/^SFL(?:DROP|FOLD)\(\s*(?:CA|CF)(\d{2})\s*\)$/i);
         if (match) {
@@ -1205,6 +1233,20 @@ function findSubfilePageSize(sflRecordName: string, activeFormat?: string): numb
 
     const pagAttr = findOwnSflPagAttribute(controlRecord, activeFormat);
     const match = pagAttr?.value.match(/SFLPAG\(\s*(\d+)\s*\)/i);
+    return match ? parseInt(match[1], 10) : undefined;
+};
+
+/**
+ * Finds the SFLLIN(spaces) value for a subfile record, read from its control record (SFLLIN is a
+ * record-level keyword on the SFLCTL record). When present, the subfile is a horizontal subfile:
+ * its records are laid out in several columns, `spaces` positions apart (attribute bytes
+ * included). When conditioned by more than one display format, picks the one matching activeFormat.
+ * @param sflRecordName - Name of the subfile (SFL) record
+ * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
+ */
+function findSubfileLineSpacing(sflRecordName: string, activeFormat?: string): number | undefined {
+    const candidates = findSflControlRecord(sflRecordName)?.attributes?.filter(a => a.value.toUpperCase().startsWith('SFLLIN(')) ?? [];
+    const match = pickForActiveFormat(candidates, activeFormat)?.value.match(/SFLLIN\(\s*(\d+)\s*\)/i);
     return match ? parseInt(match[1], 10) : undefined;
 };
 
@@ -1588,7 +1630,7 @@ export class RecordPreviewPanel {
         let hiddenItems: PreviewItem[] = [];
         let items = this.buildItems(recordInfo, rowOffset, colOffset, false, size.cols, hiddenItems);
         if (isSflRecordInfo(recordInfo)) {
-            const { visibleBase, repeats } = this.buildSubfileDisplayItems(items, this.recordName);
+            const { visibleBase, repeats } = this.buildSubfileDisplayItems(items, this.recordName, colOffset + size.cols);
             // A truncated subfile only shows its template's first row, the rest of the screen being
             // taken by repeats — so a ghost from one of the template's other rows would land on top
             // of those. Ghosts are only ever drawn for the real (first) instance, never repeated.
@@ -1781,7 +1823,7 @@ export class RecordPreviewPanel {
 
         let items = this.buildItems(record, rOffset, cOffset, true, size?.cols ?? getDefaultSize().cols);
         if (isSflRecordInfo(record)) {
-            const { visibleBase, repeats } = this.buildSubfileDisplayItems(items, recordName);
+            const { visibleBase, repeats } = this.buildSubfileDisplayItems(items, recordName, cOffset + (size?.cols ?? getDefaultSize().cols));
             items = [...visibleBase, ...repeats];
         };
 
@@ -2156,8 +2198,8 @@ export class RecordPreviewPanel {
      * @param recordName - Name of the record being previewed
      */
     private getVisibleFunctionKeys(recordName: string): { key: string; description: string; active: boolean; isSflDrop: boolean; responseIndicator?: string }[] {
-        const forFormat = filterForActiveFormat(getEffectiveFunctionKeyCommands(recordName), this.activeDisplayFormat);
-        const sflDropKeyNumber = findSflFoldToggleKeyNumber(recordName);
+        const forFormat = filterForActiveFormat(getEffectiveFunctionKeyCommands(recordName, this.activeDisplayFormat), this.activeDisplayFormat);
+        const sflDropKeyNumber = findSflFoldToggleKeyNumber(recordName, this.activeDisplayFormat);
 
         const byKeyNumber = new Map<string, FunctionKeyCommand[]>();
         for (const cmd of forFormat) {
@@ -2366,10 +2408,14 @@ export class RecordPreviewPanel {
      * uses the same total screen space one row at a time rather than several, proportionally more
      * instances fit in it (`SFLPAG` times however many rows a folded instance spans), matching "more
      * records are displayed [truncated] than are specified on SFLPAG" in the reference.
+     *
+     * A horizontal subfile (SFLLIN on the control record) places the instances in columns instead
+     * of a single stack — see `layoutSubfileInstances`.
      * @param baseItems - The subfile's own items, as built for its first (real) row, at full height
      * @param recordName - Name of the subfile (SFL) record
+     * @param maxCol - Last usable screen column (absolute, canvas coordinates): the screen's width, or the window's right edge
      */
-    private buildSubfileDisplayItems(baseItems: PreviewItem[], recordName: string): { visibleBase: PreviewItem[]; repeats: PreviewItem[] } {
+    private buildSubfileDisplayItems(baseItems: PreviewItem[], recordName: string, maxCol: number): { visibleBase: PreviewItem[]; repeats: PreviewItem[] } {
         if (baseItems.length === 0) {
             return { visibleBase: baseItems, repeats: [] };
         };
@@ -2378,7 +2424,7 @@ export class RecordPreviewPanel {
         const minRow = Math.min(...rows);
         const foldedRowSpan = Math.max(...rows) - minRow + 1;
 
-        const truncated = !this.resolveSubfileExpanded() && findSflFoldToggleKeyNumber(recordName) !== undefined;
+        const truncated = !this.resolveSubfileExpanded() && findSflFoldToggleKeyNumber(recordName, this.activeDisplayFormat) !== undefined;
         const visibleBase = truncated ? baseItems.filter(item => item.row === minRow) : baseItems;
         const rowSpan = truncated ? 1 : foldedRowSpan;
 
@@ -2389,10 +2435,18 @@ export class RecordPreviewPanel {
 
         const pageCount = truncated ? sflPag * foldedRowSpan : sflPag;
 
+        const spacing = findSubfileLineSpacing(recordName, this.activeDisplayFormat);
+        const horizontal = spacing === undefined ? undefined : {
+            minCol: Math.min(...visibleBase.map(item => item.col)),
+            maxEnd: Math.max(...visibleBase.map(item => item.col + item.length - 1)),
+            spacing,
+            maxCol
+        };
+
         const repeats: PreviewItem[] = [];
-        for (let page = 1; page < pageCount; page++) {
+        for (const { rowOffset, colOffset } of layoutSubfileInstances(pageCount, rowSpan, horizontal).slice(1)) {
             for (const item of visibleBase) {
-                repeats.push({ ...item, row: item.row + page * rowSpan, isInteractive: false });
+                repeats.push({ ...item, row: item.row + rowOffset, col: item.col + colOffset, isInteractive: false });
             };
         };
 

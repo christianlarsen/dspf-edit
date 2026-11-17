@@ -94,7 +94,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
     - Change Input Default: manages a parameterless `CHGINPDFT` for this record — removes the automatic underline input-capable fields otherwise get by default. Warns if the file already has one at file level.
     - Overlay: adds `OVERLAY` (always or under indicators), changes its indicators or removes it. Not on subfile records.
     - Return Cursor Location: manages both formats of `RTNCSRLOC` — the record and field the cursor is on, and its row and column — and, on `SFLCTL` records, `SFLCSRRRN`, creating, renaming and deleting their hidden fields along with the keyword. Not on subfile records.
-    - Subfile Drop/Fold, Subfile End and Subfile Record Number (`SFLCTL` records): `SFLDROP`/`SFLFOLD`, `SFLEND` with its type (`*PLUS`, `*MORE`, `*SCRBAR`) and indicator, and `SFLRCDNBR` on a field. On these records, Return Cursor Location also manages `SFLCSRRRN`.
+    - Subfile Drop/Fold, Subfile End, Subfile Record Number and Subfile Columns (`SFLCTL` records): `SFLDROP`/`SFLFOLD`, `SFLEND` with its type (`*PLUS`, `*MORE`, `*SCRBAR`) and indicator, `SFLRCDNBR` on a field, and `SFLLIN` to show the subfile in several columns. On these records, Return Cursor Location also manages `SFLCSRRRN`. `SFLDROP`/`SFLFOLD` where `SFLPAG` equals `SFLSIZ` is flagged as an error, with Quick Fixes.
     - Resizing (if window record) — aware of every declared display size, resizing all of them at once.
     - Change Window Position (if window record) — keeps the size; fixed, relative to the cursor (`*DFT`), or at a line and/or position in fields.
     - Change Window Title (if window record) — targets the size being worked on when the record declares more than one.
@@ -172,11 +172,11 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.18.0** - 2026-11-14
-- Added: **Keying Options** for input fields: mandatory entry, automatic record advance, mandatory fill, field exit required, right adjust blank/zero fill (`CHECK`), one per line as STRSDA writes them, with indicators on `ME` and `ER`.
-- Added: **Split Into Lines** shows a long input field as a box of several lines (`CNTFLD`), checking the width against the field and the display or window.
-- Added: indicators in the wrong columns (e.g. `50` one column early, `*DS4` in column 8, `O` on a condition's first line) are underlined, with the compiler's message ID where confirmed and a Quick Fix that moves them to their columns.
-- Fixed: **Validity Checks** could be added to output-only fields.
+**1.19.0** - 2026-11-17
+- Added: the preview shows horizontal subfiles (`SFLLIN`) in several columns of records, as the system does.
+- Added: **Subfile Columns** on `SFLCTL` records adds, changes or removes `SFLLIN`.
+- Added: `SFLDROP`/`SFLFOLD` where `SFLPAG` equals `SFLSIZ` is flagged as an error (`CPF7885`), with Quick Fixes to make `SFLSIZ` one more than `SFLPAG` or remove the keyword.
+- Changed: the preview no longer offers the fold/truncate key when `SFLPAG` equals `SFLSIZ`.
 
 ---
 

@@ -6,13 +6,16 @@
 
 import * as vscode from 'vscode';
 import { findConditionProblems } from './dspf-edit.condition-columns';
+import { findSubfileKeywordProblems, CPF_PAGE_EQUALS_SIZE } from './dspf-edit.subfile-keywords';
 
 /**
  * Source checks shown as errors or warnings in the editor and the Problems panel, for things the compiler
  * would reject or read differently than intended. Each open display file is checked when opened
  * and again shortly after each change, whether or not it's the one the tree is showing.
  * For now: the condition area, columns 7-16 (see dspf-edit.condition-columns.ts), with a quick fix
- * that moves the indicators to their columns when it's clear what was meant.
+ * that moves the indicators to their columns when it's clear what was meant; and SFLDROP/SFLFOLD
+ * when SFLPAG equals SFLSIZ (see dspf-edit.subfile-keywords.ts), with quick fixes that raise SFLSIZ
+ * or remove the keyword.
  */
 
 const DSPF_LANGUAGE_ID = 'dds.dspf';
@@ -57,6 +60,9 @@ export function registerValidation(context: vscode.ExtensionContext): void {
         vscode.languages.registerCodeActionsProvider({ language: DSPF_LANGUAGE_ID }, new ConditionColumnsFix(), {
             providedCodeActionKinds: [vscode.CodeActionKind.QuickFix]
         }),
+        vscode.languages.registerCodeActionsProvider({ language: DSPF_LANGUAGE_ID }, new SubfileKeywordsFix(), {
+            providedCodeActionKinds: [vscode.CodeActionKind.QuickFix]
+        }),
         { dispose: () => timers.forEach(timer => clearTimeout(timer)) }
     );
 };
@@ -72,7 +78,17 @@ function documentLines(document: vscode.TextDocument): string[] {
 function buildDiagnostics(document: vscode.TextDocument): vscode.Diagnostic[] {
     const lines = documentLines(document);
 
-    return findConditionProblems(lines).map(problem => {
+    const subfileDiagnostics = findSubfileKeywordProblems(lines).map(problem => {
+        const diagnostic = new vscode.Diagnostic(
+            new vscode.Range(problem.lineIndex, problem.startCol, problem.lineIndex, problem.endCol),
+            problem.message,
+            problem.severity === 'error' ? vscode.DiagnosticSeverity.Error : vscode.DiagnosticSeverity.Warning);
+        diagnostic.source = DIAGNOSTIC_SOURCE;
+        diagnostic.code = problem.code;
+        return diagnostic;
+    });
+
+    return [...subfileDiagnostics, ...findConditionProblems(lines).map(problem => {
         const lineLength = lines[problem.lineIndex].length;
         const range = new vscode.Range(
             problem.lineIndex, Math.min(problem.startCol, lineLength),
@@ -86,7 +102,7 @@ function buildDiagnostics(document: vscode.TextDocument): vscode.Diagnostic[] {
         diagnostic.source = DIAGNOSTIC_SOURCE;
         diagnostic.code = problem.code ?? CONDITION_CODE;
         return diagnostic;
-    });
+    })];
 };
 
 /** Quick fix: rewrites columns 7-16 of the line as suggested, leaving the rest of it untouched. */
@@ -94,7 +110,7 @@ class ConditionColumnsFix implements vscode.CodeActionProvider {
     provideCodeActions(document: vscode.TextDocument, _range: vscode.Range, context: vscode.CodeActionContext): vscode.CodeAction[] {
         const actions: vscode.CodeAction[] = [];
         for (const diagnostic of context.diagnostics) {
-            if (diagnostic.source !== DIAGNOSTIC_SOURCE) continue;
+            if (diagnostic.source !== DIAGNOSTIC_SOURCE || diagnostic.code === CPF_PAGE_EQUALS_SIZE) continue;
 
             const lineIndex = diagnostic.range.start.line;
             const line = document.lineAt(lineIndex).text;
@@ -109,6 +125,42 @@ class ConditionColumnsFix implements vscode.CodeActionProvider {
             action.diagnostics = [diagnostic];
             action.isPreferred = true;
             actions.push(action);
+        };
+        return actions;
+    };
+};
+
+/**
+ * Quick fixes for SFLDROP/SFLFOLD where SFLPAG equals SFLSIZ: make SFLSIZ one more than SFLPAG (the
+ * usual choice, and what the preview's SFLPAG buttons keep), or remove the keyword.
+ */
+class SubfileKeywordsFix implements vscode.CodeActionProvider {
+    provideCodeActions(document: vscode.TextDocument, _range: vscode.Range, context: vscode.CodeActionContext): vscode.CodeAction[] {
+        const actions: vscode.CodeAction[] = [];
+        for (const diagnostic of context.diagnostics) {
+            if (diagnostic.source !== DIAGNOSTIC_SOURCE || diagnostic.code !== CPF_PAGE_EQUALS_SIZE) continue;
+
+            const problem = findSubfileKeywordProblems(documentLines(document))
+                .find(p => p.lineIndex === diagnostic.range.start.line && p.startCol === diagnostic.range.start.character);
+            if (!problem) continue;
+
+            const raise = new vscode.CodeAction('Make SFLSIZ one more than SFLPAG', vscode.CodeActionKind.QuickFix);
+            raise.edit = new vscode.WorkspaceEdit();
+            for (const edit of problem.sizeFix) {
+                raise.edit.replace(document.uri, new vscode.Range(edit.lineIndex, edit.startCol, edit.lineIndex, edit.endCol), edit.newText);
+            };
+            raise.diagnostics = [diagnostic];
+            raise.isPreferred = true;
+            actions.push(raise);
+
+            const remove = new vscode.CodeAction(`Remove ${problem.keyword}`, vscode.CodeActionKind.QuickFix);
+            remove.edit = new vscode.WorkspaceEdit();
+            const { deleteLine, edit } = problem.removeFix;
+            remove.edit.delete(document.uri, deleteLine
+                ? document.lineAt(edit.lineIndex).rangeIncludingLineBreak
+                : new vscode.Range(edit.lineIndex, edit.startCol, edit.lineIndex, edit.endCol));
+            remove.diagnostics = [diagnostic];
+            actions.push(remove);
         };
         return actions;
     };
