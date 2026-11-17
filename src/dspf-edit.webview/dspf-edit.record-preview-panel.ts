@@ -36,6 +36,9 @@ import { HorizontalAlignment, WindowAlignment, WINDOW_ALIGNMENTS, computeAligned
 /**
  * Item sent to the webview for rendering (a single field or constant on the screen grid).
  */
+/** The DSPF-edit manual, opened by the preview's "? Manual" button. */
+const MANUAL_URL = 'https://christianlarsen.github.io/dspf-edit/';
+
 interface PreviewItem {
     kind: 'field' | 'constant';
     name: string;
@@ -2667,6 +2670,11 @@ export class RecordPreviewPanel {
             return;
         };
 
+        if (message?.type === 'openManual') {
+            await this.showManualMenu();
+            return;
+        };
+
         if (message?.type === 'openConfiguration') {
             // Guards the same rule the button's own disabled state already enforces: opening the
             // Configuration panel "beside" this one would silently drop focus mode (see
@@ -2675,6 +2683,33 @@ export class RecordPreviewPanel {
                 await vscode.commands.executeCommand('dspf-edit.configure-preview-colors');
             };
             return;
+        };
+    };
+
+    /**
+     * The "? Manual" button: a short list of manual pages to open in the browser, the one about
+     * what's being previewed first (Windows for a window record, Subfiles for a subfile record),
+     * then the Screen Preview guide, the Quick Start and the whole manual.
+     */
+    private async showManualMenu(): Promise<void> {
+        const record = fieldsPerRecords.find(r => r.record === this.recordName);
+        const isWindow = getEffectiveSize(this.recordName, this.activeDisplayFormat)?.source === 'window';
+        const isSubfile = record ? (isSflRecordInfo(record) || isSflCtlRecordInfo(record)) : false;
+
+        type ManualPage = vscode.QuickPickItem & { path: string };
+        const pages: ManualPage[] = [
+            ...(isSubfile ? [{ label: '$(list-ordered) Subfiles', description: `about ${this.recordName}`, path: 'guides/subfiles/' }] : []),
+            ...(isWindow ? [{ label: '$(window) Windows', description: `about ${this.recordName}`, path: 'guides/windows/' }] : []),
+            { label: '$(preview) Screen Preview', description: 'this panel: toolbar, dragging, overlays, indicators', path: 'guides/screen-preview/' },
+            { label: '$(rocket) Quick Start', description: 'the first steps', path: 'quickstart/' },
+            { label: '$(book) The whole manual', description: 'every guide', path: '' }
+        ];
+        const picked = await vscode.window.showQuickPick(pages, {
+            title: 'DSPF-edit manual',
+            placeHolder: 'Select a page to open in the browser'
+        });
+        if (picked) {
+            await vscode.env.openExternal(vscode.Uri.parse(`${MANUAL_URL}${picked.path}`));
         };
     };
 
@@ -3802,7 +3837,7 @@ export class RecordPreviewPanel {
         align-items: center;
         gap: 6px;
     }
-    #actionBar button, #sflpagBar button, #focusModeBtn, #configBtn {
+    #actionBar button, #sflpagBar button, #focusModeBtn, #configBtn, #manualBtn {
         background: ${bg};
         color: ${fg};
         border: 1px solid #333333;
@@ -3920,6 +3955,7 @@ export class RecordPreviewPanel {
     <span id="info">Loading...</span>
     <button id="focusModeBtn" title="Hide the source code editor to focus on the preview (tree view stays visible)">🗖 Focus</button>
     <button id="configBtn" title="Configure the preview (colors)">⚙ Configuration</button>
+    <button id="manualBtn" title="Open the DSPF-edit manual">? Manual</button>
 </div>
 <div id="toolbarRow2" class="toolbar-row">
     <span id="formatBar">
@@ -4967,6 +5003,10 @@ export class RecordPreviewPanel {
 
     configBtn.addEventListener('click', () => {
         vscode.postMessage({ type: 'openConfiguration' });
+    });
+
+    document.getElementById('manualBtn').addEventListener('click', () => {
+        vscode.postMessage({ type: 'openManual' });
     });
 
     // Center is only shown (see updateSelectionBar) when exactly one item is selected.

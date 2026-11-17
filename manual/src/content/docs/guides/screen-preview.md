@@ -20,6 +20,7 @@ A single, compact toolbar sits above the preview with:
 - **⋅ Grid**, a dot in every empty character cell.
 - **◌ Hidden** (see [Showing hidden elements](#showing-hidden-elements)).
 - **⬚ Area** (see [Selecting with a rectangle](#selecting-with-a-rectangle)).
+- **? Manual**, which opens this manual in the browser. Its list starts with the guide about what's being previewed — [Windows](/dspf-edit/guides/windows/) for a window, [Subfiles](/dspf-edit/guides/subfiles/) for a subfile — then this page, the [Quick Start](/dspf-edit/quickstart/) and the whole manual.
 
 ![Screen Preview toolbar](/dspf-edit/screenshots/captura5.png)
 

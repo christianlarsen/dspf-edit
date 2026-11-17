@@ -8,7 +8,7 @@
 
 **DSPF-edit** turns DDS display-file editing into a visual, live experience right inside VS Code — see the screen you're building as you build it, instead of guessing until you compile.
 
-> 📖 **[Read the full manual →](https://christianlarsen.github.io/dspf-edit/)** — step-by-step guides for every feature, from your first field to windows, subfiles, and indicator conditions.
+> 📖 **New here? Start with the [Quick Start](https://christianlarsen.github.io/dspf-edit/quickstart/)** — a few minutes from opening a display file to seeing its screen. Everything else is in the **[full manual](https://christianlarsen.github.io/dspf-edit/)**.
 
 ![DSPF-edit demo](assets/demo.gif)
 
@@ -16,126 +16,148 @@
 
 ## Why DSPF-edit?
 
-| | SEU / STRSDA (5250) | RDi | DSPF-edit |
-|---|:---:|:---:|:---:|
-| Live visual preview while you edit | ❌ | ⚠️ separate tool/step | ✅ inline, drag to reposition |
-| Auto-updating structure/schema view | ❌ | ✅ | ✅ |
-| Runs inside VS Code | ❌ | ❌ (Eclipse) | ✅ |
-| Simulate indicators/colors without compiling | ❌ | ❌ | ✅ |
-| Multiple `DSPSIZ` formats (`*DS3`/`*DS4`) resolved side by side | ❌ | ⚠️ manual | ✅ |
-| AND/OR indicator conditions (up to DDS's 9-indicator limit) built visually | ❌ | ⚠️ manual | ✅ |
+### STRSDA is gone. Your screens aren't.
+
+Starting with **IBM i 7.6**, IBM has withdrawn **Screen Design Aid (STRSDA)** from the Application Development ToolSet ([IBM: planning an upgrade to IBM i 7.6](https://www.ibm.com/support/pages/planning-upgrade-ibm-i-76-software)). Your display files are still there, still compiling, still running the business. What's gone is the tool most of us used to draw them.
+
+So how do you change a screen now?
+
+- **By hand** — counting columns 7 to 80 in SEU or a text editor, and compiling to see what you got.
+- **RDi** — a full IDE, with a paid licence.
+- **DSPF-edit** — free and open source, right inside VS Code.
+
+IBM itself lists **Code for i** among SDA's replacements. If you already write RPG, CL and SQL in VS Code with Code for i, your screens belong there too: one editor, one connection, one workflow — no jumping back to a 5250 session or into a second IDE just to move a field.
+
+### What you get
+
+- **The screen and its source, side by side and in sync.** Type in the source and the screen redraws; drag on the screen and the source changes.
+- **Run it in your head, not on the system.** Turn indicators on and off, see error messages on the message line, windows where they open, every subfile row, and each display size — without compiling.
+- **More than the screen designer ever did.** Selection fields with radio buttons and check boxes, as your emulator shows them. More than 3 indicators and OR'd conditions, with the continuation lines written for you. Keys and keywords that won't compile, caught before you compile.
+- **Connected to your IBM i** through Code for i: referenced fields resolved from the database, and your system's decimal format, date separator and edit codes in the preview.
 
 DSPF-edit doesn't replace your compiler — it closes the gap between writing DDS and seeing the screen it produces, matching real **STRSDA** behavior field by field, so what you preview is what you get.
+
+---
+
+## 📖 The manual
+
+Everything DSPF-edit does is explained, step by step and with screenshots, in the **[DSPF-edit manual](https://christianlarsen.github.io/dspf-edit/)**. This README only lists the features: the manual tells you how to use them, what each keyword does on the real screen, and why the preview shows what it shows.
+
+| Start here | Building screens | Going further |
+|---|---|---|
+| [Install](https://christianlarsen.github.io/dspf-edit/install/) | [Records](https://christianlarsen.github.io/dspf-edit/guides/records/) | [Windows](https://christianlarsen.github.io/dspf-edit/guides/windows/) |
+| [Quick Start](https://christianlarsen.github.io/dspf-edit/quickstart/) | [Fields](https://christianlarsen.github.io/dspf-edit/guides/fields/) | [Subfiles](https://christianlarsen.github.io/dspf-edit/guides/subfiles/) |
+| [Structure tree](https://christianlarsen.github.io/dspf-edit/guides/schema-tree/) | [Constants](https://christianlarsen.github.io/dspf-edit/guides/constants/) | [Multiple display sizes](https://christianlarsen.github.io/dspf-edit/guides/display-sizes/) |
+| [Screen Preview](https://christianlarsen.github.io/dspf-edit/guides/screen-preview/) | [Indicators and conditions](https://christianlarsen.github.io/dspf-edit/guides/indicators/) | [Referenced fields](https://christianlarsen.github.io/dspf-edit/guides/referenced-fields/) |
+| [Configuration](https://christianlarsen.github.io/dspf-edit/guides/configuration/) | [Colors and attributes](https://christianlarsen.github.io/dspf-edit/guides/colors-attributes/) | [Column ruler](https://christianlarsen.github.io/dspf-edit/guides/column-ruler/) |
+| [Help and support](https://christianlarsen.github.io/dspf-edit/help-and-support/) | [Command keys](https://christianlarsen.github.io/dspf-edit/guides/command-keys/) | |
 
 ---
 
 ## ✨ Features
 
 ### 🖥️ Screen Preview — see it before you compile
-  - Visual, green-screen-style preview of a record's fields and constants (colors, DSPATR attributes, and placeholders for output/input/both fields).
+
+**What it shows**
+  - A green-screen-style preview of a record: fields and constants with their colors and `DSPATR` attributes, and placeholders for output, input and both fields.
+  - Numbers edited with `EDTCDE()`/`EDTWRD()` as they'll look, with the decimal and date separators set in the "⚙ Configuration" panel (or read from the connected IBM i), including the system's user-defined edit codes `EDTCDE(5)` to `EDTCDE(9)`.
+  - A field coded with `CNTFLD(n)` wraps across several lines, `n` characters each, all starting at its column — as RDi previews it. A field too long for its line wraps as the system does.
   - Selection fields (`SNGCHCFLD`/`MLTCHCFLD`) show radio buttons or check boxes, as emulators show them, or numbered choices as the screen designer does — set in the "⚙ Configuration" panel's **Display Type**.
-  - A field coded with `CNTFLD(n)` wraps across multiple lines in the preview, `n` characters each, all starting at its original column — matching how RDi previews it.
-  - A single, compact toolbar (size, display format, overlay, indicators, add buttons) sits above the preview.
-  - Drag fields/constants to reposition them directly on the preview.
-  - "+ Field" / "+ Constant" buttons: click, then click a point on the screen to place a new field/constant there, using the same prompts as the tree's "Add field"/"Add constant" commands.
-  - WINDOW records are drawn at their real screen position and can be resized/moved with the mouse; shows WDWTITLE if present. Supports windows shared via WINDOW(record-name).
-  - Click a window's title to edit it, or use its "⋮" actions menu / one-click "center horizontally" icon — all shown only while hovering over the window. The "⋮" menu's "Align..." places the window left, center or right, and top, center or bottom on the screen; its "Change Position..." places it relative to the cursor (`*DFT`), at a line and position in fields, or anywhere else.
-  - Subfile (SFL/SFLCTL) records show all SFLPAG rows, together with their paired header/detail record; detail rows can't be dragged up over the header's own content.
-  - Overlay any number of other records (dimmed) behind the one being previewed, picked from a checkbox list, to see how they compose. A subfile's header and detail always come together, and the record named in `WINDOW(record-name)` is always shown. Both that pairing and keeping the checked overlays when switching records can be turned off from the "⚙ Configuration" panel.
-  - Simulate indicators on/off to preview conditional fields, constants, and attributes.
-  - "◌ Hidden" shows the fields and constants that aren't visible right now — conditioned on indicators that are off, or with `DSPATR(ND)` — as dotted outlines, so you know something is there. Hovering one says why it's hidden.
-  - A function-key legend (`F3`, `F12`, ...) shows every command key available to the record being previewed (file-level + record-level CAxx/CFxx); a key still shows even when its indicator condition isn't currently met (so you can see it's defined), switching to solid/inverted styling when it's actually active.
-  - An active `ERRMSG()` on a window shows on the window's own reserved message line (its last content row) when the window doesn't specify `*NOMSGLIN`, matching real DDS behavior, instead of always at the bottom of the physical screen.
-  - A subfile's `SFLMSG()` also shows on the message line when its indicator is active and `SFLDSP` is in effect, the same way `ERRMSG()` does (which still takes priority over it, matching the DDS reference).
-  - For files with more than one DSPSIZ format (e.g. *DS3/*DS4), switch which one is previewed — window positions/sizes and conditioned elements are resolved for the selected format. Dragging/resizing/centering a window, or adjusting a subfile's SFLPAG/SFLSIZ, only affects the size currently being previewed.
-  - The "Indicators" toggle and the selected display format persist when switching which record is previewed in the same panel.
-  - Stays in sync with the schema tree selection in both directions.
-  - "Focus" maximizes the preview so it fills the editing area, hiding the DDS source editor beside it; "Show code" brings the source back.
-  - "⬚ Area" selects every field and constant a rectangle dragged over the screen touches (Ctrl/Cmd adds to the selection). While it's on, clicking an element never selects or moves it.
-  - Select a field or constant (or several, with Ctrl/Cmd+click or "⬚ Area") to get a "⋮ Actions" menu: add color/attribute, copy, or delete — applied to every selected element at once for a multi-selection. A multi-selection can also be aligned left, center or right, each element keeping its own row. A single selected field or constant also gets Rename.../Edit Text..., Indicators..., and — for fields — Validity Checks..., Editing Keywords..., and Error Messages..., the same commands the tree's context menu offers, so most of what you'd do from the tree is also reachable straight from the preview.
-  - "Copy Format..." in the "⋮ Actions" menu copies a field or constant's colors, attributes, indicators and/or number editing (edit code, edit word, edit mask); "Paste Format" applies them to one or several selected elements, replacing what they had. Colors and attributes keep their indicators (optionally), and whatever a target can't take is left out.
-  - Press `Delete`/`Backspace` with one or more fields/constants selected to delete them directly — same confirmation as the "⋮ Actions" menu's Delete.
-  - Double-click a dimmed overlay record (a checked overlay, an SFL/SFLCTL header/detail, or a shared window's owner) to switch the preview to it, the same as picking it in the tree. Where several overlap, the one drawn on top wins.
-  - Right-click a field or constant to open the "⋮ Actions" menu directly, instead of the browser's native Cut/Copy/Paste menu — selecting it first if it wasn't already selected.
-  - The decimal point and thousands-separator convention used to preview `EDTCDE()`-edited numeric fields — US or European — is configurable from the "⚙ Configuration" panel, either picked manually or fetched with one click from the connected IBM i's `QDECFMT` system value. The same click reads the system's user-defined edit codes, `EDTCDE(5)` to `EDTCDE(9)`, so fields using them preview as they look on that system.
+  - A function-key legend (`F3`, `F12`, ...) with every command key available to the record (file and record level). A key whose indicator condition isn't met still shows, dimmed; it's highlighted when it's active.
+  - An active `ERRMSG()`/`ERRMSGID()`, or a subfile's `SFLMSG()`, shows on the message line (a window's own, unless it has `*NOMSGLIN`); `ERRMSG()` takes priority over `SFLMSG()`, as in the DDS reference.
 
-### 📏 Column ruler
-  - While editing the source by hand, shows the DDS format line (`.....AAN01N02N03T.Name++++++RLen++TDpBLinPos...`) above the line being edited and outlines each column area, so a value in the wrong columns stands out. Hover an area to see its name.
-  - Off by default: `Shift+F4` or the "⚙ Configuration" panel turns it on and off.
-  - Indicators in the wrong columns (e.g. `50` typed one column early), and display size names such as `*DS4` out of place, are underlined as warnings, with a Quick Fix that moves them to their columns.
+**Indicators and display sizes**
+  - Turn indicators on and off to see which fields, constants and attributes show.
+  - "◌ Hidden" shows what isn't visible right now — conditioned on indicators that are off, or with `DSPATR(ND)` — as dotted outlines. Hovering one says why it's hidden.
+  - For files with more than one `DSPSIZ` format (`*DS3`/`*DS4`), switch which one is previewed: window positions and sizes and conditioned elements are resolved for it, and changes made in the preview only affect that size.
+  - The indicators and the display format chosen stay when switching to another record.
 
-### 🧭 Schema navigation
-  - Two levels are shown: **File** and **Records**.
-  - Click on schema elements to jump directly to their location in the source.
-  - Right-click for context-aware actions.
+**Editing on the screen**
+  - Drag fields and constants to move them.
+  - "+ Field" / "+ Constant": click a point on the screen to add one there, with the same prompts as the tree.
+  - Select one element, several (Ctrl/Cmd+click) or a whole area ("⬚ Area") to get the "⋮ Actions" menu — also on right-click: colors, attributes, copy, delete, and for a single element the same commands as the tree (rename, indicators, validity checks, keying options, editing keywords, error messages, choices...). Several elements can be aligned left, center or right.
+  - "Copy Format..." copies a field or constant's colors, attributes, indicators and/or number editing; "Paste Format" applies them to the selected elements.
+  - `Delete`/`Backspace` deletes the selected elements, after confirming.
 
-### File level
-  - View display file attributes (e.g., display size, command keys).
-  - Right-click options:
-    - Create new records.
-    - Command keys: lists the file-level keys, to add, change, remove or condition them with indicators. Catches keys that won't compile: the same key as CA in one place and CF in another, or at both file and record level.
-    - Add Display Size: adds a second standard screen size (*DS3/*DS4) to a file that currently declares only one.
-    - Change Input Default: manages a parameterless `CHGINPDFT` — removes the automatic underline input-capable fields otherwise get by default.
-    - Reference File: adds, changes or removes the file-level `REF`, the database file referenced fields take their definition from when their own `REFFLD()` names no file.
+**Windows**
+  - `WINDOW` records are drawn at their real position, with their title (`WDWTITLE`) and border; resize and move them with the mouse. Windows shared through `WINDOW(record-name)` are supported.
+  - Click a window's title to edit it. Its "⋮" menu aligns it (left, center or right; top, center or bottom) or changes its position: fixed, relative to the cursor (`*DFT`) or at a line and position in fields.
 
-### Records level
-  - Right-click options:
-    - Create new records.
-  - Each record shows:
-    - Record-level attributes.
-    - Constants and fields.
-  - Right-click options on a record:
-    - Add constant.
-    - Add field.
-    - Remove field.
-    - Copy/Delete record.
-    - Add "buttons" (constants for record commands).
-    - Command keys: lists the record's keys, to add, change, remove or condition them with indicators. Catches keys that won't compile: the same key as CA in one place and CF in another, or at both file and record level.
-    - Add / Remove / Change indicators.
-    - Change Input Default: manages a parameterless `CHGINPDFT` for this record — removes the automatic underline input-capable fields otherwise get by default. Warns if the file already has one at file level.
-    - Overlay: adds `OVERLAY` (always or under indicators), changes its indicators or removes it. Not on subfile records.
-    - Return Cursor Location: manages both formats of `RTNCSRLOC` — the record and field the cursor is on, and its row and column — and, on `SFLCTL` records, `SFLCSRRRN`, creating, renaming and deleting their hidden fields along with the keyword. Not on subfile records.
-    - Subfile Drop/Fold, Subfile End, Subfile Record Number and Subfile Columns (`SFLCTL` records): `SFLDROP`/`SFLFOLD`, `SFLEND` with its type (`*PLUS`, `*MORE`, `*SCRBAR`) and indicator, `SFLRCDNBR` on a field, and `SFLLIN` to show the subfile in several columns. On these records, Return Cursor Location also manages `SFLCSRRRN`. `SFLDROP`/`SFLFOLD` where `SFLPAG` equals `SFLSIZ` is flagged as an error, with Quick Fixes.
-    - Resizing (if window record) — aware of every declared display size, resizing all of them at once.
-    - Change Window Position (if window record) — keeps the size; fixed, relative to the cursor (`*DFT`), or at a line and/or position in fields.
-    - Change Window Title (if window record) — targets the size being worked on when the record declares more than one.
-    - Sort elements.
-    - Preview Screen Layout (also available as an inline button on the record).
+**Subfiles**
+  - All `SFLPAG` rows are shown, with the subfile's control and detail records together; detail rows can't be dragged over the control record's content.
+  - A horizontal subfile (`SFLLIN`) shows its records in several columns.
+  - The `SFLDROP`/`SFLFOLD` key switches between truncated and folded, as on the real screen.
 
-### Constants
-  - Show text, position (row/column), indicators, and attributes.
-  - Right-click options:
-    - Edit constant.
-    - Copy constant (to the same or different record).
-    - Remove constant.
-    - Center constant on screen.
-    - Change position (absolute position/relative to existing constant).
-    - Apply colors/attributes.
-    - Add / Remove / Change indicators, including more than 3 ANDed indicators (up to DDS's limit of 9, spilling onto continuation lines automatically) and OR'd conditions (add/remove whole OR'd groups, or edit indicators within one).
-    - Fill constant with characters.
+**Several records at once**
+  - Overlay other records, dimmed, behind the one being previewed, to see how they compose. A subfile's two records, and the record named in `WINDOW(record-name)`, come along on their own (configurable).
+  - Double-click a dimmed record to switch the preview to it.
 
-### Fields
-  - Show name, length, type, position (row/column), and flags (referenced/hidden).
-  - Indicators and attributes are expandable; an OR'd condition is grouped into its ANDed sub-conditions ("Group 1 (AND)" / "OR" / "Group 2 (AND)" / ...) instead of one flat list. Hovering a conditioned field/constant/attribute shows the full condition (e.g. `51 AND NOT 61 AND 53  OR  52`) as a tooltip.
-  - Right-click options:
-    - Edit field — name, size, and kind (alphanumeric ↔ numeric); switching kind offers to remove any keyword that no longer applies (e.g. `EDTCDE`/`EDTWRD` when going alphanumeric).
-    - Copy field (to the same or different record).
-    - Remove field.
-    - Center field on screen.
-    - Change position (absolute position/relative to existing constant/field).
-    - Apply colors/attributes.
-    - Add validity checks.
-    - Keying options (`CHECK`): mandatory entry, automatic record advance, mandatory fill, field exit required, right adjust blank/zero fill.
-    - Split into lines (`CNTFLD`): shows a long input field as a box of several lines.
-    - Choices (selection fields): changes, adds, removes and arranges the choices of a single-choice (radio buttons) or multiple-choice (check boxes) field. New ones are created with Add Field.
-    - Add editing keywords.
-    - Error messages: lists the field's messages, own text (`ERRMSG`) or from a message file (`ERRMSGID`), to add, change, remove or condition them with indicators.
-    - Add / Remove / Change indicators, including more than 3 ANDed indicators (up to DDS's limit of 9, spilling onto continuation lines automatically) and OR'd conditions (add/remove whole OR'd groups, or edit indicators within one).
-    - Resolve Referenced Field (for referenced fields only): fetches the real type/length/decimals from the connected IBM i, via the [Code for i](https://marketplace.visualstudio.com/items?itemName=HalcyonTechLtd.code-for-ibmi) extension — or, for a field referencing another field of the same source (`*SRC`), straight from the source, with no connection. The field's own length/decimals/type overrides (e.g. `+4`) are applied on top. Also available as "Resolve All Referenced Fields" from the status bar, for every pending referenced field in the document at once.
+**The panel**
+  - A compact toolbar: size, display format, overlay, indicators, add buttons.
+  - Stays in sync with the structure tree, in both directions.
+  - "Focus" makes the preview fill the editing area; "Show code" brings the source back.
+  - "? Manual" opens the manual's guide for what you're previewing (windows, subfiles, the preview itself).
 
-### Attributes
-  - Add / Remove / Change indicators, with the same AND/OR support as fields and constants.
-  - Remove attribute.
+📖 Manual: [Screen Preview](https://christianlarsen.github.io/dspf-edit/guides/screen-preview/) · [Windows](https://christianlarsen.github.io/dspf-edit/guides/windows/) · [Subfiles](https://christianlarsen.github.io/dspf-edit/guides/subfiles/) · [Multiple display sizes](https://christianlarsen.github.io/dspf-edit/guides/display-sizes/)
+
+### 🧭 Structure tree
+  - Shows the file, its records, and each record's fields, constants and keywords; click any of them to jump to its line.
+  - An OR'd condition is grouped into its ANDed parts ("Group 1 (AND)" / "OR" / ...); hovering a conditioned element shows the whole condition (e.g. `51 AND NOT 61 AND 53  OR  52`).
+  - Right-click for what applies to each element:
+
+**File**
+  - New record.
+  - Command keys: add, change, remove or condition with indicators. Keys that won't compile are caught: the same key as CA in one place and CF in another, or at both file and record level.
+  - Add Display Size: a second standard size (`*DS3`/`*DS4`) for a file that declares only one.
+  - Change Input Default (`CHGINPDFT`): removes the automatic underline of input fields.
+  - Reference File (`REF`): the database file referenced fields take their definition from.
+
+**Records**
+  - New, copy, delete, sort elements, and preview (also an inline button on the record).
+  - Add field, add constant, add "buttons" (constants for the record's command keys).
+  - Command keys and indicators, as at file level; Change Input Default for the record.
+  - Overlay (`OVERLAY`) and Return Cursor Location (`RTNCSRLOC`, and `SFLCSRRRN` on subfiles), creating and deleting their hidden fields.
+  - Subfile control records: Add Commands Record, Subfile Drop/Fold (`SFLDROP`/`SFLFOLD`), Subfile End (`SFLEND`), Subfile Record Number (`SFLRCDNBR`) and Subfile Columns (`SFLLIN`).
+  - Window records: Change Window Size (every display size at once), Change Window Position and Change Window Title.
+
+**Fields**
+  - Edit (name, size, alphanumeric ↔ numeric, offering to remove keywords that no longer apply), rename, copy, remove.
+  - Position: absolute, relative to another element, or centered.
+  - Colors and attributes; indicators, with up to 9 ANDed indicators (continuation lines written for you) and OR'd conditions.
+  - Validity checks, keying options (`CHECK`), editing keywords (`EDTCDE`/`EDTWRD`/`EDTMSK`) and error messages (`ERRMSG`/`ERRMSGID`).
+  - Split into lines (`CNTFLD`).
+  - Selection fields: Add Field creates single-choice (radio buttons) and multiple-choice (check boxes) fields with their choices; **Choices** changes, adds, removes and arranges them, with the control fields (`CHCCTL`) of a multiple-choice field.
+
+**Constants**
+  - Edit, copy, remove, fill with characters.
+  - Position, colors and attributes, and indicators, as for fields.
+
+**Attributes**
+  - Change their indicators, or remove them.
+
+📖 Manual: [Structure tree](https://christianlarsen.github.io/dspf-edit/guides/schema-tree/) · [Records](https://christianlarsen.github.io/dspf-edit/guides/records/) · [Fields](https://christianlarsen.github.io/dspf-edit/guides/fields/) · [Constants](https://christianlarsen.github.io/dspf-edit/guides/constants/) · [Indicators](https://christianlarsen.github.io/dspf-edit/guides/indicators/) · [Command keys](https://christianlarsen.github.io/dspf-edit/guides/command-keys/)
+
+### ✅ Help while editing the source
+  - Column ruler: the DDS format line (`.....AAN01N02N03T.Name++++++RLen++TDpBLinPos...`) above the line being edited, with each column area outlined; hover an area to see its name. `Shift+F4` turns it on and off.
+  - Mistakes the compiler would reject are underlined and listed in the **Problems** panel, with the compiler's message ID where confirmed and a Quick Fix where it's clear what was meant:
+    - Indicators in the wrong columns (e.g. `50` typed one column early), and display size names such as `*DS4` out of place.
+    - `SFLDROP`/`SFLFOLD` on a subfile where `SFLPAG` equals `SFLSIZ` (`CPF7885`).
+
+📖 Manual: [Column ruler](https://christianlarsen.github.io/dspf-edit/guides/column-ruler/) · [Indicators in the wrong columns](https://christianlarsen.github.io/dspf-edit/guides/indicators/#indicators-in-the-wrong-columns) · [SFLPAG equal to SFLSIZ](https://christianlarsen.github.io/dspf-edit/guides/subfiles/#sflpag-equal-to-sflsiz)
+
+### 🔗 With a connection to IBM i
+Through the [Code for i](https://marketplace.visualstudio.com/items?itemName=HalcyonTechLtd.code-for-ibmi) extension:
+  - Resolve Referenced Field: the real type, length and decimals of a referenced field, with its own overrides (e.g. `+4`) applied on top — or straight from the source for one referencing a field of the same source (`*SRC`), no connection needed. "Resolve All Referenced Fields" in the status bar does every pending one at once.
+  - The decimal format (`QDECFMT`), the date separator (`QDATSEP`) and the user-defined edit codes, read with one click from the "⚙ Configuration" panel.
+
+📖 Manual: [Referenced fields](https://christianlarsen.github.io/dspf-edit/guides/referenced-fields/) · [Configuration](https://christianlarsen.github.io/dspf-edit/guides/configuration/)
+
+### 🎛️ Configuration panel
+  - Preview colors, decimal format and date separator, and **Display Type** (graphical or text only).
+  - How **New Record** creates windows: asking, at a fixed position, or relative to the cursor.
+  - Which records the preview overlays on its own, and the column ruler.
+
+📖 Manual: [Configuration](https://christianlarsen.github.io/dspf-edit/guides/configuration/)
 
 ---
 
@@ -146,7 +168,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
 3. The **schema view** will appear automatically with the name "DSPF STRUCTURE".  
 4. Use **left-click** to navigate, or **right-click** to access contextual options.  
 
-See the **[full manual](https://christianlarsen.github.io/dspf-edit/)** for a guided walkthrough and the complete feature reference.
+The **[Quick Start](https://christianlarsen.github.io/dspf-edit/quickstart/)** walks you through it with screenshots, and the **[full manual](https://christianlarsen.github.io/dspf-edit/)** covers every feature.
 
 ---
 
