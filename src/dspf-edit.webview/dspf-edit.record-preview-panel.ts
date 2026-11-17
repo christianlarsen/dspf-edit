@@ -16,6 +16,8 @@ import { DdsTreeProvider, DdsNode } from '../dspf-edit.providers/dspf-edit.provi
 import { ExtensionState } from '../dspf-edit.states/state';
 import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 import { layoutSubfileInstances } from '../dspf-edit.utils/dspf-edit.subfile-layout';
+import { parseChoiceText, choiceBlankLinesBefore } from '../dspf-edit.utils/dspf-edit.choice-text';
+import { getDisplayType } from '../dspf-edit.utils/dspf-edit.display-type-settings';
 import { resolveRecordSizeForFormat, filterForActiveFormat, pickForActiveFormat, parseWindowDefinition, rewriteWindowDefinition, describeRuntimeWindowPlacement, windowPositionFieldNames, WindowDefinition } from '../dspf-edit.parser/dspf-edit.parser';
 import { editWindowTitleForRecord } from '../dspf-edit.commands/dspf-edit.window-title';
 import { deleteUnusedWindowPositionFields } from '../dspf-edit.commands/dspf-edit.window-position-fields';
@@ -640,11 +642,14 @@ function isChoiceField(attributes: AttributeWithIndicators[] | undefined): boole
     return Boolean(attributes?.some(attr => /^(SNGCHCFLD|MLTCHCFLD)\b/i.test(attr.value)));
 };
 
-/** A selection field's choice-list arrangement: how many choices per row/column, and the gap between columns. */
+/** A selection field's choice-list arrangement: how many choices per row/column, the gap between columns, and whether it shows selection indicators. */
 interface ChoiceLayout {
     numCols?: number;
     numRows?: number;
     gutter: number;
+    /** Radio buttons (SNGCHCFLD) or check boxes (MLTCHCFLD) on a graphical display: *SLTIND, the default for both. */
+    selectionIndicators: boolean;
+    multiple: boolean;
 };
 
 /**
@@ -656,7 +661,7 @@ interface ChoiceLayout {
  */
 function getChoiceLayout(attributes: AttributeWithIndicators[] | undefined): ChoiceLayout {
     const attr = attributes?.find(a => /^(SNGCHCFLD|MLTCHCFLD)\b/i.test(a.value));
-    if (!attr) { return { gutter: 3 }; };
+    if (!attr) { return { gutter: 3, selectionIndicators: true, multiple: false }; };
 
     const numCols = attr.value.match(/\*NUMCOL\s+(\d+)/i)?.[1];
     const numRows = attr.value.match(/\*NUMROW\s+(\d+)/i)?.[1];
@@ -665,14 +670,21 @@ function getChoiceLayout(attributes: AttributeWithIndicators[] | undefined): Cho
     return {
         numCols: numCols ? Number(numCols) : undefined,
         numRows: numRows ? Number(numRows) : undefined,
-        gutter: gutter ? Number(gutter) : 3
+        gutter: gutter ? Number(gutter) : 3,
+        selectionIndicators: !/\*NOSLTIND\b/i.test(attr.value),
+        multiple: /^MLTCHCFLD\b/i.test(attr.value)
     };
 };
 
 /** One CHOICE() option belonging to a SNGCHCFLD/MLTCHCFLD field, in source order. */
 interface ChoiceOption {
     number: string;
+    /** The text as shown, without the mnemonic's `>` (see parseChoiceText). */
     text: string;
+    /** Position of the mnemonic character in `text`, if the choice has one. */
+    mnemonicIndex?: number;
+    /** CHOICE(... *SPACEB): a blank line before it. */
+    spaceBefore: boolean;
     lineIndex: number;
 };
 
@@ -692,9 +704,15 @@ function getChoiceOptions(attributes: AttributeWithIndicators[] | undefined): Ch
         if (!match) { continue; };
 
         const [, number, rest] = match;
-        const quoted = rest.match(/^'([^']*)'/);
-        const text = quoted ? quoted[1] : rest.replace(/^&/, '').trim();
-        options.push({ number, text, lineIndex: attr.lineIndex });
+        const quoted = rest.match(/^'((?:[^']|'')*)'/);
+        const spaceBefore = /\*SPACEB\b/i.test(quoted ? rest.substring(quoted[0].length) : rest);
+        if (quoted) {
+            const { text, mnemonicIndex } = parseChoiceText(quoted[1].replace(/''/g, "'"));
+            options.push({ number, text, mnemonicIndex, spaceBefore, lineIndex: attr.lineIndex });
+        } else {
+            const text = rest.replace(/\*SPACEB\b/i, '').replace(/^&/, '').trim();
+            options.push({ number, text, spaceBefore, lineIndex: attr.lineIndex });
+        };
     };
     return options;
 };
@@ -1471,8 +1489,9 @@ export class RecordPreviewPanel {
     };
 
     /**
-     * Re-renders the open preview panel after an overlay setting changes (see
-     * dspf-edit.utils/dspf-edit.overlay-settings.ts). No-op if no panel is open.
+     * Re-renders the open preview panel after an overlay setting or the display type changes (see
+     * dspf-edit.utils/dspf-edit.overlay-settings.ts and dspf-edit.display-type-settings.ts). No-op
+     * if no panel is open.
      */
     static refreshOverlays(): void {
         RecordPreviewPanel.current?.render();
@@ -1959,7 +1978,12 @@ export class RecordPreviewPanel {
                 // current line, then wraps to column 1 using the full line width for every following
                 // line, until the field's whole length is placed.
                 const remainingOnFirstLine = rowWidth - trueCol + 1;
-                if (continuedWidth && continuedWidth > 0 && text.length > continuedWidth) {
+                // A selection field on a graphical display has no input field: it's drawn below, with its choices.
+                const choiceField = isChoiceField(activeAttrs);
+                const graphicalChoice = choiceField && getDisplayType() === 'graphical';
+                if (graphicalChoice) {
+                    // Nothing here: see the selection field's choices below.
+                } else if (continuedWidth && continuedWidth > 0 && text.length > continuedWidth) {
                     const chunkCount = Math.ceil(text.length / continuedWidth);
                     for (let chunk = 0; chunk < chunkCount; chunk++) {
                         const chunkText = text.substr(chunk * continuedWidth, continuedWidth);
@@ -1981,51 +2005,85 @@ export class RecordPreviewPanel {
                     target.push({ ...baseItem, text, row: trueRow + rowOffset, length: text.length });
                 };
 
-                // SNGCHCFLD/MLTCHCFLD: confirmed against STRSDA — the field's own input box
-                // (already pushed above) sits to the left of the choice list, each CHOICE()
-                // rendered as "<number>. <text>" (MLTCHCFLD lets the user type several numbers into
-                // that same box; the choice list itself looks identical). With neither *NUMCOL nor
-                // *NUMROW coded, that's a single vertical column starting on the field's own row
-                // (fillSize 1 below degenerates the row-major layout to exactly that). *NUMCOL(n)
-                // fills n choices per row before wrapping to the next row; *NUMROW(n) fills n
-                // choices per column before starting the next column — same options, different
-                // reading order. Every column uses one uniform width (the longest choice label,
-                // plus the gutter), matching how SDA/RDi lay these out. Purely informational
-                // (isInteractive false): CHOICE lines have no row/col of their own in DDS to
+                // SNGCHCFLD/MLTCHCFLD: confirmed against STRSDA — on a text-only display the field's
+                // own input box (already pushed above) sits to the left of the choice list, each
+                // CHOICE() rendered as "<number>. <text>" (MLTCHCFLD lets the user type several
+                // numbers into that same box; the choice list itself looks identical). On a
+                // graphical display (the Configuration panel's Display Type, graphical by default)
+                // there's no input box and no numbers: per the DDS reference, the field's position
+                // is that of the uppermost radio button (SNGCHCFLD) or check box (MLTCHCFLD), each
+                // choice's text after its own; with *NOSLTIND there are none, the text starting at
+                // the field's position. The first choice then stands for the field itself — same
+                // name, line, click and drag — since there's no box left to grab. The mnemonic
+                // (the character after '>') is underlined there, and never shown as '>' anywhere.
+                // With neither *NUMCOL nor *NUMROW coded, that's a single vertical column starting
+                // on the field's own row (fillSize 1 below degenerates the row-major layout to
+                // exactly that), where *SPACEB, or a choice number that doesn't follow the previous
+                // one, leaves a blank line before the choice. *NUMCOL(n) fills n choices per row
+                // before wrapping to the next row; *NUMROW(n) fills n choices per column before
+                // starting the next column — same options, different reading order. Every column
+                // uses one uniform width (the longest choice label, plus the gutter), matching how
+                // SDA/RDi lay these out. Purely informational (isInteractive false) except for that
+                // first graphical choice: CHOICE lines have no row/col of their own in DDS to
                 // drag/reposition.
                 //
                 // PSHBTNFLD/PSHBTNCHC(), unlike SNGCHCFLD/MLTCHCFLD, was confirmed against STRSDA to
                 // have *no* text fallback at all on a plain 5250 — the field just shows as an
                 // ordinary input box, with no special handling here.
-                if (isChoiceField(activeAttrs)) {
+                if (choiceField) {
                     const options = getChoiceOptions(activeAttrs);
                     const layout = getChoiceLayout(activeAttrs);
-                    const maxLabelLength = Math.max(0, ...options.map(o => `${o.number}. ${o.text}`.length));
+                    const selectionIndicator = graphicalChoice && layout.selectionIndicators ? (layout.multiple ? '☐' : '○') : undefined;
+                    const prefixOf = (option: ChoiceOption): string => graphicalChoice
+                        ? (selectionIndicator ? `${selectionIndicator} ` : '')
+                        : `${option.number}. `;
+                    const maxLabelLength = Math.max(0, ...options.map(o => (prefixOf(o) + o.text).length));
                     const columnWidth = maxLabelLength + layout.gutter;
                     const columnMajor = layout.numRows !== undefined;
                     const fillSize = (columnMajor ? layout.numRows : layout.numCols) ?? 1;
-                    const choiceCol = trueCol + colOffset + effectiveLength + 1;
+                    const singleColumn = layout.numRows === undefined && (layout.numCols ?? 1) === 1;
+                    const blankLines = singleColumn
+                        ? choiceBlankLinesBefore(options.map(o => ({ number: parseInt(o.number, 10), spaceBefore: o.spaceBefore })))
+                        : options.map(() => 0);
+                    const choiceCol = graphicalChoice ? trueCol + colOffset : trueCol + colOffset + effectiveLength + 1;
 
+                    let blankRows = 0;
                     options.forEach((option, index) => {
-                        const rowIndex = columnMajor ? index % fillSize : Math.floor(index / fillSize);
+                        blankRows += blankLines[index];
+                        const rowIndex = (columnMajor ? index % fillSize : Math.floor(index / fillSize)) + blankRows;
                         const colIndex = columnMajor ? Math.floor(index / fillSize) : index % fillSize;
-                        const label = `${option.number}. ${option.text}`;
-                        target.push({
+                        const standsForField = graphicalChoice && index === 0;
+                        const choiceItem = {
                             ...baseItem,
-                            name: `${field.name}_CHOICE_${option.number}`,
-                            text: label,
+                            name: standsForField ? field.name : `${field.name}_CHOICE_${option.number}`,
                             row: trueRow + rowOffset + rowIndex,
-                            col: choiceCol + colIndex * columnWidth,
-                            length: label.length,
-                            lineIndex: option.lineIndex,
+                            lineIndex: standsForField ? field.lineIndex : option.lineIndex,
                             reverseImage: false,
                             underline: false,
-                            isInteractive: false,
+                            isInteractive: standsForField ? baseItem.isInteractive : false,
                             isInputCapable: false,
                             hasDefaultUnderline: false,
                             isReferenced: false,
                             isResizable: false
-                        });
+                        };
+
+                        // The mnemonic gets a piece of its own, to underline it.
+                        const prefix = prefixOf(option);
+                        const mnemonic = graphicalChoice ? option.mnemonicIndex : undefined;
+                        const pieces = mnemonic === undefined
+                            ? [{ text: prefix + option.text, underline: false }]
+                            : [
+                                { text: prefix + option.text.substring(0, mnemonic), underline: false },
+                                { text: option.text.charAt(mnemonic), underline: true },
+                                { text: option.text.substring(mnemonic + 1), underline: false }
+                            ];
+                        let col = choiceCol + colIndex * columnWidth;
+                        for (const piece of pieces) {
+                            if (piece.text.length > 0) {
+                                target.push({ ...choiceItem, text: piece.text, col, length: piece.text.length, underline: piece.underline });
+                            };
+                            col += piece.text.length;
+                        };
                     });
                 };
             };
@@ -3263,6 +3321,10 @@ export class RecordPreviewPanel {
         if (!isMulti) {
             const kind = nodes[0].ddsElement.kind;
             if (kind === 'field') {
+                const isSelectionField = (nodes[0].ddsElement.attributes ?? []).some((attr: { value: string }) => /^(SNGCHCFLD|MLTCHCFLD)\b/i.test(attr.value));
+                if (isSelectionField) {
+                    options.push({ label: '$(list-selection) Choices...', command: 'selection-field-choices' });
+                };
                 options.push(
                     { label: '$(check) Validity Checks...', command: 'add-validity-check' },
                     { label: '$(keyboard) Keying Options...', command: 'keying-options' },

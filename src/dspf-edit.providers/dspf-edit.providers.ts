@@ -931,6 +931,17 @@ function fieldUsageContextSuffix(ddsElement: DdsElement): string {
 };
 
 /**
+ * Extra contextValue word for a selection field (SNGCHCFLD or MLTCHCFLD), so package.json's "when"
+ * clauses offer its Choices command.
+ */
+function selectionFieldContextSuffix(ddsElement: DdsElement): string {
+	if (ddsElement.kind !== 'field') {
+		return '';
+	};
+	return ddsElement.attributes?.some(attr => /^(SNGCHCFLD|MLTCHCFLD)\b/i.test(attr.value)) ? ' choice' : '';
+};
+
+/**
  * DDS NODE CLASS
  * Represents each node in the TreeView. Configures label, tooltip, description,
  * context menu value, and navigation command to go to the line in the editor.
@@ -943,7 +954,7 @@ export class DdsNode extends vscode.TreeItem {
 		this.iconPath = this.getIconPath(ddsElement, label);
 		this.contextValue = ddsElement.kind === 'group' && ddsElement.attribute === '' && label === 'Records'
 			? 'group:records'
-			: isSflCtlElement(ddsElement) ? 'record sflctl' : isSflElement(ddsElement) ? 'record sfl' : `${ddsElement.kind}${referencedFieldContextSuffix(ddsElement)}${fieldUsageContextSuffix(ddsElement)}`;
+			: isSflCtlElement(ddsElement) ? 'record sflctl' : isSflElement(ddsElement) ? 'record sfl' : `${ddsElement.kind}${referencedFieldContextSuffix(ddsElement)}${fieldUsageContextSuffix(ddsElement)}${selectionFieldContextSuffix(ddsElement)}`;
 
 		if (this.shouldHaveNavigationCommand(ddsElement)) {
 			this.command = { command: 'ddsEdit.goToLine', title: `Go to ${ddsElement.kind}`, arguments: [ddsElement.lineIndex + 1] };

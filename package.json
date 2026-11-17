@@ -183,6 +183,10 @@
         "title": "Keying Options"
       },
       {
+        "command": "dspf-edit.selection-field-choices",
+        "title": "Choices"
+      },
+      {
         "command": "dspf-edit.split-field-lines",
         "title": "Split Into Lines"
       },
@@ -352,6 +356,11 @@
         {
           "command": "dspf-edit.keying-options",
           "when": "view == dspf-edit.schema-view && viewItem =~ /^field\\b(?!.*\\b(hidden|message|p2s)\\b)/",
+          "group": "fields_constants_navigation3@4"
+        },
+        {
+          "command": "dspf-edit.selection-field-choices",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /^field\\b.*\\bchoice\\b/",
           "group": "fields_constants_navigation3@4"
         },
         {

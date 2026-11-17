@@ -133,6 +133,10 @@ See [Windows](/dspf-edit/guides/windows/) for the full reference.
 
 `SFL`/`SFLCTL` records show every `SFLPAG` row (in several columns for a horizontal subfile, `SFLLIN`), and automatically preview their paired header/detail record. Detail rows can't be dragged up over the header's own content. A `SFLCTL` record's `SFLMSG()` shows on the message line the same way `ERRMSG()` does (which still takes priority over it, matching the DDS reference), while `SFLDSP` is in effect. See [Subfiles](/dspf-edit/guides/subfiles/).
 
+## Selection fields
+
+A selection field (`SNGCHCFLD`/`MLTCHCFLD`) shows its choices as the display type set in the **⚙ Configuration** panel draws them: radio buttons or check boxes on a graphical display (the default), or an input field and numbered choices on a text-only one. On a graphical display the first choice stands for the field: click or drag it as you would the field. See [Display type](/dspf-edit/guides/configuration/#display-type) and [Selection fields](/dspf-edit/guides/fields/#selection-fields).
+
 ## Field wrapping
 
 A field coded with `CNTFLD(n)` wraps across multiple lines in the preview, `n` characters each, all starting at its original column — matching how RDi previews it. Use **Split Into Lines** on the field to add or change it.

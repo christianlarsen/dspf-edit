@@ -33,6 +33,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
 
 ### 🖥️ Screen Preview — see it before you compile
   - Visual, green-screen-style preview of a record's fields and constants (colors, DSPATR attributes, and placeholders for output/input/both fields).
+  - Selection fields (`SNGCHCFLD`/`MLTCHCFLD`) show radio buttons or check boxes, as emulators show them, or numbered choices as the screen designer does — set in the "⚙ Configuration" panel's **Display Type**.
   - A field coded with `CNTFLD(n)` wraps across multiple lines in the preview, `n` characters each, all starting at its original column — matching how RDi previews it.
   - A single, compact toolbar (size, display format, overlay, indicators, add buttons) sits above the preview.
   - Drag fields/constants to reposition them directly on the preview.
@@ -126,6 +127,7 @@ DSPF-edit doesn't replace your compiler — it closes the gap between writing DD
     - Add validity checks.
     - Keying options (`CHECK`): mandatory entry, automatic record advance, mandatory fill, field exit required, right adjust blank/zero fill.
     - Split into lines (`CNTFLD`): shows a long input field as a box of several lines.
+    - Choices (selection fields): changes, adds, removes and arranges the choices of a single-choice (radio buttons) or multiple-choice (check boxes) field. New ones are created with Add Field.
     - Add editing keywords.
     - Error messages: lists the field's messages, own text (`ERRMSG`) or from a message file (`ERRMSGID`), to add, change, remove or condition them with indicators.
     - Add / Remove / Change indicators, including more than 3 ANDed indicators (up to DDS's limit of 9, spilling onto continuation lines automatically) and OR'd conditions (add/remove whole OR'd groups, or edit indicators within one).
@@ -176,6 +178,8 @@ See the full changelog [here](./CHANGELOG.md).
 - Added: the preview shows horizontal subfiles (`SFLLIN`) in several columns of records, as the system does.
 - Added: **Subfile Columns** on `SFLCTL` records adds, changes or removes `SFLLIN`.
 - Added: `SFLDROP`/`SFLFOLD` where `SFLPAG` equals `SFLSIZ` is flagged as an error (`CPF7885`), with Quick Fixes to make `SFLSIZ` one more than `SFLPAG` or remove the keyword.
+- Added: selection fields: **Add Field** creates single-choice (radio buttons) and multiple-choice (check boxes) fields with their choices, and **Choices** changes, adds, removes and arranges them.
+- Added: a **Display Type** setting; graphical by default, so selection fields preview with radio buttons and check boxes, as emulators show them.
 - Changed: the preview no longer offers the fold/truncate key when `SFLPAG` equals `SFLSIZ`.
 
 ---

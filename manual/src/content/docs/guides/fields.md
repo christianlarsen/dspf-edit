@@ -12,6 +12,7 @@ Right-click a record and choose **New Field**, or click **+ Field** in the [Scre
 The field kind list offers:
 
 - The common alphanumeric and numeric fields: output, input/output, and input.
+- **Selection** fields: **Single choice — radio buttons** and **Multiple choice — check boxes**. See [Selection fields](#selection-fields).
 - **Hidden** alphanumeric and numeric fields. They are never displayed, so no position is asked. They are written the way STRSDA writes them, e.g. `10A  H` or `4S 0H`.
 - A **Referenced** section, for a field taking its definition from another one. See [Add a referenced field](/dspf-edit/guides/referenced-fields/#add-a-referenced-field).
 - **More options...**, for any usage and data type. That includes message (`M`) and program-to-system (`P`) fields, and hidden date, time, or timestamp fields. Only the data types DDS allows for the usage are offered:
@@ -67,6 +68,46 @@ Combinations DDS doesn't allow are refused before anything is written: `RB` with
 It asks for the columns per line, which must be less than the field's length and fit to the right of the field and, with the lines it takes, above the bottom of the display or window. If other fields or constants would end up inside the box, it lists them and asks before going ahead. On a field already split, it offers to change the width or to put it back on one line.
 
 As the DDS reference requires, it isn't offered for numeric fields, output-only fields or fields in a subfile, nor on a field with `AUTO(RAB/RAZ)`, `CHECK(AB MF RB RZ RLTB)`, `CHOICE`, `DSPATR(OID/SP)` or `EDTMSK`. **Edit field** offers to remove `CNTFLD` when the field becomes numeric.
+
+## Selection fields
+
+A selection field lets the user pick one choice (`SNGCHCFLD`) or several (`MLTCHCFLD`) from a list. The screen designer doesn't edit them, so they're usually written by hand:
+
+```
+     A            WSENTORNO      2Y 0B  4 37SNGCHCFLD
+     A                                      CHOICE(1 'DEV')
+     A                                      CHOICE(2 'QA')
+     A                                      CHOICE(3 'UAT')
+```
+
+On a graphical display, as most emulators show a screen, the choices are radio buttons (single choice) or check boxes (multiple choice). On a text-only display, as the screen designer shows them, there's an input field and the choices are numbered. The preview draws either one; see [Display type](/dspf-edit/guides/configuration/#display-type).
+
+### Creating one
+
+**Add Field** (from the tree, or **+ Field** in the preview) has a **Selection** section in its kind list: **Single choice — radio buttons** and **Multiple choice — check boxes**. After the name, it asks for the choices one after another; leave one empty to finish. Cancelling after some asks whether to create the field with those. The field is written as `2Y 0B`, as the DDS reference requires, with `SNGCHCFLD` or `MLTCHCFLD` on its line and one `CHOICE` per line.
+
+A multiple-choice field also needs a `CHCCTL` per choice: the program reads its `1Y 0 H` field to know whether the choice was selected. Each `CHOICE` gets its `CHCCTL(n &CTL01)` right after it, and the fields `CTL01`, `CTL02`... are created with the record's other hidden fields, skipping names the record already has.
+
+### Changing the choices
+
+Right-click a selection field and choose **Choices**, or pick **Choices...** in the preview's **Actions** menu. It lists the field's choices, with what each one has: its mnemonic, a blank line before it, its indicators, and for a multiple-choice field its control field. Each row has buttons to:
+
+- ✏️ **Change the text** (selecting the row does it too).
+- **Blank line before it**, on or off (`*SPACEB`). A choice whose number doesn't follow the previous one also gets one, in a single column.
+- **Indicators**, with the same menu as [Indicators](/dspf-edit/guides/indicators/).
+- **Control field** (multiple choice): rename it, or create it when the choice has none.
+- 🗑️ **Remove** it. A field keeps at least one choice. A control field left unused can then be deleted; it asks first.
+
+Below the list:
+
+- **Add choice**: the next number, after the last choice (before any other keyword of the field, such as `ERRMSG`). In a multiple-choice field it gets its `CHCCTL` and control field.
+- **Layout**: one column, several per row (`*NUMCOL`, filled row by row) or several per column (`*NUMROW`, filled column by column), and the spaces between columns (`*GUTTER`, at least 2; 3 when not coded).
+- **Type**: single choice ↔ multiple choice. Going multiple, each choice gets its `CHCCTL` and control field, and the parameters only single choice takes (`*AUTOSLT`, `*AUTOENT`...) are removed. Going single, the `CHCCTL`s are removed, and their fields can be deleted.
+- **Radio buttons** / **Check boxes**: shown, or not (`*NOSLTIND`).
+
+The window comes back after each change, until you close it.
+
+While typing a choice's text, it checks the DDS reference's rules: put `>` before a letter to make it the mnemonic (`>Development`), and `>>` for a `>` in the text; only one mnemonic per choice, not a blank, and not the same as another choice's. Choice numbers go up to 99, and the choices must fit on the display or window, laid out as the screen designer shows them.
 
 ## Editing keywords
 

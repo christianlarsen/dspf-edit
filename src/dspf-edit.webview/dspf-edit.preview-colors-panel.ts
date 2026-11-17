@@ -15,6 +15,7 @@ import { RecordPreviewPanel } from './dspf-edit.record-preview-panel';
 import { getColumnRulerEnabled, setColumnRulerEnabled } from '../dspf-edit.utils/dspf-edit.column-ruler-settings';
 import { NEW_WINDOW_MODE_OPTIONS, NewWindowMode, getNewWindowMode, setNewWindowMode } from '../dspf-edit.utils/dspf-edit.new-window-settings';
 import { refreshColumnRuler } from '../dspf-edit.listeners/dspf-edit.column-ruler';
+import { DISPLAY_TYPE_OPTIONS, DisplayType, getDisplayType, setDisplayType } from '../dspf-edit.utils/dspf-edit.display-type-settings';
 
 /**
  * The extension's "⚙ Configuration" webview panel. Lets the user pick the record preview's colors
@@ -173,6 +174,10 @@ export class PreviewColorsPanel {
             case 'setNewWindowMode':
                 await setNewWindowMode(message.value as NewWindowMode);
                 break;
+            case 'setDisplayType':
+                await setDisplayType(message.value as DisplayType);
+                RecordPreviewPanel.refreshOverlays();
+                break;
             case 'setOverlaySubfilePair':
                 await setOverlaySubfilePair(!!message.value);
                 RecordPreviewPanel.refreshOverlays();
@@ -232,6 +237,15 @@ export class PreviewColorsPanel {
     <div class="row">
         <label class="radio-label">
             <input type="radio" name="newWindowMode" value="${opt.value}" ${opt.value === currentNewWindowMode ? 'checked' : ''}>
+            ${opt.label}
+        </label>
+    </div>`).join('');
+
+        const currentDisplayType = getDisplayType();
+        const displayTypeRows = DISPLAY_TYPE_OPTIONS.map(opt => `
+    <div class="row">
+        <label class="radio-label">
+            <input type="radio" name="displayType" value="${opt.value}" ${opt.value === currentDisplayType ? 'checked' : ''}>
             ${opt.label}
         </label>
     </div>`).join('');
@@ -364,6 +378,12 @@ ${newWindowModeRows}
 
 <hr class="section">
 
+<h2>Display Type</h2>
+<p class="hint">The kind of display the preview draws for. Selection fields (single and multiple choice) look different on each.</p>
+${displayTypeRows}
+
+<hr class="section">
+
 <h2>Preview Overlay</h2>
 <p class="hint">Records shown dimmed behind the one being previewed.</p>
 <div class="row">
@@ -453,6 +473,12 @@ ${newWindowModeRows}
 
     document.getElementById('overlaySubfilePair').addEventListener('change', (ev) => {
         vscode.postMessage({ type: 'setOverlaySubfilePair', value: ev.target.checked });
+    });
+
+    document.querySelectorAll('input[name="displayType"]').forEach(input => {
+        input.addEventListener('change', () => {
+            vscode.postMessage({ type: 'setDisplayType', value: input.value });
+        });
     });
 
     document.querySelectorAll('input[name="newWindowMode"]').forEach(input => {
