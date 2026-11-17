@@ -15,6 +15,9 @@ import { getOverlaySubfilePair, getOverlayKeepOnSwitch } from '../dspf-edit.util
 import { DdsTreeProvider, DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { ExtensionState } from '../dspf-edit.states/state';
 import { getResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
+import { layoutSubfileInstances } from '../dspf-edit.utils/dspf-edit.subfile-layout';
+import { parseChoiceText, choiceBlankLinesBefore } from '../dspf-edit.utils/dspf-edit.choice-text';
+import { getDisplayType } from '../dspf-edit.utils/dspf-edit.display-type-settings';
 import { resolveRecordSizeForFormat, filterForActiveFormat, pickForActiveFormat, parseWindowDefinition, rewriteWindowDefinition, describeRuntimeWindowPlacement, windowPositionFieldNames, WindowDefinition } from '../dspf-edit.parser/dspf-edit.parser';
 import { editWindowTitleForRecord } from '../dspf-edit.commands/dspf-edit.window-title';
 import { deleteUnusedWindowPositionFields } from '../dspf-edit.commands/dspf-edit.window-position-fields';
@@ -33,6 +36,9 @@ import { HorizontalAlignment, WindowAlignment, WINDOW_ALIGNMENTS, computeAligned
 /**
  * Item sent to the webview for rendering (a single field or constant on the screen grid).
  */
+/** The DSPF-edit manual, opened by the preview's "? Manual" button. */
+const MANUAL_URL = 'https://christianlarsen.github.io/dspf-edit/';
+
 interface PreviewItem {
     kind: 'field' | 'constant';
     name: string;
@@ -639,11 +645,14 @@ function isChoiceField(attributes: AttributeWithIndicators[] | undefined): boole
     return Boolean(attributes?.some(attr => /^(SNGCHCFLD|MLTCHCFLD)\b/i.test(attr.value)));
 };
 
-/** A selection field's choice-list arrangement: how many choices per row/column, and the gap between columns. */
+/** A selection field's choice-list arrangement: how many choices per row/column, the gap between columns, and whether it shows selection indicators. */
 interface ChoiceLayout {
     numCols?: number;
     numRows?: number;
     gutter: number;
+    /** Radio buttons (SNGCHCFLD) or check boxes (MLTCHCFLD) on a graphical display: *SLTIND, the default for both. */
+    selectionIndicators: boolean;
+    multiple: boolean;
 };
 
 /**
@@ -655,7 +664,7 @@ interface ChoiceLayout {
  */
 function getChoiceLayout(attributes: AttributeWithIndicators[] | undefined): ChoiceLayout {
     const attr = attributes?.find(a => /^(SNGCHCFLD|MLTCHCFLD)\b/i.test(a.value));
-    if (!attr) { return { gutter: 3 }; };
+    if (!attr) { return { gutter: 3, selectionIndicators: true, multiple: false }; };
 
     const numCols = attr.value.match(/\*NUMCOL\s+(\d+)/i)?.[1];
     const numRows = attr.value.match(/\*NUMROW\s+(\d+)/i)?.[1];
@@ -664,14 +673,21 @@ function getChoiceLayout(attributes: AttributeWithIndicators[] | undefined): Cho
     return {
         numCols: numCols ? Number(numCols) : undefined,
         numRows: numRows ? Number(numRows) : undefined,
-        gutter: gutter ? Number(gutter) : 3
+        gutter: gutter ? Number(gutter) : 3,
+        selectionIndicators: !/\*NOSLTIND\b/i.test(attr.value),
+        multiple: /^MLTCHCFLD\b/i.test(attr.value)
     };
 };
 
 /** One CHOICE() option belonging to a SNGCHCFLD/MLTCHCFLD field, in source order. */
 interface ChoiceOption {
     number: string;
+    /** The text as shown, without the mnemonic's `>` (see parseChoiceText). */
     text: string;
+    /** Position of the mnemonic character in `text`, if the choice has one. */
+    mnemonicIndex?: number;
+    /** CHOICE(... *SPACEB): a blank line before it. */
+    spaceBefore: boolean;
     lineIndex: number;
 };
 
@@ -691,9 +707,15 @@ function getChoiceOptions(attributes: AttributeWithIndicators[] | undefined): Ch
         if (!match) { continue; };
 
         const [, number, rest] = match;
-        const quoted = rest.match(/^'([^']*)'/);
-        const text = quoted ? quoted[1] : rest.replace(/^&/, '').trim();
-        options.push({ number, text, lineIndex: attr.lineIndex });
+        const quoted = rest.match(/^'((?:[^']|'')*)'/);
+        const spaceBefore = /\*SPACEB\b/i.test(quoted ? rest.substring(quoted[0].length) : rest);
+        if (quoted) {
+            const { text, mnemonicIndex } = parseChoiceText(quoted[1].replace(/''/g, "'"));
+            options.push({ number, text, mnemonicIndex, spaceBefore, lineIndex: attr.lineIndex });
+        } else {
+            const text = rest.replace(/\*SPACEB\b/i, '').replace(/^&/, '').trim();
+            options.push({ number, text, spaceBefore, lineIndex: attr.lineIndex });
+        };
     };
     return options;
 };
@@ -1081,9 +1103,11 @@ function extractSflFoldToggleCommand(attributes: DdsAttribute[] | undefined, exi
  * "CA03 cond. on N50") — narrowing that down to the one that currently applies (by display format,
  * then by indicator state) is the caller's job, the same way it's already done for every other
  * conditionable item in the preview (see `isItemDisplayed`/`filterForActiveFormat`).
+ * The SFLDROP/SFLFOLD key is left out when SFLPAG equals SFLSIZ, since the system ignores it then.
  * @param recordName - Name of the record being previewed
+ * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
  */
-function getEffectiveFunctionKeyCommands(recordName: string): FunctionKeyCommand[] {
+function getEffectiveFunctionKeyCommands(recordName: string, activeFormat?: string): FunctionKeyCommand[] {
     const record = fieldsPerRecords.find(r => r.record === recordName);
     const recordCommands = extractFunctionKeyCommands(record?.attributes);
 
@@ -1099,8 +1123,10 @@ function getEffectiveFunctionKeyCommands(recordName: string): FunctionKeyCommand
 
     // SFLDROP/SFLFOLD are only ever valid on the SFLCTL record — whichever of `record`/`pairRecord` that is.
     const sflToggleExcluded = new Set([...overriddenNumbers, ...fileCommands.map(cmd => cmd.keyNumber)]);
-    const sflToggleCommand = extractSflFoldToggleCommand(record?.attributes, sflToggleExcluded)
-        ?? extractSflFoldToggleCommand(pairRecord?.attributes, sflToggleExcluded);
+    const sflToggleCommand = subfilePageEqualsSize(recordName, activeFormat)
+        ? undefined
+        : extractSflFoldToggleCommand(record?.attributes, sflToggleExcluded)
+            ?? extractSflFoldToggleCommand(pairRecord?.attributes, sflToggleExcluded);
 
     return [...recordCommands, ...pairCommands, ...fileCommands, ...(sflToggleCommand ? [sflToggleCommand] : [])];
 };
@@ -1144,6 +1170,24 @@ function sflControlAttributesFor(recordName: string): DdsAttribute[] | undefined
 };
 
 /**
+ * Whether a subfile's SFLPAG equals its SFLSIZ for the active display format. The system then
+ * doesn't page the subfile itself, and SFLDROP/SFLFOLD are ignored (DDS reference; CRTDSPF rejects
+ * them with CPF7885 — see dspf-edit.subfile-keywords.ts).
+ * @param recordName - Name of an SFL record or its SFLCTL record
+ * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
+ */
+function subfilePageEqualsSize(recordName: string, activeFormat?: string): boolean {
+    const attributes = sflControlAttributesFor(recordName) ?? [];
+    const read = (keyword: string): number | undefined => {
+        const candidates = attributes.filter(a => a.value.toUpperCase().startsWith(`${keyword}(`));
+        const match = pickForActiveFormat(candidates, activeFormat)?.value.match(/^\w+\(\s*(\d+)\s*\)$/);
+        return match ? parseInt(match[1], 10) : undefined;
+    };
+    const pag = read('SFLPAG');
+    return pag !== undefined && pag === read('SFLSIZ');
+};
+
+/**
  * The key number (e.g. "10") that toggles a subfile's fold/truncate state — from either SFLDROP or
  * SFLFOLD, whichever the SFLCTL record declares — if the given record (an SFL detail record or its
  * SFLCTL pair, either name works) has one. Used both to gate the truncation row filter (see
@@ -1152,10 +1196,15 @@ function sflControlAttributesFor(recordName: string): DdsAttribute[] | undefined
  * explicit CAxx/CFxx(...) or was synthesized because there wasn't one (see
  * extractSflFoldToggleCommand). Per the DDS reference, both keywords are ignored entirely when the
  * whole record already fits on one display line — the row filter itself already handles that as a
- * no-op (there's nothing to truncate), so no extra check for it is needed here.
+ * no-op (there's nothing to truncate), so no extra check for it is needed here. They're also
+ * ignored when SFLPAG equals SFLSIZ (see subfilePageEqualsSize): then there's no toggle at all.
  * @param recordName - Name of the record being previewed (SFL or SFLCTL)
+ * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
  */
-function findSflFoldToggleKeyNumber(recordName: string): string | undefined {
+function findSflFoldToggleKeyNumber(recordName: string, activeFormat?: string): string | undefined {
+    if (subfilePageEqualsSize(recordName, activeFormat)) {
+        return undefined;
+    };
     for (const attr of sflControlAttributesFor(recordName) ?? []) {
         const match = attr.value.match(/^SFL(?:DROP|FOLD)\(\s*(?:CA|CF)(\d{2})\s*\)$/i);
         if (match) {
@@ -1205,6 +1254,20 @@ function findSubfilePageSize(sflRecordName: string, activeFormat?: string): numb
 
     const pagAttr = findOwnSflPagAttribute(controlRecord, activeFormat);
     const match = pagAttr?.value.match(/SFLPAG\(\s*(\d+)\s*\)/i);
+    return match ? parseInt(match[1], 10) : undefined;
+};
+
+/**
+ * Finds the SFLLIN(spaces) value for a subfile record, read from its control record (SFLLIN is a
+ * record-level keyword on the SFLCTL record). When present, the subfile is a horizontal subfile:
+ * its records are laid out in several columns, `spaces` positions apart (attribute bytes
+ * included). When conditioned by more than one display format, picks the one matching activeFormat.
+ * @param sflRecordName - Name of the subfile (SFL) record
+ * @param activeFormat - Currently selected display format name (e.g. "*DS3"), or undefined
+ */
+function findSubfileLineSpacing(sflRecordName: string, activeFormat?: string): number | undefined {
+    const candidates = findSflControlRecord(sflRecordName)?.attributes?.filter(a => a.value.toUpperCase().startsWith('SFLLIN(')) ?? [];
+    const match = pickForActiveFormat(candidates, activeFormat)?.value.match(/SFLLIN\(\s*(\d+)\s*\)/i);
     return match ? parseInt(match[1], 10) : undefined;
 };
 
@@ -1429,8 +1492,9 @@ export class RecordPreviewPanel {
     };
 
     /**
-     * Re-renders the open preview panel after an overlay setting changes (see
-     * dspf-edit.utils/dspf-edit.overlay-settings.ts). No-op if no panel is open.
+     * Re-renders the open preview panel after an overlay setting or the display type changes (see
+     * dspf-edit.utils/dspf-edit.overlay-settings.ts and dspf-edit.display-type-settings.ts). No-op
+     * if no panel is open.
      */
     static refreshOverlays(): void {
         RecordPreviewPanel.current?.render();
@@ -1588,7 +1652,7 @@ export class RecordPreviewPanel {
         let hiddenItems: PreviewItem[] = [];
         let items = this.buildItems(recordInfo, rowOffset, colOffset, false, size.cols, hiddenItems);
         if (isSflRecordInfo(recordInfo)) {
-            const { visibleBase, repeats } = this.buildSubfileDisplayItems(items, this.recordName);
+            const { visibleBase, repeats } = this.buildSubfileDisplayItems(items, this.recordName, colOffset + size.cols);
             // A truncated subfile only shows its template's first row, the rest of the screen being
             // taken by repeats — so a ghost from one of the template's other rows would land on top
             // of those. Ghosts are only ever drawn for the real (first) instance, never repeated.
@@ -1781,7 +1845,7 @@ export class RecordPreviewPanel {
 
         let items = this.buildItems(record, rOffset, cOffset, true, size?.cols ?? getDefaultSize().cols);
         if (isSflRecordInfo(record)) {
-            const { visibleBase, repeats } = this.buildSubfileDisplayItems(items, recordName);
+            const { visibleBase, repeats } = this.buildSubfileDisplayItems(items, recordName, cOffset + (size?.cols ?? getDefaultSize().cols));
             items = [...visibleBase, ...repeats];
         };
 
@@ -1917,7 +1981,12 @@ export class RecordPreviewPanel {
                 // current line, then wraps to column 1 using the full line width for every following
                 // line, until the field's whole length is placed.
                 const remainingOnFirstLine = rowWidth - trueCol + 1;
-                if (continuedWidth && continuedWidth > 0 && text.length > continuedWidth) {
+                // A selection field on a graphical display has no input field: it's drawn below, with its choices.
+                const choiceField = isChoiceField(activeAttrs);
+                const graphicalChoice = choiceField && getDisplayType() === 'graphical';
+                if (graphicalChoice) {
+                    // Nothing here: see the selection field's choices below.
+                } else if (continuedWidth && continuedWidth > 0 && text.length > continuedWidth) {
                     const chunkCount = Math.ceil(text.length / continuedWidth);
                     for (let chunk = 0; chunk < chunkCount; chunk++) {
                         const chunkText = text.substr(chunk * continuedWidth, continuedWidth);
@@ -1939,51 +2008,85 @@ export class RecordPreviewPanel {
                     target.push({ ...baseItem, text, row: trueRow + rowOffset, length: text.length });
                 };
 
-                // SNGCHCFLD/MLTCHCFLD: confirmed against STRSDA — the field's own input box
-                // (already pushed above) sits to the left of the choice list, each CHOICE()
-                // rendered as "<number>. <text>" (MLTCHCFLD lets the user type several numbers into
-                // that same box; the choice list itself looks identical). With neither *NUMCOL nor
-                // *NUMROW coded, that's a single vertical column starting on the field's own row
-                // (fillSize 1 below degenerates the row-major layout to exactly that). *NUMCOL(n)
-                // fills n choices per row before wrapping to the next row; *NUMROW(n) fills n
-                // choices per column before starting the next column — same options, different
-                // reading order. Every column uses one uniform width (the longest choice label,
-                // plus the gutter), matching how SDA/RDi lay these out. Purely informational
-                // (isInteractive false): CHOICE lines have no row/col of their own in DDS to
+                // SNGCHCFLD/MLTCHCFLD: confirmed against STRSDA — on a text-only display the field's
+                // own input box (already pushed above) sits to the left of the choice list, each
+                // CHOICE() rendered as "<number>. <text>" (MLTCHCFLD lets the user type several
+                // numbers into that same box; the choice list itself looks identical). On a
+                // graphical display (the Configuration panel's Display Type, graphical by default)
+                // there's no input box and no numbers: per the DDS reference, the field's position
+                // is that of the uppermost radio button (SNGCHCFLD) or check box (MLTCHCFLD), each
+                // choice's text after its own; with *NOSLTIND there are none, the text starting at
+                // the field's position. The first choice then stands for the field itself — same
+                // name, line, click and drag — since there's no box left to grab. The mnemonic
+                // (the character after '>') is underlined there, and never shown as '>' anywhere.
+                // With neither *NUMCOL nor *NUMROW coded, that's a single vertical column starting
+                // on the field's own row (fillSize 1 below degenerates the row-major layout to
+                // exactly that), where *SPACEB, or a choice number that doesn't follow the previous
+                // one, leaves a blank line before the choice. *NUMCOL(n) fills n choices per row
+                // before wrapping to the next row; *NUMROW(n) fills n choices per column before
+                // starting the next column — same options, different reading order. Every column
+                // uses one uniform width (the longest choice label, plus the gutter), matching how
+                // SDA/RDi lay these out. Purely informational (isInteractive false) except for that
+                // first graphical choice: CHOICE lines have no row/col of their own in DDS to
                 // drag/reposition.
                 //
                 // PSHBTNFLD/PSHBTNCHC(), unlike SNGCHCFLD/MLTCHCFLD, was confirmed against STRSDA to
                 // have *no* text fallback at all on a plain 5250 — the field just shows as an
                 // ordinary input box, with no special handling here.
-                if (isChoiceField(activeAttrs)) {
+                if (choiceField) {
                     const options = getChoiceOptions(activeAttrs);
                     const layout = getChoiceLayout(activeAttrs);
-                    const maxLabelLength = Math.max(0, ...options.map(o => `${o.number}. ${o.text}`.length));
+                    const selectionIndicator = graphicalChoice && layout.selectionIndicators ? (layout.multiple ? '☐' : '○') : undefined;
+                    const prefixOf = (option: ChoiceOption): string => graphicalChoice
+                        ? (selectionIndicator ? `${selectionIndicator} ` : '')
+                        : `${option.number}. `;
+                    const maxLabelLength = Math.max(0, ...options.map(o => (prefixOf(o) + o.text).length));
                     const columnWidth = maxLabelLength + layout.gutter;
                     const columnMajor = layout.numRows !== undefined;
                     const fillSize = (columnMajor ? layout.numRows : layout.numCols) ?? 1;
-                    const choiceCol = trueCol + colOffset + effectiveLength + 1;
+                    const singleColumn = layout.numRows === undefined && (layout.numCols ?? 1) === 1;
+                    const blankLines = singleColumn
+                        ? choiceBlankLinesBefore(options.map(o => ({ number: parseInt(o.number, 10), spaceBefore: o.spaceBefore })))
+                        : options.map(() => 0);
+                    const choiceCol = graphicalChoice ? trueCol + colOffset : trueCol + colOffset + effectiveLength + 1;
 
+                    let blankRows = 0;
                     options.forEach((option, index) => {
-                        const rowIndex = columnMajor ? index % fillSize : Math.floor(index / fillSize);
+                        blankRows += blankLines[index];
+                        const rowIndex = (columnMajor ? index % fillSize : Math.floor(index / fillSize)) + blankRows;
                         const colIndex = columnMajor ? Math.floor(index / fillSize) : index % fillSize;
-                        const label = `${option.number}. ${option.text}`;
-                        target.push({
+                        const standsForField = graphicalChoice && index === 0;
+                        const choiceItem = {
                             ...baseItem,
-                            name: `${field.name}_CHOICE_${option.number}`,
-                            text: label,
+                            name: standsForField ? field.name : `${field.name}_CHOICE_${option.number}`,
                             row: trueRow + rowOffset + rowIndex,
-                            col: choiceCol + colIndex * columnWidth,
-                            length: label.length,
-                            lineIndex: option.lineIndex,
+                            lineIndex: standsForField ? field.lineIndex : option.lineIndex,
                             reverseImage: false,
                             underline: false,
-                            isInteractive: false,
+                            isInteractive: standsForField ? baseItem.isInteractive : false,
                             isInputCapable: false,
                             hasDefaultUnderline: false,
                             isReferenced: false,
                             isResizable: false
-                        });
+                        };
+
+                        // The mnemonic gets a piece of its own, to underline it.
+                        const prefix = prefixOf(option);
+                        const mnemonic = graphicalChoice ? option.mnemonicIndex : undefined;
+                        const pieces = mnemonic === undefined
+                            ? [{ text: prefix + option.text, underline: false }]
+                            : [
+                                { text: prefix + option.text.substring(0, mnemonic), underline: false },
+                                { text: option.text.charAt(mnemonic), underline: true },
+                                { text: option.text.substring(mnemonic + 1), underline: false }
+                            ];
+                        let col = choiceCol + colIndex * columnWidth;
+                        for (const piece of pieces) {
+                            if (piece.text.length > 0) {
+                                target.push({ ...choiceItem, text: piece.text, col, length: piece.text.length, underline: piece.underline });
+                            };
+                            col += piece.text.length;
+                        };
                     });
                 };
             };
@@ -2156,8 +2259,8 @@ export class RecordPreviewPanel {
      * @param recordName - Name of the record being previewed
      */
     private getVisibleFunctionKeys(recordName: string): { key: string; description: string; active: boolean; isSflDrop: boolean; responseIndicator?: string }[] {
-        const forFormat = filterForActiveFormat(getEffectiveFunctionKeyCommands(recordName), this.activeDisplayFormat);
-        const sflDropKeyNumber = findSflFoldToggleKeyNumber(recordName);
+        const forFormat = filterForActiveFormat(getEffectiveFunctionKeyCommands(recordName, this.activeDisplayFormat), this.activeDisplayFormat);
+        const sflDropKeyNumber = findSflFoldToggleKeyNumber(recordName, this.activeDisplayFormat);
 
         const byKeyNumber = new Map<string, FunctionKeyCommand[]>();
         for (const cmd of forFormat) {
@@ -2366,10 +2469,14 @@ export class RecordPreviewPanel {
      * uses the same total screen space one row at a time rather than several, proportionally more
      * instances fit in it (`SFLPAG` times however many rows a folded instance spans), matching "more
      * records are displayed [truncated] than are specified on SFLPAG" in the reference.
+     *
+     * A horizontal subfile (SFLLIN on the control record) places the instances in columns instead
+     * of a single stack — see `layoutSubfileInstances`.
      * @param baseItems - The subfile's own items, as built for its first (real) row, at full height
      * @param recordName - Name of the subfile (SFL) record
+     * @param maxCol - Last usable screen column (absolute, canvas coordinates): the screen's width, or the window's right edge
      */
-    private buildSubfileDisplayItems(baseItems: PreviewItem[], recordName: string): { visibleBase: PreviewItem[]; repeats: PreviewItem[] } {
+    private buildSubfileDisplayItems(baseItems: PreviewItem[], recordName: string, maxCol: number): { visibleBase: PreviewItem[]; repeats: PreviewItem[] } {
         if (baseItems.length === 0) {
             return { visibleBase: baseItems, repeats: [] };
         };
@@ -2378,7 +2485,7 @@ export class RecordPreviewPanel {
         const minRow = Math.min(...rows);
         const foldedRowSpan = Math.max(...rows) - minRow + 1;
 
-        const truncated = !this.resolveSubfileExpanded() && findSflFoldToggleKeyNumber(recordName) !== undefined;
+        const truncated = !this.resolveSubfileExpanded() && findSflFoldToggleKeyNumber(recordName, this.activeDisplayFormat) !== undefined;
         const visibleBase = truncated ? baseItems.filter(item => item.row === minRow) : baseItems;
         const rowSpan = truncated ? 1 : foldedRowSpan;
 
@@ -2389,10 +2496,18 @@ export class RecordPreviewPanel {
 
         const pageCount = truncated ? sflPag * foldedRowSpan : sflPag;
 
+        const spacing = findSubfileLineSpacing(recordName, this.activeDisplayFormat);
+        const horizontal = spacing === undefined ? undefined : {
+            minCol: Math.min(...visibleBase.map(item => item.col)),
+            maxEnd: Math.max(...visibleBase.map(item => item.col + item.length - 1)),
+            spacing,
+            maxCol
+        };
+
         const repeats: PreviewItem[] = [];
-        for (let page = 1; page < pageCount; page++) {
+        for (const { rowOffset, colOffset } of layoutSubfileInstances(pageCount, rowSpan, horizontal).slice(1)) {
             for (const item of visibleBase) {
-                repeats.push({ ...item, row: item.row + page * rowSpan, isInteractive: false });
+                repeats.push({ ...item, row: item.row + rowOffset, col: item.col + colOffset, isInteractive: false });
             };
         };
 
@@ -2555,6 +2670,11 @@ export class RecordPreviewPanel {
             return;
         };
 
+        if (message?.type === 'openManual') {
+            await this.showManualMenu();
+            return;
+        };
+
         if (message?.type === 'openConfiguration') {
             // Guards the same rule the button's own disabled state already enforces: opening the
             // Configuration panel "beside" this one would silently drop focus mode (see
@@ -2563,6 +2683,33 @@ export class RecordPreviewPanel {
                 await vscode.commands.executeCommand('dspf-edit.configure-preview-colors');
             };
             return;
+        };
+    };
+
+    /**
+     * The "? Manual" button: a short list of manual pages to open in the browser, the one about
+     * what's being previewed first (Windows for a window record, Subfiles for a subfile record),
+     * then the Screen Preview guide, the Quick Start and the whole manual.
+     */
+    private async showManualMenu(): Promise<void> {
+        const record = fieldsPerRecords.find(r => r.record === this.recordName);
+        const isWindow = getEffectiveSize(this.recordName, this.activeDisplayFormat)?.source === 'window';
+        const isSubfile = record ? (isSflRecordInfo(record) || isSflCtlRecordInfo(record)) : false;
+
+        type ManualPage = vscode.QuickPickItem & { path: string };
+        const pages: ManualPage[] = [
+            ...(isSubfile ? [{ label: '$(list-ordered) Subfiles', description: `about ${this.recordName}`, path: 'guides/subfiles/' }] : []),
+            ...(isWindow ? [{ label: '$(window) Windows', description: `about ${this.recordName}`, path: 'guides/windows/' }] : []),
+            { label: '$(preview) Screen Preview', description: 'this panel: toolbar, dragging, overlays, indicators', path: 'guides/screen-preview/' },
+            { label: '$(rocket) Quick Start', description: 'the first steps', path: 'quickstart/' },
+            { label: '$(book) The whole manual', description: 'every guide', path: '' }
+        ];
+        const picked = await vscode.window.showQuickPick(pages, {
+            title: 'DSPF-edit manual',
+            placeHolder: 'Select a page to open in the browser'
+        });
+        if (picked) {
+            await vscode.env.openExternal(vscode.Uri.parse(`${MANUAL_URL}${picked.path}`));
         };
     };
 
@@ -3209,6 +3356,10 @@ export class RecordPreviewPanel {
         if (!isMulti) {
             const kind = nodes[0].ddsElement.kind;
             if (kind === 'field') {
+                const isSelectionField = (nodes[0].ddsElement.attributes ?? []).some((attr: { value: string }) => /^(SNGCHCFLD|MLTCHCFLD)\b/i.test(attr.value));
+                if (isSelectionField) {
+                    options.push({ label: '$(list-selection) Choices...', command: 'selection-field-choices' });
+                };
                 options.push(
                     { label: '$(check) Validity Checks...', command: 'add-validity-check' },
                     { label: '$(keyboard) Keying Options...', command: 'keying-options' },
@@ -3686,7 +3837,7 @@ export class RecordPreviewPanel {
         align-items: center;
         gap: 6px;
     }
-    #actionBar button, #sflpagBar button, #focusModeBtn, #configBtn {
+    #actionBar button, #sflpagBar button, #focusModeBtn, #configBtn, #manualBtn {
         background: ${bg};
         color: ${fg};
         border: 1px solid #333333;
@@ -3804,6 +3955,7 @@ export class RecordPreviewPanel {
     <span id="info">Loading...</span>
     <button id="focusModeBtn" title="Hide the source code editor to focus on the preview (tree view stays visible)">🗖 Focus</button>
     <button id="configBtn" title="Configure the preview (colors)">⚙ Configuration</button>
+    <button id="manualBtn" title="Open the DSPF-edit manual">? Manual</button>
 </div>
 <div id="toolbarRow2" class="toolbar-row">
     <span id="formatBar">
@@ -4851,6 +5003,10 @@ export class RecordPreviewPanel {
 
     configBtn.addEventListener('click', () => {
         vscode.postMessage({ type: 'openConfiguration' });
+    });
+
+    document.getElementById('manualBtn').addEventListener('click', () => {
+        vscode.postMessage({ type: 'openManual' });
     });
 
     // Center is only shown (see updateSelectionBar) when exactly one item is selected.

@@ -1,6 +1,6 @@
 ---
 title: Subfiles
-description: Previewing SFL/SFLCTL records, their paired header/detail record, and adding a commands record.
+description: Previewing SFL/SFLCTL records, their paired header/detail record, horizontal subfiles, and adding a commands record.
 ---
 
 Subfile (`SFL`/`SFLCTL`) records are recognized and rendered specially in the [Screen Preview](/dspf-edit/guides/screen-preview/).
@@ -9,7 +9,7 @@ Subfile (`SFL`/`SFLCTL`) records are recognized and rendered specially in the [S
 
 ## Subfile page rows
 
-The preview shows all `SFLPAG` rows for the subfile, and pairs the subfile detail record with its `SFLCTL` header record so both preview together as they'd actually appear on screen. The other half appears checked and locked in the [Overlay](/dspf-edit/guides/screen-preview/#overlay) list, and checking a subfile record as an overlay brings its other half too.
+The preview shows all `SFLPAG` rows for the subfile (in several columns for a [horizontal subfile](#subfile-columns-sfllin)), and pairs the subfile detail record with its `SFLCTL` header record so both preview together as they'd actually appear on screen. The other half appears checked and locked in the [Overlay](/dspf-edit/guides/screen-preview/#overlay) list, and checking a subfile record as an overlay brings its other half too.
 
 To preview one half without the other (for example, a header with a "no records" format instead of its detail rows), turn off **Show a subfile's detail and control records together** in the **⚙ Configuration** panel — see [Configuration](/dspf-edit/guides/configuration/#preview-overlay).
 
@@ -30,9 +30,35 @@ When the `SFLCTL` record declares `SFLDROP(CAnn|CFnn)` or `SFLFOLD(CAnn|CFnn)` �
 
 To see the truncated form or try the toggle, preview the header record rather than the detail record.
 
+The key isn't offered when `SFLPAG` equals `SFLSIZ` for the display size being previewed: the system doesn't page such a subfile itself, and ignores `SFLDROP`/`SFLFOLD`.
+
+### SFLPAG equal to SFLSIZ
+
+CRTDSPF rejects `SFLDROP` and `SFLFOLD` on a subfile where `SFLPAG` equals `SFLSIZ` (`CPF7885`). DSPF-edit underlines the keyword as an error, also listed in the **Problems** panel, with two **Quick Fixes** (`Ctrl+.`/`Cmd+.`, or the light bulb):
+
+- **Make SFLSIZ one more than SFLPAG**: the usual choice, and what the preview's `SFLPAG` buttons keep. The number keeps its digits, so `SFLSIZ(0010)` becomes `SFLSIZ(0011)`.
+- **Remove SFLDROP** (or `SFLFOLD`): the whole line when nothing else is coded on it.
+
+With several display sizes, each size is checked with its own `SFLPAG`/`SFLSIZ`, and the keyword is only flagged when they're equal on every size: equal on only one compiles cleanly, and the keyword is just ignored on that size.
+
 ### Assigning SFLDROP/SFLFOLD
 
 Right-click a `SFLCTL` record and choose **Subfile Drop/Fold** for a summary menu listing `SFLDROP` and `SFLFOLD`, each showing its current command key (and any conditioning indicator) or "(not set)" — same menu style as [Editing Keywords](/dspf-edit/guides/fields/#editing-keywords). Pick a row (or its change button) to assign it to a `CAnn`/`CFnn` key, optionally conditioned by an indicator, or use its own remove button to take it off entirely.
+
+## Subfile columns (SFLLIN)
+
+`SFLLIN(spaces)` on the `SFLCTL` record makes it a horizontal subfile: its records are shown in several columns, `spaces` positions apart (attribute bytes included). They fill each column top to bottom before going on to the next one:
+
+```
+REC1     REC3
+REC2     REC4
+```
+
+The preview lays them out the same way. As many records fit side by side as the display (or the window) width allows, and `SFLPAG` is rounded up to fill the last line, as the DDS reference describes: with `SFLPAG(0013)` and three records per line, 15 records are shown. A record too wide for a second column stays in a single column. With several display sizes, each size uses its own `SFLLIN`.
+
+Right-click a `SFLCTL` record and choose **Subfile Columns** to add `SFLLIN`, giving the spaces between columns (5 by default). It's written with four digits, `SFLLIN(0005)`, like `SFLPAG` and `SFLSIZ`. On a record that already has it, the same command changes the spaces or removes it, showing the subfile in a single column again. When there's one `SFLLIN` per display size, each one is listed with its size.
+
+It isn't offered on a message subfile, or when a field of the subfile record has `SFLCSRPRG`: the DDS reference doesn't allow `SFLLIN` there. Option indicators aren't valid on `SFLLIN` either, so it doesn't ask for any.
 
 ## Subfile end (SFLEND)
 
@@ -76,4 +102,4 @@ A `SFLCTL` record's `SFLMSG('text' indicator)` is shown on the preview's message
 
 ## Multiple display sizes
 
-A subfile's `SFLPAG`/`SFLSIZ` can differ per `DSPSIZ` format. When previewing a file with more than one format, adjusting a subfile's page size only affects the format currently selected in the preview. See [Multiple Display Sizes](/dspf-edit/guides/display-sizes/).
+A subfile's `SFLPAG`/`SFLSIZ` (and `SFLLIN`) can differ per `DSPSIZ` format. When previewing a file with more than one format, adjusting a subfile's page size only affects the format currently selected in the preview. See [Multiple Display Sizes](/dspf-edit/guides/display-sizes/).

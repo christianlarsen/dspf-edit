@@ -8,6 +8,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.19.0] - 2026-11-17
+### Added
+- Subfiles: the preview now shows a horizontal subfile (`SFLLIN` on the `SFLCTL` record) in several columns of records, as the system does. As many records fit side by side as the display or window width allows, `SFLLIN` positions apart, and they fill each column top to bottom before the next one. `SFLPAG` is rounded up to fill the last line, as the DDS reference describes. Before, `SFLLIN` was ignored and the records were shown in a single column. With several display sizes, each size uses its own `SFLLIN`.
+- Subfiles: **Subfile Columns**, on a `SFLCTL` record's right-click menu. Adds `SFLLIN` with the spaces between columns, written with four digits (`SFLLIN(0005)`) as STRSDA does, changes them, or removes it. Not offered on a message subfile or when a field of the subfile record has `SFLCSRPRG`, which DDS doesn't allow.
+- Source checks: `SFLDROP` or `SFLFOLD` on a subfile where `SFLPAG` equals `SFLSIZ` is shown as an error with the compiler's message ID, `CPF7885`. The system doesn't page such a subfile itself, so there's nothing to truncate or fold. Two **Quick Fixes**: make `SFLSIZ` one more than `SFLPAG`, or remove the keyword. With several display sizes, it's only flagged when they're equal on every size, since CRTDSPF compiles it cleanly when they're equal on only one (the keyword is just ignored there).
+
+- Selection fields: **Add Field** offers **Single choice — radio buttons** (`SNGCHCFLD`) and **Multiple choice — check boxes** (`MLTCHCFLD`). It asks for the choices one after another, until one is left empty, and writes the field as `2Y 0B` with the keyword on its line and one `CHOICE(n 'text')` per line, as the DDS reference requires. A multiple-choice field also gets a `CHCCTL(n &CTL01)` after each choice, and its control fields (`CTL01`, `CTL02`... as `1Y 0H`) are created with the record's other hidden fields.
+- Selection fields: **Choices**, on a selection field's right-click menu and in the preview's **Actions** menu. A list of the field's choices, each with buttons to change its text, put a blank line before it (`*SPACEB`), condition it with indicators, rename its control field (multiple choice) or remove it. Below the list: **Add choice**, **Layout** (one column, several per row with `*NUMCOL`, or several per column with `*NUMROW`, and the spaces between columns, `*GUTTER`), **Type** (single ↔ multiple choice, creating or removing the `CHCCTL`s and their fields) and whether the radio buttons or check boxes show (`*NOSLTIND`). It checks the DDS rules as you type: at most one mnemonic per choice (`>` before a letter; `>>` for a `>` in the text), not a blank and not repeated, choice numbers up to 99, and choices that fit on the display or window.
+- Configuration: a **Display Type** section says what kind of display the preview draws for. **Graphical** (the default) is how most emulators show a screen: a selection field shows radio buttons (`SNGCHCFLD`) or check boxes (`MLTCHCFLD`), without its input field or choice numbers, and each choice's mnemonic is underlined. **Text only** shows it as the screen designer does: an input field and numbered choices (`1. DEV`).
+
+- Preview: a **? Manual** button, next to **⚙ Configuration**, opens the manual in the browser: the guide about what's being previewed first (**Windows** for a window, **Subfiles** for a subfile), then **Screen Preview**, the **Quick Start** and the whole manual.
+
+### Changed
+- Subfiles: when `SFLPAG` equals `SFLSIZ` for the display size being previewed, the preview no longer offers the `SFLDROP`/`SFLFOLD` fold and truncate key, since the system ignores it.
+
+### Fixed
+- Selection fields: the preview showed a choice's mnemonic mark (`>`), and `>>` as two characters. It now shows the text without the mark, and `>>` as a single `>`, as the DDS reference describes. `*SPACEB`, or a choice number that doesn't follow the previous one, now leaves a blank line before the choice in a single column, and a text with a doubled quote (`'Don''t'`) is no longer cut short.
+
 ## [1.18.0] - 2026-11-14
 ### Added
 - Fields: **Keying Options**, on an input field's right-click menu and in the preview's **Actions** menu. A window with the keyboard-control codes of `CHECK`: **ME** mandatory entry, **ER** automatic record advance, **MF** mandatory fill, **FE** field exit key required, **RB** right adjust blank fill and **RZ** right adjust zero fill. Check the ones the field should have; each is written on a line of its own (`CHECK(ME)`, `CHECK(FE)`), as STRSDA does. ✏️ sets indicators on **ME** and **ER**, the only ones DDS allows them on. Combinations DDS doesn't allow (`RB` with `RZ`, `MF` with `RB`/`RZ`, any of them with `WRDWRAP` or `CNTFLD`) are refused. Other `CHECK` codes the field has are kept.

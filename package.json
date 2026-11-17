@@ -8,7 +8,7 @@
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "1.18.0",
+  "version": "1.19.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
@@ -155,6 +155,10 @@
         "title": "Subfile Record Number"
       },
       {
+        "command": "dspf-edit.subfile-columns",
+        "title": "Subfile Columns"
+      },
+      {
         "command": "dspf-edit.overlay",
         "title": "Overlay"
       },
@@ -177,6 +181,10 @@
       {
         "command": "dspf-edit.keying-options",
         "title": "Keying Options"
+      },
+      {
+        "command": "dspf-edit.selection-field-choices",
+        "title": "Choices"
       },
       {
         "command": "dspf-edit.split-field-lines",
@@ -351,6 +359,11 @@
           "group": "fields_constants_navigation3@4"
         },
         {
+          "command": "dspf-edit.selection-field-choices",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /^field\\b.*\\bchoice\\b/",
+          "group": "fields_constants_navigation3@4"
+        },
+        {
           "command": "dspf-edit.split-field-lines",
           "when": "view == dspf-edit.schema-view && viewItem =~ /^field\\b(?!.*\\b(hidden|message|p2s)\\b)/",
           "group": "fields_constants_navigation3@5"
@@ -429,6 +442,11 @@
           "command": "dspf-edit.subfile-record-number",
           "when": "view == dspf-edit.schema-view && viewItem =~ /\\bsflctl\\b/",
           "group": "records_navigation2@5"
+        },
+        {
+          "command": "dspf-edit.subfile-columns",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\bsflctl\\b/",
+          "group": "records_navigation2@6"
         },
         {
           "command": "dspf-edit.overlay",

@@ -5,6 +5,7 @@
 */
 
 import * as vscode from 'vscode';
+import { collectNewChoices, buildSelectionFieldLines, insertControlFields } from './dspf-edit.selection-field';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fileSizeAttributes, fieldsPerRecords, getRecordSize, getSubfileMinDetailRow, AttributeWithIndicators, attributesFileLevel, FieldInfo } from '../dspf-edit.model/dspf-edit.model';
 import { RefKeywordTarget, parseRefKeyword } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
@@ -71,7 +72,7 @@ interface FieldReference {
 type ReferenceSource = 'ref' | 'file' | 'src';
 
 /** The quick kind picker's result: a common kind+usage combo, a referenced field, or the full flow. */
-type QuickFieldKind = { isNumeric: boolean; usage: FieldUsage } | { referenced: ReferenceSource } | 'advanced';
+type QuickFieldKind = { isNumeric: boolean; usage: FieldUsage } | { referenced: ReferenceSource } | { selection: 'single' | 'multiple' } | 'advanced';
 
 /**
  * Interface for field type configuration
@@ -356,8 +357,11 @@ async function handleAddFieldCommand(node: DdsNode): Promise<void> {
             return; // User cancelled
         };
 
-        // Insert the new field into the document
+        // Insert the new field into the document (and a multiple-choice field's control fields)
         await insertNewField(editor, element, fieldResult.line);
+        if (fieldResult.controlFieldLines && 'name' in element && !(await insertControlFields(editor, element.name, fieldResult.controlFieldLines))) {
+            return;
+        };
 
         // Show success message
         if ('name' in element) {
@@ -399,8 +403,13 @@ export async function addFieldAtPosition(recordName: string, position: FieldPosi
         if (quickKind === null) return;
 
         let newFieldLine: string;
+        let controlFieldLines: string[] = [];
 
-        if (quickKind !== 'advanced' && !('referenced' in quickKind)) {
+        if (quickKind !== 'advanced' && 'selection' in quickKind) {
+            const texts = await collectNewChoices(fieldName);
+            if (!texts) return;
+            ({ line: newFieldLine, controlFieldLines } = selectionFieldSource(fieldName, quickKind.selection === 'multiple', texts, position, recordName));
+        } else if (quickKind !== 'advanced' && !('referenced' in quickKind)) {
             const size = await collectQuickFieldSize(fieldName, quickKind.isNumeric);
             if (!size) return;
 
@@ -427,6 +436,7 @@ export async function addFieldAtPosition(recordName: string, position: FieldPosi
         };
 
         await insertNewField(editor, recordElement, newFieldLine);
+        if (!(await insertControlFields(editor, recordName, controlFieldLines))) return;
 
         vscode.window.showInformationMessage(`Field '${fieldName}' successfully added to record '${recordName}'.`);
 
@@ -448,7 +458,7 @@ export async function addFieldAtPosition(recordName: string, position: FieldPosi
  * @param recordName - The record the field is added to, for the *SRC entry
  */
 async function collectQuickFieldKind(fieldName: string, recordName: string): Promise<QuickFieldKind | null> {
-    type KindPick = vscode.QuickPickItem & { index?: number; advanced?: boolean; referenced?: ReferenceSource };
+    type KindPick = vscode.QuickPickItem & { index?: number; advanced?: boolean; referenced?: ReferenceSource; selection?: 'single' | 'multiple' };
 
     const fileLevelRef = getFileLevelRef();
     const referencedItems: KindPick[] = [
@@ -480,6 +490,9 @@ async function collectQuickFieldKind(fieldName: string, recordName: string): Pro
         ...quickItems.slice(3, 6),
         { label: 'Hidden', kind: vscode.QuickPickItemKind.Separator },
         ...quickItems.slice(6),
+        { label: 'Selection', kind: vscode.QuickPickItemKind.Separator },
+        { label: '$(circle-large-outline) Single choice — radio buttons', description: '2Y 0 SNGCHCFLD, with its choices', selection: 'single' },
+        { label: '$(check) Multiple choice — check boxes', description: '2Y 0 MLTCHCFLD, with its choices', selection: 'multiple' },
         { label: 'Referenced', kind: vscode.QuickPickItemKind.Separator },
         ...referencedItems,
         { label: '', kind: vscode.QuickPickItemKind.Separator },
@@ -499,6 +512,7 @@ async function collectQuickFieldKind(fieldName: string, recordName: string): Pro
     if (!selection) return null;
     if (selection.advanced) return 'advanced';
     if (selection.referenced) return { referenced: selection.referenced };
+    if (selection.selection) return { selection: selection.selection };
     if (typeof selection.index !== 'number') return null;
 
     const kind = QUICK_FIELD_KINDS[selection.index];
@@ -655,12 +669,20 @@ async function collectReferencedFieldDefinition(fieldName: string, source: Refer
  * @param recordElement - The record element where the field will be added
  * @returns The field's name (for the success message) and its generated source line, or null if cancelled
  */
-async function collectNewFieldConfiguration(editor: vscode.TextEditor, recordElement: any): Promise<{ name: string; line: string } | null> {
+async function collectNewFieldConfiguration(editor: vscode.TextEditor, recordElement: any): Promise<{ name: string; line: string; controlFieldLines?: string[] } | null> {
     const fieldName = await promptForNewFieldName(recordElement);
     if (!fieldName) return null;
 
     const quickKind = await collectQuickFieldKind(fieldName, recordElement.name);
     if (quickKind === null) return null;
+
+    if (quickKind !== 'advanced' && 'selection' in quickKind) {
+        const texts = await collectNewChoices(fieldName);
+        if (!texts) return null;
+        const position = await collectFieldPosition(editor, fieldName, recordElement, { length: 2, decimals: 0 });
+        if (!position) return null;
+        return { name: fieldName, ...selectionFieldSource(fieldName, quickKind.selection === 'multiple', texts, position, recordElement.name) };
+    };
 
     if (quickKind !== 'advanced' && !('referenced' in quickKind)) {
         const size = await collectQuickFieldSize(fieldName, quickKind.isNumeric);
@@ -1412,6 +1434,22 @@ function parseConstantFromLine(lineText: string, lineIndex: number): ExistingEle
  * A REFFLD too long for positions 45-80 is continued on a second line, so the result may hold two
  * source lines separated by a newline.
  */
+/**
+ * The source of a new selection field (2Y 0B with SNGCHCFLD or MLTCHCFLD, then its choices), and
+ * for a multiple-choice field the control fields its CHCCTLs name — see dspf-edit.selection-field.ts.
+ */
+function selectionFieldSource(name: string, multiple: boolean, texts: string[], position: FieldPosition, recordName: string): { line: string; controlFieldLines: string[] } {
+    const fieldLine = generateNewFieldLine({
+        name,
+        position,
+        usage: { type: 'B', description: FIELD_USAGE_TYPES['B'].description },
+        isReferenced: false,
+        typeConfig: { type: 'Y', size: { length: 2, decimals: 0 } }
+    });
+    const { lines, controlFieldLines } = buildSelectionFieldLines(fieldLine, multiple, texts, recordName);
+    return { line: lines, controlFieldLines };
+};
+
 export function generateNewFieldLine(config: NewFieldConfig): string {
     let line = ' '.repeat(80);
     line = replaceAt(line, 5, 'A');

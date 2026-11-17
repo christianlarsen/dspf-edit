@@ -21,7 +21,8 @@ import { generateNewFieldLine } from './dspf-edit.edit-field';
 
 /** The definition a keyword's hidden field is created with. */
 export interface HiddenFieldDefinition {
-    type: 'A' | 'S';
+    /** Y for a 1Y 0 control field (CHCCTL). */
+    type: 'A' | 'S' | 'Y';
     length: number;
     decimals?: number;
     /** H (hidden) unless given; P for a program-to-system field, as WINDOW's line and position need */

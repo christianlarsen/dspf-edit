@@ -35,6 +35,15 @@ The **New Window Records** section of the **⚙ Configuration** panel says how *
 
 Without asking, the window is then sized and moved with the mouse in the [Screen Preview](/dspf-edit/guides/screen-preview/), and its title set with **Change Window Title**. A subfile in a window still asks for what belongs to the subfile. To place a window at the line and position in fields (`WINDOW(&LIN &POS ...)`), use **Change Window Size** afterwards. See [Windows](/dspf-edit/guides/windows/).
 
+## Display type
+
+The **Display Type** section of the **⚙ Configuration** panel says what kind of display the [Screen Preview](/dspf-edit/guides/screen-preview/) draws for. The same display file looks different on each, and changes apply to an open preview at once.
+
+- **Graphical** (the default): how most emulators show a screen, on a display that supports the enhanced interface. A selection field shows a radio button (`SNGCHCFLD`) or a check box (`MLTCHCFLD`) before each choice, starting at the field's position, without its input field or choice numbers, and each choice's mnemonic is underlined. With `*NOSLTIND` there are none, and the text starts at the field's position.
+- **Text only**: as the screen designer shows it. A selection field shows its input field, with the choices numbered after it (`1. DEV`).
+
+See [Selection fields](/dspf-edit/guides/fields/#selection-fields).
+
 ## Preview overlay
 
 Two settings in the **Preview Overlay** section of the **⚙ Configuration** panel control the [Overlay](/dspf-edit/guides/screen-preview/#overlay) list of the Screen Preview. Both are on by default, and changes save immediately.
