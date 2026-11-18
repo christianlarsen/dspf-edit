@@ -32,7 +32,8 @@ import { copyFieldToPosition } from '../dspf-edit.commands/dspf-edit.copy-field'
 import { copyConstantToPosition } from '../dspf-edit.commands/dspf-edit.copy-constant';
 import { copyFormat, pasteFormat, getCopiedFormat } from '../dspf-edit.commands/dspf-edit.copy-format';
 import { HorizontalAlignment, WindowAlignment, WINDOW_ALIGNMENTS, computeAlignedColumns, computeWindowAlignedPosition } from '../dspf-edit.utils/dspf-edit.alignment';
-import { formatRowField } from '../dspf-edit.utils/dspf-edit.menu';
+import { formatRowField, menuOptionOfConstant, findCmdPromptConstantLine, menuBottomLayout } from '../dspf-edit.utils/dspf-edit.menu';
+import { getMenuCommandsFor, getMenuCreateOptions, setMenuCreateOptions } from '../dspf-edit.commands/dspf-edit.menu-members';
 
 /**
  * Item sent to the webview for rendering (a single field or constant on the screen grid).
@@ -62,6 +63,8 @@ interface PreviewItem {
     isBackground: boolean;
     /** False for subfile page-repeat ghosts and background items: only the "real" instance can be clicked/dragged. */
     isInteractive: boolean;
+    /** On a menu image, for an option number constant ("1.", "90. Sign Off"): its command, for the tooltip. */
+    menuCommand?: string;
     /** True for input-capable fields (usage I or B), shown underlined instead of boxed. Always false for constants and output-only fields. */
     isInputCapable: boolean;
     /**
@@ -1663,6 +1666,7 @@ export class RecordPreviewPanel {
             };
             items = [...visibleBase, ...repeats];
         };
+        items.push(...this.buildMenuBottomItems(items));
         this.lastItems = items;
 
         // Overlaid (background) records can be previewed on their own, whether or not they're
@@ -1769,7 +1773,8 @@ export class RecordPreviewPanel {
             functionKeys,
             subfileExpanded: this.resolveSubfileExpanded(),
             subfileToggleEnabled: this.canToggleSubfileFold(),
-            isMenu: this.isMenu()
+            isMenu: this.isMenu(),
+            menuOptions: this.isMenu() && ExtensionState.lastDdsDocument ? getMenuCreateOptions(ExtensionState.lastDdsDocument.uri) : null
         });
     };
 
@@ -2144,7 +2149,8 @@ export class RecordPreviewPanel {
                     isResizable: !isSystemConstant,
                     minLength: Math.max(constant.name.replace(/\s+$/, '').length, 1),
                     isResizableLeft: !isSystemConstant,
-                    minLengthLeft: Math.max(constant.name.replace(/^\s+/, '').length, 1)
+                    minLengthLeft: Math.max(constant.name.replace(/^\s+/, '').length, 1),
+                    menuCommand: isBackground ? undefined : this.menuCommandForConstant(constant.name)
                 });
             };
         };
@@ -2452,6 +2458,71 @@ export class RecordPreviewPanel {
     };
 
     /**
+     * On a menu image, what the created menu adds under the prompt constant (the one after SDA's
+     * "A* CMDPROMPT" comment): the "===>" command line, as the CRTMNU CMDLIN chosen in the
+     * preview's toolbar would show it — see menuBottomLayout. It isn't in the source, so it can't
+     * be selected or moved.
+     * @param items - The record's items, to find the prompt constant's place
+     */
+    private buildMenuBottomItems(items: PreviewItem[]): PreviewItem[] {
+        const document = ExtensionState.lastDdsDocument;
+        if (!document || !isMenuImageDocument(document)) {
+            return [];
+        };
+        const promptLine = findCmdPromptConstantLine(document.getText().split(/\r?\n/));
+        const prompt = items.find(item => item.isInteractive && item.lineIndex === promptLine);
+        if (!prompt) {
+            return [];
+        };
+
+        const colors = getDdsColorMap();
+        return menuBottomLayout(prompt.row, prompt.col, getMenuCreateOptions(document.uri)).map(part => ({
+            kind: 'constant',
+            name: 'Command line',
+            text: part.text,
+            row: part.row,
+            col: part.col,
+            length: part.length,
+            lineIndex: -1,
+            color: colors.GRN,
+            highIntensity: false,
+            reverseImage: false,
+            blink: false,
+            underline: part.kind === 'entry',
+            columnSeparator: false,
+            nonDisplay: false,
+            rowOffset: 0,
+            colOffset: 0,
+            isBackground: false,
+            isInteractive: false,
+            isInputCapable: false,
+            hasDefaultUnderline: false
+        }));
+    };
+
+    /**
+     * On a menu image, the tooltip line for a constant that shows an option number ("1.", "10.",
+     * "90. Sign Off"): that option's command from the menu's commands member (MENUQQ).
+     * Undefined for any other constant, or while the commands member is still being read.
+     */
+    private menuCommandForConstant(constantName: string): string | undefined {
+        const document = ExtensionState.lastDdsDocument;
+        if (!document || !isMenuImageDocument(document)) {
+            return undefined;
+        };
+        const option = menuOptionOfConstant(constantName.replace(/^'([\s\S]*)'$/, '$1'));
+        if (option === undefined) {
+            return undefined;
+        };
+        const menuCommands = getMenuCommandsFor(document);
+        if (!menuCommands) {
+            return undefined;
+        };
+        const command = menuCommands.commands.find(c => c.option === option);
+        return command ? `Option ${option}: ${command.command}` : `Option ${option}: no command`;
+    };
+
+    /**
      * Resolves whether a subfile's fold/truncate simulation is currently "folded": always folded
      * while previewing the SFL detail record directly, so every field/constant stays visible and
      * editable at a glance (see `canToggleSubfileFold` — folding is never offered there in the first
@@ -2530,6 +2601,13 @@ export class RecordPreviewPanel {
      * and overlay selection.
      */
     private async onDidReceiveMessage(message: any): Promise<void> {
+        if (message?.type === 'setMenuOptions' && ExtensionState.lastDdsDocument && this.isMenu()) {
+            const commandLine = ['*LONG', '*SHORT', '*NONE'].includes(message.commandLine) ? message.commandLine : '*LONG';
+            await setMenuCreateOptions(ExtensionState.lastDdsDocument.uri, { commandLine });
+            this.render();
+            return;
+        };
+
         if (message?.type === 'navigate' && typeof message.lineIndex === 'number') {
             await this.navigateToLine(message.lineIndex);
             return;
@@ -3836,7 +3914,12 @@ export class RecordPreviewPanel {
         opacity: 0.6;
         padding: 1px 2px;
     }
-    #formatBar select {
+    #menuBar {
+        display: none;
+        align-items: center;
+        gap: 4px;
+    }
+    #formatBar select, #menuBar select {
         background: ${bg};
         color: ${fg};
         border: 1px solid #333333;
@@ -3985,6 +4068,14 @@ export class RecordPreviewPanel {
             <div id="overlayList"></div>
         </div>
     </span>
+    <span id="menuBar" title="Command line of the Create Menu (CRTMNU) command: it isn't in the source, so choose the one the menu is created with">
+        <label for="menuCmdLinSelect">Command line: </label>
+        <select id="menuCmdLinSelect">
+            <option value="*LONG">Long</option>
+            <option value="*SHORT">Short</option>
+            <option value="*NONE">None</option>
+        </select>
+    </span>
     <span id="sflpagBar">
         <label>Page rows: </label>
         <button id="sflpagMinusBtn" title="Decrease SFLPAG (SFLSIZ stays SFLPAG + 1)">-</button>
@@ -4035,6 +4126,8 @@ export class RecordPreviewPanel {
     const sflpagValue = document.getElementById('sflpagValue');
     const addConstantBtn = document.getElementById('addConstantBtn');
     const addFieldBtn = document.getElementById('addFieldBtn');
+    const menuBar = document.getElementById('menuBar');
+    const menuCmdLinSelect = document.getElementById('menuCmdLinSelect');
     const gridDotsBtn = document.getElementById('gridDotsBtn');
     const areaSelectBtn = document.getElementById('areaSelectBtn');
     const hiddenBtn = document.getElementById('hiddenBtn');
@@ -4773,6 +4866,9 @@ export class RecordPreviewPanel {
         const lines = [];
         if (hit) {
             lines.push(hit.nonDisplay && showHidden ? hit.name + ' — hidden (DSPATR(ND))' : hit.name);
+            if (hit.menuCommand) {
+                lines.push(hit.menuCommand);
+            }
         }
         if (showHidden) {
             const { row, col } = cellAt(ev);
@@ -5542,6 +5638,10 @@ export class RecordPreviewPanel {
         draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
     });
 
+    menuCmdLinSelect.addEventListener('change', () => {
+        vscode.postMessage({ type: 'setMenuOptions', commandLine: menuCmdLinSelect.value });
+    });
+
     formatSelect.addEventListener('change', () => {
         vscode.postMessage({ type: 'setDisplayFormat', name: formatSelect.value || null });
     });
@@ -5741,6 +5841,10 @@ export class RecordPreviewPanel {
             // A menu image is always 24x80 (DSPMOD(*DS3)) and only takes constants, as in SDA
             formatBar.style.display = (availableFormats.length > 0 && !message.isMenu) ? 'inline-flex' : 'none';
             addFieldBtn.style.display = message.isMenu ? 'none' : '';
+            menuBar.style.display = message.menuOptions ? 'inline-flex' : 'none';
+            if (message.menuOptions) {
+                menuCmdLinSelect.value = message.menuOptions.commandLine;
+            }
             if (availableFormats.length > 0) {
                 rebuildFormatOptions(availableFormats, message.activeDisplayFormat || '');
                 // Locked (disabled) when the file only declares one display format — nothing to switch to.

@@ -15,7 +15,8 @@ import { PreviewColorsPanel } from './dspf-edit.webview/dspf-edit.preview-colors
 import { setReferencedLengthResolver } from './dspf-edit.parser/dspf-edit.parser';
 import { getResolvedRef } from './dspf-edit.ibmi/dspf-edit.ibmi-integration';
 import { registerValidation } from './dspf-edit.validation/dspf-edit.validation';
-import { registerMenuMemberCommands } from './dspf-edit.commands/dspf-edit.menu-members';
+import { registerMenuMemberCommands, onDidChangeMenuCommands } from './dspf-edit.commands/dspf-edit.menu-members';
+import { RecordPreviewPanel } from './dspf-edit.webview/dspf-edit.record-preview-panel';
 
 // Activate extension
 export function activate(context: vscode.ExtensionContext) {
@@ -62,6 +63,8 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Menus (MNUDDS + MNUCMD): link at the top of each member to open the other one
 	registerMenuMemberCommands(context);
+	// The preview shows each option's command on hover: re-render once they are read or edited
+	context.subscriptions.push(onDidChangeMenuCommands(() => RecordPreviewPanel.refreshOverlays()));
 
 	// Warnings for source the compiler would reject or misread (for now, the indicator columns 7-16)
 	registerValidation(context);

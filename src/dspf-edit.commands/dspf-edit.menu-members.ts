@@ -12,7 +12,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
 import { ExtensionState } from '../dspf-edit.states/state';
-import { getMenuMemberKind, getMenuMemberPair } from '../dspf-edit.utils/dspf-edit.menu';
+import { getMenuMemberKind, getMenuMemberPair, parseMenuCommands, MenuCommands, MenuCreateOptions, DEFAULT_MENU_CREATE_OPTIONS } from '../dspf-edit.utils/dspf-edit.menu';
 
 const OPEN_MENU_MEMBER_COMMAND = 'dspf-edit.open-menu-member';
 
@@ -98,8 +98,87 @@ export function updateMenuTreeMessage(treeProvider: DdsTreeProvider, document: v
         : `Commands of menu ${pair.menuName}. Use "Open menu image" at the top of the editor to work with the menu.`;
 };
 
+// CRTMNU OPTIONS PER MENU
+
+// CMDLIN isn't kept in the source, so the preview remembers the ones chosen for each
+// menu (global storage, keyed by the menu image's URI), starting with CRTMNU's own defaults.
+
+const MENU_CREATE_OPTIONS_KEY = 'dspf-edit.menuCreateOptions';
+
+function storedMenuCreateOptions(): Record<string, MenuCreateOptions> {
+    return ExtensionState.context?.globalState.get<Record<string, MenuCreateOptions>>(MENU_CREATE_OPTIONS_KEY) ?? {};
+};
+
+/** The CRTMNU options chosen for the menu whose image is the given URI (CRTMNU's defaults if none). */
+export function getMenuCreateOptions(menuImage: vscode.Uri): MenuCreateOptions {
+    return { ...DEFAULT_MENU_CREATE_OPTIONS, ...storedMenuCreateOptions()[menuImage.toString()] };
+};
+
+/** Remembers the CRTMNU options chosen for the menu whose image is the given URI. */
+export async function setMenuCreateOptions(menuImage: vscode.Uri, options: MenuCreateOptions): Promise<void> {
+    const all = { ...storedMenuCreateOptions(), [menuImage.toString()]: options };
+    await ExtensionState.context.globalState.update(MENU_CREATE_OPTIONS_KEY, all);
+};
+
+// MENU COMMANDS FOR THE PREVIEW
+
+// The preview shows each option's command (from MENUQQ) when hovering its number. The commands
+// member is read in the background the first time and then kept up to date while it's edited, so
+// the preview never waits on it; listeners hear when it changes, to re-render.
+
+/** Commands per menu image URI; null once known that there is no commands member to read. */
+const menuCommandsCache = new Map<string, MenuCommands | null>();
+const loading = new Set<string>();
+const menuCommandsChanged = new vscode.EventEmitter<void>();
+
+/** Fires when the commands of a menu were (re)read. */
+export const onDidChangeMenuCommands = menuCommandsChanged.event;
+
+/**
+ * The commands of the menu whose image is the given document, if already read. The first call
+ * starts reading them and returns undefined; onDidChangeMenuCommands fires when they are ready.
+ */
+export function getMenuCommandsFor(menuImage: vscode.TextDocument): MenuCommands | undefined {
+    const commandsUri = getOtherMenuMemberUri(menuImage.uri);
+    if (!commandsUri || getMenuMemberKind(menuImage.uri.path) !== 'dds') {
+        return undefined;
+    };
+    const key = menuImage.uri.toString();
+    if (menuCommandsCache.has(key)) {
+        return menuCommandsCache.get(key) ?? undefined;
+    };
+    if (!loading.has(key)) {
+        loading.add(key);
+        vscode.workspace.openTextDocument(commandsUri).then(
+            document => menuCommandsCache.set(key, parseMenuCommands(document.getText().split(/\r?\n/))),
+            () => menuCommandsCache.set(key, null)
+        ).then(() => {
+            loading.delete(key);
+            menuCommandsChanged.fire();
+        });
+    };
+    return undefined;
+};
+
+/** Re-reads a menu's commands when its commands member is edited (unsaved changes included). */
+function refreshMenuCommandsOnEdit(document: vscode.TextDocument): void {
+    if (getMenuMemberKind(document.uri.path) !== 'commands') {
+        return;
+    };
+    const ddsUri = getOtherMenuMemberUri(document.uri);
+    if (!ddsUri) {
+        return;
+    };
+    menuCommandsCache.set(ddsUri.toString(), parseMenuCommands(document.getText().split(/\r?\n/)));
+    menuCommandsChanged.fire();
+};
+
 export function registerMenuMemberCommands(context: vscode.ExtensionContext): void {
     context.subscriptions.push(
+        menuCommandsChanged,
+        vscode.workspace.onDidChangeTextDocument(event => refreshMenuCommandsOnEdit(event.document)),
+        // A commands member created after the menu image was first previewed is read again
+        vscode.workspace.onDidOpenTextDocument(document => refreshMenuCommandsOnEdit(document)),
         vscode.commands.registerCommand(OPEN_MENU_MEMBER_COMMAND, (uri: vscode.Uri) => openMenuMember(uri)),
         vscode.languages.registerCodeLensProvider(
             [{ language: 'dds.dspf' }, { language: 'dds.mnucmd' }],
