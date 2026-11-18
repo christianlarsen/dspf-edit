@@ -15,6 +15,7 @@ import { PreviewColorsPanel } from './dspf-edit.webview/dspf-edit.preview-colors
 import { setReferencedLengthResolver } from './dspf-edit.parser/dspf-edit.parser';
 import { getResolvedRef } from './dspf-edit.ibmi/dspf-edit.ibmi-integration';
 import { registerValidation } from './dspf-edit.validation/dspf-edit.validation';
+import { registerMenuMemberCommands } from './dspf-edit.commands/dspf-edit.menu-members';
 
 // Activate extension
 export function activate(context: vscode.ExtensionContext) {
@@ -58,6 +59,9 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Register all commands
 	registerCommands(context, treeProvider);
+
+	// Menus (MNUDDS + MNUCMD): link at the top of each member to open the other one
+	registerMenuMemberCommands(context);
 
 	// Warnings for source the compiler would reject or misread (for now, the indicator columns 7-16)
 	registerValidation(context);

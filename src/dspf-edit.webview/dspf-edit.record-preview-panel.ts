@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { FieldsPerRecord, FieldInfo, DdsSize, DdsAttribute, AttributeWithIndicators, DdsIndicator, fieldsPerRecords, attributesFileLevel, records, getDefaultSize, getAvailableDisplayFormats, getSizeForFormat, SYSTEM_FIELD_PLACEHOLDER, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
-import { checkForEditorAndDocument, updateTreeProvider, applyWorkspaceEdit, applyDisplayFormatSplitEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, updateTreeProvider, applyWorkspaceEdit, applyDisplayFormatSplitEdit, isMenuImageDocument } from '../dspf-edit.utils/dspf-edit.helper';
 import { getBackgroundColor, getDdsColorMap, getReferencedFieldColor } from '../dspf-edit.utils/dspf-edit.preview-colors';
 import { getDecimalSeparators } from '../dspf-edit.utils/dspf-edit.decimal-format';
 import { getDateSeparator } from '../dspf-edit.utils/dspf-edit.date-format';
@@ -32,6 +32,7 @@ import { copyFieldToPosition } from '../dspf-edit.commands/dspf-edit.copy-field'
 import { copyConstantToPosition } from '../dspf-edit.commands/dspf-edit.copy-constant';
 import { copyFormat, pasteFormat, getCopiedFormat } from '../dspf-edit.commands/dspf-edit.copy-format';
 import { HorizontalAlignment, WindowAlignment, WINDOW_ALIGNMENTS, computeAlignedColumns, computeWindowAlignedPosition } from '../dspf-edit.utils/dspf-edit.alignment';
+import { formatRowField } from '../dspf-edit.utils/dspf-edit.menu';
 
 /**
  * Item sent to the webview for rendering (a single field or constant on the screen grid).
@@ -1767,7 +1768,8 @@ export class RecordPreviewPanel {
             backgroundItems,
             functionKeys,
             subfileExpanded: this.resolveSubfileExpanded(),
-            subfileToggleEnabled: this.canToggleSubfileFold()
+            subfileToggleEnabled: this.canToggleSubfileFold(),
+            isMenu: this.isMenu()
         });
     };
 
@@ -2441,6 +2443,15 @@ export class RecordPreviewPanel {
     };
 
     /**
+     * True when the previewed source is a menu image (MNUDDS). As in SDA, a menu only takes
+     * constants (with colors and attributes): no new fields, no indicators, one fixed 24x80 size.
+     */
+    private isMenu(): boolean {
+        const document = ExtensionState.lastDdsDocument;
+        return !!document && isMenuImageDocument(document);
+    };
+
+    /**
      * Resolves whether a subfile's fold/truncate simulation is currently "folded": always folded
      * while previewing the SFL detail record directly, so every field/constant stays visible and
      * editable at a glance (see `canToggleSubfileFold` — folding is never offered there in the first
@@ -2809,7 +2820,8 @@ export class RecordPreviewPanel {
             const localRow = move.newRow - move.rowOffset;
             const localCol = move.newCol - move.colOffset;
 
-            workspaceEdit.replace(uri, new vscode.Range(move.lineIndex, 38, move.lineIndex, 41), String(localRow).padStart(3, ' '));
+            const currentRowField = editor.document.lineAt(move.lineIndex).text.substring(38, 41);
+            workspaceEdit.replace(uri, new vscode.Range(move.lineIndex, 38, move.lineIndex, 41), formatRowField(localRow, currentRowField));
             workspaceEdit.replace(uri, new vscode.Range(move.lineIndex, 41, move.lineIndex, 44), String(localCol).padStart(3, ' '));
         };
 
@@ -3371,9 +3383,12 @@ export class RecordPreviewPanel {
             const editOption = kind === 'field'
                 ? { label: '$(edit) Rename...', command: 'rename-field' }
                 : { label: '$(edit) Edit Text...', command: 'edit-constant' };
+            options.push(editOption);
+            // A menu has no program to set indicators, so SDA offers none on a menu image
+            if (!this.isMenu()) {
+                options.push({ label: '$(symbol-boolean) Indicators...', command: 'add-indicators' });
+            };
             options.push(
-                editOption,
-                { label: '$(symbol-boolean) Indicators...', command: 'add-indicators' },
                 { label: '$(copy) Copy...', command: 'copy' },
                 { label: '$(wand) Copy Format...', command: 'copy-format' }
             );
@@ -5723,7 +5738,9 @@ export class RecordPreviewPanel {
             maxSize = message.maxSize || null;
             minDetailRow = typeof message.minDetailRow === 'number' ? message.minDetailRow : null;
             const availableFormats = message.availableFormats || [];
-            formatBar.style.display = availableFormats.length > 0 ? 'inline-flex' : 'none';
+            // A menu image is always 24x80 (DSPMOD(*DS3)) and only takes constants, as in SDA
+            formatBar.style.display = (availableFormats.length > 0 && !message.isMenu) ? 'inline-flex' : 'none';
+            addFieldBtn.style.display = message.isMenu ? 'none' : '';
             if (availableFormats.length > 0) {
                 rebuildFormatOptions(availableFormats, message.activeDisplayFormat || '');
                 // Locked (disabled) when the file only declares one display format — nothing to switch to.

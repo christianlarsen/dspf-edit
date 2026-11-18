@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fileSizeAttributes, getAvailableDisplayFormats } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
+import { formatRowField } from '../dspf-edit.utils/dspf-edit.menu';
 
 // INTERFACES AND TYPES
 
@@ -326,7 +327,7 @@ async function updateElementPosition(
 function createUpdatedLineWithPosition(originalLine: string, newPosition: ElementPosition): string {
     // DDS position format: positions 39-41 for row, 42-44 for column (1-based)
     // In 0-based indexing: 38-40 for row, 41-43 for column
-    const formattedRow = String(newPosition.row).padStart(3, ' ');
+    const formattedRow = formatRowField(newPosition.row, originalLine.substring(38, 41));
     const formattedColumn = String(newPosition.column).padStart(3, ' ');
     
     // Build updated line: prefix + row + column + suffix

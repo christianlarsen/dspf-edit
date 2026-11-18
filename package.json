@@ -50,10 +50,32 @@
     "Other"
   ],
   "activationEvents": [
-    "onLanguage:dds.dspf"
+    "onLanguage:dds.dspf",
+    "onLanguage:dds.mnucmd"
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "languages": [
+      {
+        "id": "dds.dspf",
+        "aliases": [
+          "DSPF"
+        ],
+        "extensions": [
+          ".mnudds"
+        ]
+      },
+      {
+        "id": "dds.mnucmd",
+        "aliases": [
+          "Menu commands",
+          "MNUCMD"
+        ],
+        "extensions": [
+          ".mnucmd"
+        ]
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {
@@ -380,47 +402,47 @@
         },
         {
           "command": "dspf-edit.add-indicators",
-          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem =~ /\\bfield\\b/)",
+          "when": "view == dspf-edit.schema-view && (viewItem == constant || viewItem =~ /\\bfield\\b/) && !dspf-edit.isMenu",
           "group": "fields_constants_navigation3@8"
         },
         {
           "command": "dspf-edit.add-indicators",
-          "when": "view == dspf-edit.schema-view && (viewItem == constantAttribute || viewItem === fieldAttribute)",
+          "when": "view == dspf-edit.schema-view && (viewItem == constantAttribute || viewItem === fieldAttribute) && !dspf-edit.isMenu",
           "group": "attributes_navigation0@1"
         },
         {
           "command": "dspf-edit.window-resize",
-          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/ && !dspf-edit.isMenu",
           "group": "records_navigation1@1"
         },
         {
           "command": "dspf-edit.rename-record",
-          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/ && !dspf-edit.isMenu",
           "group": "records_navigation1@2"
         },
         {
           "command": "dspf-edit.copy-record",
-          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/ && !dspf-edit.isMenu",
           "group": "records_navigation1@3"
         },
         {
           "command": "dspf-edit.delete-record",
-          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/ && !dspf-edit.isMenu",
           "group": "records_navigation1@4"
         },
         {
           "command": "dspf-edit.window-title",
-          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/ && !dspf-edit.isMenu",
           "group": "records_navigation1@5"
         },
         {
           "command": "dspf-edit.window-position",
-          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/ && !dspf-edit.isMenu",
           "group": "records_navigation1@6"
         },
         {
           "command": "dspf-edit.add-buttons",
-          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/ && !dspf-edit.isMenu",
           "group": "records_navigation2@1"
         },
         {
@@ -450,22 +472,22 @@
         },
         {
           "command": "dspf-edit.overlay",
-          "when": "view == dspf-edit.schema-view && viewItem =~ /^record\\b(?!.*\\bsfl\\b)/",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /^record\\b(?!.*\\bsfl\\b)/ && !dspf-edit.isMenu",
           "group": "records_navigation3@3"
         },
         {
           "command": "dspf-edit.cursor-location",
-          "when": "view == dspf-edit.schema-view && viewItem =~ /^record\\b(?!.*\\bsfl\\b)/",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /^record\\b(?!.*\\bsfl\\b)/ && !dspf-edit.isMenu",
           "group": "records_navigation3@4"
         },
         {
           "command": "dspf-edit.add-key",
-          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/ && !dspf-edit.isMenu",
           "group": "records_navigation3@1"
         },
         {
           "command": "dspf-edit.add-chginpdft",
-          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/ && !dspf-edit.isMenu",
           "group": "records_navigation3@2"
         },
         {
@@ -475,7 +497,7 @@
         },
         {
           "command": "dspf-edit.new-record",
-          "when": "view == dspf-edit.schema-view && (viewItem == file || viewItem == group:records)",
+          "when": "view == dspf-edit.schema-view && (viewItem == file || viewItem == group:records) && !dspf-edit.isMenu",
           "group": "file_navigation1@1"
         },
         {
@@ -490,27 +512,27 @@
         },
         {
           "command": "dspf-edit.add-field",
-          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/ && !dspf-edit.isMenu",
           "group": "records_navigation0@2"
         },
         {
           "command": "dspf-edit.add-key",
-          "when": "view == dspf-edit.schema-view && viewItem == file",
+          "when": "view == dspf-edit.schema-view && viewItem == file && !dspf-edit.isMenu",
           "group": "file_navigation2@1"
         },
         {
           "command": "dspf-edit.add-display-size",
-          "when": "view == dspf-edit.schema-view && viewItem == file",
+          "when": "view == dspf-edit.schema-view && viewItem == file && !dspf-edit.isMenu",
           "group": "file_navigation2@2"
         },
         {
           "command": "dspf-edit.add-chginpdft",
-          "when": "view == dspf-edit.schema-view && viewItem == file",
+          "when": "view == dspf-edit.schema-view && viewItem == file && !dspf-edit.isMenu",
           "group": "file_navigation2@3"
         },
         {
           "command": "dspf-edit.set-reference-file",
-          "when": "view == dspf-edit.schema-view && viewItem == file",
+          "when": "view == dspf-edit.schema-view && viewItem == file && !dspf-edit.isMenu",
           "group": "file_navigation2@4"
         },
         {
@@ -560,7 +582,7 @@
         },
         {
           "command": "dspf-edit.rename-record",
-          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/",
+          "when": "view == dspf-edit.schema-view && viewItem =~ /\\brecord\\b/ && !dspf-edit.isMenu",
           "group": "inline@99"
         },
         {

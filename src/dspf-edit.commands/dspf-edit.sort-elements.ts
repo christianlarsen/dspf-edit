@@ -434,29 +434,51 @@ function getAllLineIndicesFromElements(elements: ElementWithAttributes[]): numbe
 
 /**
  * Extracts text blocks for elements and their attributes in the sorted order.
+ * Lines inside the sorted range that belong to no element (comments, such as SDA's
+ * "A* CMDPROMPT" before a menu's command line prompt) go with the element right below them,
+ * so sorting never drops them nor separates them from the element they describe.
  * @param document - The text document
  * @param sortedElements - Elements in the desired sorted order
- * @returns Array of text blocks (each block contains element + attributes)
+ * @returns Array of text blocks (each block contains element + attributes, in source order)
  */
 function extractElementBlocks(document: vscode.TextDocument, sortedElements: ElementWithAttributes[]): string[] {
-    return sortedElements.map(element => {
-        const lines: string[] = [];
-        
-        // Add all lines from the main element (lineIndex to lastLineIndex)
-        for (let line = element.lineIndex; line <= element.lastLineIndex; line ++) {
-            if (line < document.lineCount) {
-                lines.push(document.lineAt(line).text);
-            };
+    const linesOf = (element: ElementWithAttributes): number[] => {
+        const lines: number[] = [];
+        for (let line = element.lineIndex; line <= element.lastLineIndex; line++) {
+            lines.push(line);
         };
+        return lines.concat(element.attributeLines);
+    };
 
-        // Add all attribute lines from the model data
-        // The attributeLines array is already sorted from extractAttributeLinesFromModel
-        element.attributeLines.forEach(lineIndex => {
-            if (lineIndex < document.lineCount) {
-                lines.push(document.lineAt(lineIndex).text);
-            }
-        });
-        
-        return lines.join('\n');
+    // Owner of every line used by an element
+    const owner = new Map<number, ElementWithAttributes>();
+    sortedElements.forEach(element => linesOf(element).forEach(line => owner.set(line, element)));
+    const usedLines = [...owner.keys()].sort((a, b) => a - b);
+    if (usedLines.length === 0) {
+        return [];
+    };
+
+    // Lines in between that no element uses join the element of the next used line
+    const extraLines = new Map<ElementWithAttributes, number[]>();
+    const minLine = usedLines[0];
+    const maxLine = usedLines[usedLines.length - 1];
+    let pending: number[] = [];
+    for (let line = minLine; line <= maxLine; line++) {
+        const element = owner.get(line);
+        if (!element) {
+            pending.push(line);
+            continue;
+        };
+        if (pending.length > 0) {
+            extraLines.set(element, (extraLines.get(element) ?? []).concat(pending));
+            pending = [];
+        };
+    };
+
+    return sortedElements.map(element => {
+        const lines = [...new Set(linesOf(element).concat(extraLines.get(element) ?? []))]
+            .filter(line => line < document.lineCount)
+            .sort((a, b) => a - b);
+        return lines.map(line => document.lineAt(line).text).join('\n');
     });
 };
