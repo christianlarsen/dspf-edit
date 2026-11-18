@@ -312,6 +312,11 @@
         "title": "Show/Hide Column Ruler",
         "category": "DSPF Edit",
         "enablement": "editorLangId == dds.dspf"
+      },
+      {
+        "command": "dspf-edit.menu-commands",
+        "title": "Menu Commands",
+        "icon": "$(terminal)"
       }
     ],
     "keybindings": [
@@ -594,6 +599,11 @@
           "command": "dspf-edit.rename-field",
           "when": "view == dspf-edit.schema-view && viewItem =~ /\\bfield\\b/",
           "group": "inline@99"
+        },
+        {
+          "command": "dspf-edit.menu-commands",
+          "when": "view == dspf-edit.schema-view && dspf-edit.isMenu && (viewItem =~ /\\brecord\\b/ || viewItem == file)",
+          "group": "records_navigation0@3"
         }
       ]
     }

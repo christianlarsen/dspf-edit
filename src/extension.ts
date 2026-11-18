@@ -17,6 +17,8 @@ import { getResolvedRef } from './dspf-edit.ibmi/dspf-edit.ibmi-integration';
 import { registerValidation } from './dspf-edit.validation/dspf-edit.validation';
 import { registerMenuMemberCommands, onDidChangeMenuCommands } from './dspf-edit.commands/dspf-edit.menu-members';
 import { RecordPreviewPanel } from './dspf-edit.webview/dspf-edit.record-preview-panel';
+import { MenuCommandsPanel } from './dspf-edit.webview/dspf-edit.menu-commands-panel';
+import { getMenuMemberKind } from './dspf-edit.utils/dspf-edit.menu';
 
 // Activate extension
 export function activate(context: vscode.ExtensionContext) {
@@ -61,10 +63,28 @@ export function activate(context: vscode.ExtensionContext) {
 	// Register all commands
 	registerCommands(context, treeProvider);
 
-	// Menus (MNUDDS + MNUCMD): link at the top of each member to open the other one
+	// Menus (MNUDDS + MNUCMD): opening the commands member opens the menu image
 	registerMenuMemberCommands(context);
 	// The preview shows each option's command on hover: re-render once they are read or edited
 	context.subscriptions.push(onDidChangeMenuCommands(() => RecordPreviewPanel.refreshOverlays()));
+	// "Menu Commands" (SDA's F10): from the tree, the preview's Commands button (with the member's URI), or
+	// the command palette (the menu being worked with, or the menu member in the active editor)
+	context.subscriptions.push(vscode.commands.registerCommand('dspf-edit.menu-commands', async (target?: unknown) => {
+		const uri = target instanceof vscode.Uri
+			? target
+			: [ExtensionState.lastDdsDocument?.uri, vscode.window.activeTextEditor?.document.uri]
+				.find(candidate => candidate !== undefined && getMenuMemberKind(candidate.path) !== undefined);
+		if (!uri) {
+			vscode.window.showWarningMessage('Open a menu (MNUDDS or MNUCMD member) to work with its commands.');
+			return;
+		};
+		// Opening it beside the preview would drop the preview's Focus mode (as the Configuration panel would)
+		if (RecordPreviewPanel.isFocusModeActive()) {
+			vscode.window.showInformationMessage('Turn off Focus mode in the preview first to work with the menu commands.');
+			return;
+		};
+		await MenuCommandsPanel.show(uri);
+	}));
 
 	// Warnings for source the compiler would reject or misread (for now, the indicator columns 7-16)
 	registerValidation(context);

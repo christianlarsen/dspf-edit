@@ -186,6 +186,85 @@ export function parseMenuCommands(lines: readonly string[]): MenuCommands {
     return result;
 };
 
+// WRITING MENU COMMANDS
+
+/** First record: 4-digit option, ' ' or '+', then up to 75 characters of command. */
+const FIRST_RECORD_COMMAND_LENGTH = MENU_COMMANDS_RECORD_LENGTH - 5;
+/**
+ * Longest command written: the first record plus one continuation line, which is the most seen
+ * in SDA's members (how SDA would continue a second time isn't known, so it isn't written).
+ */
+export const MENU_COMMAND_MAX_LENGTH = FIRST_RECORD_COMMAND_LENGTH + MENU_COMMANDS_RECORD_LENGTH;
+
+/** A command as typed (line breaks from a text area become blanks), ready to be written. */
+export function normalizeMenuCommand(command: string): string {
+    return command.replace(/\s*[\r\n]+\s*/g, ' ').trim();
+};
+
+/** Why a command can't be written, or undefined if it can. */
+export function menuCommandProblem(command: string): string | undefined {
+    const normalized = normalizeMenuCommand(command);
+    if (normalized.length > MENU_COMMAND_MAX_LENGTH) {
+        return `The command is ${normalized.length} characters long; a menu command can have up to ${MENU_COMMAND_MAX_LENGTH}.`;
+    };
+    return undefined;
+};
+
+/** Source records for one option's command: "0001 CMD", or "0001+" + 75 characters and the rest on the next line. */
+export function formatMenuCommandRecords(option: number, command: string): string[] {
+    const text = normalizeMenuCommand(command);
+    const optionText = String(option).padStart(4, '0');
+    if (text.length <= FIRST_RECORD_COMMAND_LENGTH) {
+        return [`${optionText} ${text}`];
+    };
+    return [
+        `${optionText}+${text.substring(0, FIRST_RECORD_COMMAND_LENGTH)}`,
+        text.substring(FIRST_RECORD_COMMAND_LENGTH)
+    ];
+};
+
+/** One change to a commands member: replace `deleteCount` lines from `startLine` with `lines`. */
+export interface MenuCommandsEdit {
+    startLine: number;
+    deleteCount: number;
+    lines: string[];
+};
+
+/**
+ * The change that sets (or, with an empty command, removes) one option's command in a commands
+ * member, touching only that option's lines: an existing option is replaced where it is, a new one
+ * goes before the first higher option (options stay in order), and an empty member gets its
+ * header ("MENUQQ,1") first.
+ * @param lines - The member's current lines
+ * @param memberName - The member's name, for the header of an empty member
+ */
+export function menuCommandEdit(lines: readonly string[], memberName: string, option: number, command: string): MenuCommandsEdit {
+    const parsed = parseMenuCommands(lines);
+    const existing = parsed.commands.find(c => c.option === option);
+    const records = normalizeMenuCommand(command) === '' ? [] : formatMenuCommandRecords(option, command);
+
+    if (existing) {
+        return { startLine: existing.firstLine, deleteCount: existing.lastLine - existing.firstLine + 1, lines: records };
+    };
+    if (records.length === 0) {
+        return { startLine: 0, deleteCount: 0, lines: [] };
+    };
+    const next = parsed.commands.find(c => c.option > option);
+    if (next) {
+        return { startLine: next.firstLine, deleteCount: 0, lines: records };
+    };
+    const last = parsed.commands[parsed.commands.length - 1];
+    if (last) {
+        return { startLine: last.lastLine + 1, deleteCount: 0, lines: records };
+    };
+    // No commands yet: after the header, or with a new header if the member is empty
+    const headerLine = lines.findIndex(line => line.trim() !== '');
+    if (headerLine >= 0) {
+        return { startLine: headerLine + 1, deleteCount: 0, lines: records };
+    };
+    return { startLine: 0, deleteCount: lines.length, lines: [`${memberName.toUpperCase()},1`, ...records] };
+};
+
 /**
  * The option number shown by a menu image constant: "1.", "10." or "90. Sign Off" all name an
  * option; anything else is undefined.

@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { getMenuMemberKind, getMenuMemberPair, isCmdPromptComment, findCmdPromptConstantLine, formatRowField, parseMenuCommands, menuOptionOfConstant, menuBottomLayout } from '../dspf-edit.utils/dspf-edit.menu';
+import { getMenuMemberKind, getMenuMemberPair, isCmdPromptComment, findCmdPromptConstantLine, formatRowField, parseMenuCommands, menuOptionOfConstant, menuBottomLayout, formatMenuCommandRecords, menuCommandEdit, menuCommandProblem, normalizeMenuCommand } from '../dspf-edit.utils/dspf-edit.menu';
 
 suite('Menu members (MNUDDS + MNUCMD)', () => {
     test('recognizes both member types, ignoring case', () => {
@@ -116,5 +116,51 @@ suite('Bottom of the created menu (CRTMNU CMDLIN)', () => {
 
     test('the command line never goes past the last row', () => {
         assert.deepStrictEqual(rowsOf('entry', menuBottomLayout(23, 2, { commandLine: '*LONG' })).map(r => r[0]), [24]);
+    });
+});
+
+suite('Writing menu commands (MNUCMD)', () => {
+    const qq = [
+        'B_TDA000QQ,1',
+        "0001+CALL PGM(BOSTON/BSWTDA01) PARM(('S' (*CHAR 1)) (0 (*DEC 3 0)) ('0' (*LGL 1)",
+        '))',
+        '0004 CALL PGM(BOSTON/BSWTDA25)',
+        '0024 SIGNOFF'
+    ];
+    const apply = (lines: readonly string[], edit: ReturnType<typeof menuCommandEdit>) => {
+        const result = [...lines];
+        result.splice(edit.startLine, edit.deleteCount, ...edit.lines);
+        return result;
+    };
+
+    test('a long command is cut at column 80 and goes on in the next line, as SDA writes it', () => {
+        const command = "CALL PGM(BOSTON/BSWTDA01) PARM(('S' (*CHAR 1)) (0 (*DEC 3 0)) ('0' (*LGL 1)))";
+        assert.deepStrictEqual(formatMenuCommandRecords(1, command), [qq[1], '))']);
+        assert.deepStrictEqual(formatMenuCommandRecords(90, 'SIGNOFF'), ['0090 SIGNOFF']);
+        assert.deepStrictEqual(parseMenuCommands(['M,1', ...formatMenuCommandRecords(1, command)]).commands[0].command, command);
+    });
+
+    test('changing an option replaces only its lines, continuation included', () => {
+        assert.deepStrictEqual(apply(qq, menuCommandEdit(qq, 'B_TDA000QQ', 1, 'DSPLIBL')),
+            ['B_TDA000QQ,1', '0001 DSPLIBL', '0004 CALL PGM(BOSTON/BSWTDA25)', '0024 SIGNOFF']);
+    });
+
+    test('a new option goes in order, and an empty command removes the option', () => {
+        assert.deepStrictEqual(apply(qq, menuCommandEdit(qq, 'B_TDA000QQ', 5, 'WRKSPLF')).slice(3),
+            ['0004 CALL PGM(BOSTON/BSWTDA25)', '0005 WRKSPLF', '0024 SIGNOFF']);
+        assert.deepStrictEqual(apply(qq, menuCommandEdit(qq, 'B_TDA000QQ', 90, 'SIGNOFF')).slice(-1), ['0090 SIGNOFF']);
+        assert.deepStrictEqual(apply(qq, menuCommandEdit(qq, 'B_TDA000QQ', 4, '  ')),
+            [qq[0], qq[1], qq[2], '0024 SIGNOFF']);
+    });
+
+    test('an empty member gets its header first', () => {
+        assert.deepStrictEqual(apply([''], menuCommandEdit([''], 'nuevoqq', 1, '?WRKLNK')), ['NUEVOQQ,1', '0001 ?WRKLNK']);
+        assert.deepStrictEqual(apply(['NUEVOQQ,1'], menuCommandEdit(['NUEVOQQ,1'], 'NUEVOQQ', 3, 'GO MAIN')), ['NUEVOQQ,1', '0003 GO MAIN']);
+    });
+
+    test('commands longer than one continuation line are refused', () => {
+        assert.strictEqual(menuCommandProblem('X'.repeat(155)), undefined);
+        assert.match(menuCommandProblem('X'.repeat(156)) ?? '', /up to 155/);
+        assert.strictEqual(normalizeMenuCommand(' CALL PGM(A)\n   PARM(1) '), 'CALL PGM(A) PARM(1)');
     });
 });

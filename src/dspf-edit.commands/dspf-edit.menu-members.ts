@@ -5,16 +5,15 @@
 */
 
 // A menu is two members (MENU.MNUDDS + MENUQQ.MNUCMD, see dspf-edit.utils/dspf-edit.menu.ts).
-// Opening one of them offers a link at the top of the editor to open the other one, and while the
-// commands member is the active editor the tree says which menu it belongs to.
+// As in SDA, opening either one opens the menu: opening the commands member brings up the menu
+// image (its commands are worked with from the "Menu Commands" panel), and while the commands
+// member is the active editor the tree says which menu it belongs to.
 
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
 import { ExtensionState } from '../dspf-edit.states/state';
 import { getMenuMemberKind, getMenuMemberPair, parseMenuCommands, MenuCommands, MenuCreateOptions, DEFAULT_MENU_CREATE_OPTIONS } from '../dspf-edit.utils/dspf-edit.menu';
-
-const OPEN_MENU_MEMBER_COMMAND = 'dspf-edit.open-menu-member';
 
 /** Member name (no extension) of a path, as written in it. */
 function memberName(filePath: string): string {
@@ -31,38 +30,42 @@ function getOtherMenuMemberUri(uri: vscode.Uri): vscode.Uri | undefined {
     return uri.with({ path: kind === 'dds' ? pair.commandsPath : pair.ddsPath });
 };
 
-/** Opens the given member, reusing its editor if it is already visible. */
-async function openMenuMember(uri: vscode.Uri): Promise<void> {
-    try {
-        await vscode.workspace.fs.stat(uri);
-    } catch {
-        vscode.window.showWarningMessage(`Member ${memberName(uri.path)} not found next to this menu member.`);
-        return;
-    };
-    const visible = vscode.window.visibleTextEditors.find(editor => editor.document.uri.toString() === uri.toString());
-    await vscode.window.showTextDocument(uri, { preview: false, viewColumn: visible?.viewColumn });
+// OPENING THE COMMANDS MEMBER OPENS THE MENU
+
+/**
+ * Commands members already open, that are no longer sent to their menu image: each one is sent
+ * there only the first time it's opened, so it can still be looked at afterwards (clicking its
+ * tab, or "Open the commands member" in the Menu Commands panel).
+ */
+const commandsMembersShown = new Set<string>();
+
+/** Opens a commands member as it is, without sending it to its menu image. */
+export async function showCommandsMember(uri: vscode.Uri, viewColumn?: vscode.ViewColumn): Promise<void> {
+    commandsMembersShown.add(uri.toString());
+    await vscode.window.showTextDocument(uri, { preview: false, viewColumn });
 };
 
 /**
- * "Open menu commands (MENUQQ)" at the top of a menu image, and "Open menu image (MENU)" at the top
- * of its commands member.
+ * When a commands member (MENUQQ) becomes the active editor for the first time, opens its menu
+ * image (MENU) in the same column, as SDA opens the menu whichever member is chosen.
  */
-export class MenuMemberCodeLensProvider implements vscode.CodeLensProvider {
-    provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
-        const kind = getMenuMemberKind(document.uri.path);
-        const otherUri = getOtherMenuMemberUri(document.uri);
-        if (!kind || !otherUri) {
-            return [];
-        };
-        const title = kind === 'dds'
-            ? `Open menu commands (${memberName(otherUri.path)})`
-            : `Open menu image (${memberName(otherUri.path)})`;
-        return [new vscode.CodeLens(new vscode.Range(0, 0, 0, 0), {
-            title,
-            command: OPEN_MENU_MEMBER_COMMAND,
-            arguments: [otherUri]
-        })];
+export async function openMenuImageForCommandsMember(editor: vscode.TextEditor | undefined): Promise<void> {
+    const uri = editor?.document.uri;
+    if (!uri || getMenuMemberKind(uri.path) !== 'commands' || commandsMembersShown.has(uri.toString())) {
+        return;
     };
+    commandsMembersShown.add(uri.toString());
+    const menuImageUri = getOtherMenuMemberUri(uri);
+    if (!menuImageUri) {
+        return;
+    };
+    try {
+        await vscode.workspace.fs.stat(menuImageUri);
+    } catch {
+        vscode.window.showWarningMessage(`Menu image ${memberName(menuImageUri.path)} (type MNUDDS) not found next to ${memberName(uri.path)}.`);
+        return;
+    };
+    await vscode.window.showTextDocument(menuImageUri, { preview: false, viewColumn: editor?.viewColumn });
 };
 
 /**
@@ -95,7 +98,7 @@ export function updateMenuTreeMessage(treeProvider: DdsTreeProvider, document: v
     const ddsUri = document.uri.with({ path: pair.ddsPath }).toString();
     treeView.message = ExtensionState.lastDdsDocument?.uri.toString() === ddsUri
         ? `Commands of menu ${pair.menuName}. The tree shows its menu image.`
-        : `Commands of menu ${pair.menuName}. Use "Open menu image" at the top of the editor to work with the menu.`;
+        : `Commands of menu ${pair.menuName}. Open its menu image (${pair.menuName}) to work with the menu.`;
 };
 
 // CRTMNU OPTIONS PER MENU
@@ -179,10 +182,9 @@ export function registerMenuMemberCommands(context: vscode.ExtensionContext): vo
         vscode.workspace.onDidChangeTextDocument(event => refreshMenuCommandsOnEdit(event.document)),
         // A commands member created after the menu image was first previewed is read again
         vscode.workspace.onDidOpenTextDocument(document => refreshMenuCommandsOnEdit(document)),
-        vscode.commands.registerCommand(OPEN_MENU_MEMBER_COMMAND, (uri: vscode.Uri) => openMenuMember(uri)),
-        vscode.languages.registerCodeLensProvider(
-            [{ language: 'dds.dspf' }, { language: 'dds.mnucmd' }],
-            new MenuMemberCodeLensProvider()
-        )
+        // Closed and opened again: sent to its menu image again, as the first time
+        vscode.workspace.onDidCloseTextDocument(document => commandsMembersShown.delete(document.uri.toString())),
+        vscode.window.onDidChangeActiveTextEditor(editor => openMenuImageForCommandsMember(editor))
     );
+    openMenuImageForCommandsMember(vscode.window.activeTextEditor);
 };
