@@ -1390,7 +1390,7 @@ export class RecordPreviewPanel {
 
         this.panel = vscode.window.createWebviewPanel(
             'dspfEditRecordPreview',
-            `Preview: ${recordName}`,
+            RecordPreviewPanel.titleFor(recordName),
             { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
             // retainContextWhenHidden: without it, VS Code tears down the webview's live page
             // (canvas, drag state, everything) whenever it's hidden — which moving/dragging the
@@ -1525,7 +1525,7 @@ export class RecordPreviewPanel {
             // view preferences (formats are file-level, not per-record) that should stay as the user
             // left them when switching which record is previewed.
             existing.activeIndicators = new Set();
-            existing.panel.title = `Preview: ${recordName}`;
+            existing.panel.title = RecordPreviewPanel.titleFor(recordName);
             // Reveal without forcing a column: the user may have moved the panel elsewhere
             // (e.g. to a bottom group), and switching records shouldn't snap it back to "Beside".
             existing.panel.reveal(undefined, true);
@@ -2448,6 +2448,12 @@ export class RecordPreviewPanel {
         return !record || !isSflRecordInfo(record);
     };
 
+    /** The panel's tab title: "Preview: RECORD", or "Preview: MENU (menu)" for a menu image. */
+    private static titleFor(recordName: string): string {
+        const document = ExtensionState.lastDdsDocument;
+        return document && isMenuImageDocument(document) ? `Preview: ${recordName} (menu)` : `Preview: ${recordName}`;
+    };
+
     /**
      * True when the previewed source is a menu image (MNUDDS). As in SDA, a menu only takes
      * constants (with colors and attributes): no new fields, no indicators, one fixed 24x80 size.
@@ -2782,7 +2788,7 @@ export class RecordPreviewPanel {
 
     /**
      * The "? Manual" button: a short list of manual pages to open in the browser, the one about
-     * what's being previewed first (Windows for a window record, Subfiles for a subfile record),
+     * what's being previewed first (Menus for a menu image, Windows for a window record, Subfiles for a subfile record),
      * then the Screen Preview guide, the Quick Start and the whole manual.
      */
     private async showManualMenu(): Promise<void> {
@@ -2792,6 +2798,7 @@ export class RecordPreviewPanel {
 
         type ManualPage = vscode.QuickPickItem & { path: string };
         const pages: ManualPage[] = [
+            ...(this.isMenu() ? [{ label: '$(list-ordered) Menus', description: `about menu ${this.recordName}`, path: 'guides/menus/' }] : []),
             ...(isSubfile ? [{ label: '$(list-ordered) Subfiles', description: `about ${this.recordName}`, path: 'guides/subfiles/' }] : []),
             ...(isWindow ? [{ label: '$(window) Windows', description: `about ${this.recordName}`, path: 'guides/windows/' }] : []),
             { label: '$(preview) Screen Preview', description: 'this panel: toolbar, dragging, overlays, indicators', path: 'guides/screen-preview/' },

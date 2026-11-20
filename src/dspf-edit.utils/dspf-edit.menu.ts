@@ -333,3 +333,96 @@ export function menuBottomLayout(promptRow: number, promptCol: number, options: 
 
     return parts;
 };
+
+// NEW MENU (SDA's default menu image)
+
+export interface NewMenuTexts {
+    /** Title, centered on row 1 (SDA's default: "MENU Menu"). */
+    title: string;
+    /** Line on row 3 (SDA's default: "Select one of the following:"). */
+    selectText: string;
+    /** The command line prompt, row 21 (SDA's default: "Selection or command"), up to 38 characters. */
+    promptText: string;
+};
+
+/** Longest command line prompt SDA allows. */
+export const MENU_PROMPT_MAX_LENGTH = 38;
+const DDS_TEXT_START = 44;          // Zero-based column 45: where a constant's quote goes
+const DDS_LAST_COLUMN = 80;
+
+export function defaultNewMenuTexts(menuName: string): NewMenuTexts {
+    return {
+        title: `${menuName.toUpperCase()} Menu`,
+        selectText: 'Select one of the following:',
+        promptText: 'Selection or command'
+    };
+};
+
+/** Column SDA centers a menu title on: floor((78 - length) / 2), as in its own menus. */
+export function menuTitleColumn(title: string): number {
+    return Math.max(2, Math.floor((78 - title.length) / 2));
+};
+
+/**
+ * Source lines for a constant at the given position, continued with '-' at column 80 when its
+ * quoted text doesn't fit (as SDA writes them). Quotes inside the text are doubled.
+ * @param rowField - The 3-character row field as it must be written (e.g. "021" for the prompt)
+ */
+export function formatMenuConstantLines(rowField: string, column: number, text: string): string[] {
+    const quoted = `'${text.replace(/'/g, "''")}'`;
+    const prefix = '     A' + ' '.repeat(32) + rowField.padStart(3, ' ') + String(column).padStart(3, ' ');
+    const room = DDS_LAST_COLUMN - DDS_TEXT_START - 1;      // Characters before the '-' at column 80
+    if (quoted.length <= room + 1) {
+        return [prefix + quoted];
+    };
+    const lines: string[] = [];
+    let remaining = quoted;
+    let linePrefix = prefix;
+    while (remaining.length > room + 1) {
+        lines.push(linePrefix + remaining.substring(0, room) + '-');
+        remaining = remaining.substring(room);
+        linePrefix = '     A' + ' '.repeat(DDS_TEXT_START - 6);
+    };
+    lines.push(linePrefix + remaining);
+    return lines;
+};
+
+/**
+ * The source of a new menu image, as SDA creates it: menu name and centered title on row 1, the
+ * "select" line on row 3, options 1. to 10. on rows 5-14, and the command line prompt (its
+ * "A* CMDPROMPT" comment and the constant, padded to 38 characters, on row 021).
+ */
+export function buildNewMenuSource(menuName: string, texts: NewMenuTexts): string[] {
+    const name = menuName.toUpperCase();
+    const keyword = (text: string) => '     A' + ' '.repeat(38) + text;
+    const lines = [
+        `     A* FREE FORM MENU: ${name}`,
+        keyword('DSPSIZ(24 80 *DS3                  -'),
+        '     A                                             27 132 *DS4)',
+        keyword('CHGINPDFT'),
+        keyword('INDARA'),
+        keyword('PRINT(*LIBL/QSYSPRT)'),
+        `     A          R ${name}`,
+        keyword('DSPMOD(*DS3)'),
+        keyword('LOCK'),
+        keyword('SLNO(01)'),
+        keyword('CLRL(*ALL)'),
+        keyword('ALWROL'),
+        keyword('CF03'),
+        keyword('HELP'),
+        keyword('HOME'),
+        keyword('HLPRTN'),
+        ...formatMenuConstantLines('1', 2, name),
+        keyword('COLOR(BLU)'),
+        ...formatMenuConstantLines('1', menuTitleColumn(texts.title), texts.title),
+        keyword('DSPATR(HI)'),
+        ...formatMenuConstantLines('3', 2, texts.selectText),
+        keyword('COLOR(BLU)')
+    ];
+    for (let option = 1; option <= 10; option++) {
+        lines.push(...formatMenuConstantLines(String(option + 4), option < 10 ? 7 : 6, `${option}.`));
+    };
+    lines.push('     A* CMDPROMPT  Do not delete this DDS spec.');
+    lines.push(...formatMenuConstantLines('021', 2, texts.promptText.substring(0, MENU_PROMPT_MAX_LENGTH).padEnd(MENU_PROMPT_MAX_LENGTH, ' ')));
+    return lines;
+};

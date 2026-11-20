@@ -13,7 +13,10 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
 import { ExtensionState } from '../dspf-edit.states/state';
-import { getMenuMemberKind, getMenuMemberPair, parseMenuCommands, MenuCommands, MenuCreateOptions, DEFAULT_MENU_CREATE_OPTIONS } from '../dspf-edit.utils/dspf-edit.menu';
+import {
+    getMenuMemberKind, getMenuMemberPair, parseMenuCommands, MenuCommands, MenuCreateOptions, DEFAULT_MENU_CREATE_OPTIONS,
+    buildNewMenuSource, defaultNewMenuTexts, MENU_PROMPT_MAX_LENGTH
+} from '../dspf-edit.utils/dspf-edit.menu';
 
 /** Member name (no extension) of a path, as written in it. */
 function memberName(filePath: string): string {
@@ -68,6 +71,99 @@ export async function openMenuImageForCommandsMember(editor: vscode.TextEditor |
     await vscode.window.showTextDocument(menuImageUri, { preview: false, viewColumn: editor?.viewColumn });
 };
 
+// NEW MENU
+
+/** Empty menu images already offered to be created (each is offered once while open). */
+const newMenusOffered = new Set<string>();
+
+function isEmptyMenuImage(document: vscode.TextDocument): boolean {
+    return getMenuMemberKind(document.uri.path) === 'dds' && document.getText().trim() === '';
+};
+
+/** Asks for one of the new menu's texts, the default already filled in. Undefined if cancelled. */
+async function askMenuText(prompt: string, value: string, maxLength?: number): Promise<string | undefined> {
+    return vscode.window.showInputBox({
+        title: 'Create Menu',
+        prompt,
+        value,
+        validateInput: text => maxLength !== undefined && text.length > maxLength ? `Up to ${maxLength} characters.` : undefined
+    });
+};
+
+/**
+ * Fills an empty menu image (MNUDDS) with SDA's default menu: the menu name and a title, the
+ * "select" line, options 1. to 10. and the command line prompt. Its texts are asked for first,
+ * with SDA's English ones filled in. The change is left unsaved, like any other edit.
+ */
+export async function createMenu(document: vscode.TextDocument): Promise<void> {
+    if (getMenuMemberKind(document.uri.path) !== 'dds') {
+        vscode.window.showWarningMessage('A menu is created in an empty menu image member (type MNUDDS).');
+        return;
+    };
+    if (!isEmptyMenuImage(document)) {
+        vscode.window.showWarningMessage(`${memberName(document.uri.path)} already has source: a menu is created in an empty member.`);
+        return;
+    };
+    const menuName = memberName(document.uri.path).toUpperCase();
+    if (!/^[A-Z0-9_$#@]{1,10}$/.test(menuName)) {
+        vscode.window.showWarningMessage(`${menuName} can't be a menu name: up to 10 letters, digits, _ $ # @.`);
+        return;
+    };
+
+    const defaults = defaultNewMenuTexts(menuName);
+    const title = await askMenuText('Title of the menu (row 1, centered)', defaults.title, 76);
+    if (title === undefined) {
+        return;
+    };
+    const selectText = await askMenuText('Text above the options (row 3)', defaults.selectText, 76);
+    if (selectText === undefined) {
+        return;
+    };
+    const promptText = await askMenuText('Text above the command line', defaults.promptText, MENU_PROMPT_MAX_LENGTH);
+    if (promptText === undefined) {
+        return;
+    };
+
+    const eol = document.eol === vscode.EndOfLine.CRLF ? '\r\n' : '\n';
+    const source = buildNewMenuSource(menuName, { title, selectText, promptText }).join(eol) + eol;
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)), source);
+    if (!(await vscode.workspace.applyEdit(edit))) {
+        vscode.window.showErrorMessage(`Could not create the menu in ${menuName}.`);
+        return;
+    };
+    updateEmptyMenuState(document);
+};
+
+/**
+ * An empty menu image gets "Create Menu" in the tree (on "File" and "Records", package.json
+ * "when" dspf-edit.isEmptyMenu) and a message saying so; both go once the menu has source.
+ */
+function updateEmptyMenuState(document: vscode.TextDocument): void {
+    const isEmpty = isEmptyMenuImage(document);
+    vscode.commands.executeCommand('setContext', 'dspf-edit.isEmptyMenu', isEmpty);
+    const treeView = ExtensionState.treeProvider?.getTreeView();
+    if (treeView) {
+        treeView.message = isEmpty
+            ? `${memberName(document.uri.path).toUpperCase()} is an empty menu: create it with the + button on Records.`
+            : undefined;
+    };
+};
+
+/** When an empty menu image becomes the active editor, offers (once) to create the menu in it. */
+async function offerToCreateMenu(editor: vscode.TextEditor | undefined): Promise<void> {
+    const document = editor?.document;
+    if (!document || !isEmptyMenuImage(document) || newMenusOffered.has(document.uri.toString())) {
+        return;
+    };
+    newMenusOffered.add(document.uri.toString());
+    const name = memberName(document.uri.path).toUpperCase();
+    const choice = await vscode.window.showInformationMessage(`${name} is empty. Create the menu?`, 'Create Menu');
+    if (choice === 'Create Menu') {
+        await createMenu(document);
+    };
+};
+
 /**
  * While a menu commands member is the active editor, the tree tells which menu it belongs to
  * (the tree itself keeps showing the last display file, as with any other non-DDS editor).
@@ -82,11 +178,15 @@ export function updateMenuTreeMessage(treeProvider: DdsTreeProvider, document: v
         return;
     };
 
+    // Next to the view's title: "Menu B_TDA000" while working with a menu (either member)
+    const menuPair = getMenuMemberPair(document.uri.path);
+    treeView.description = menuPair ? `Menu ${menuPair.menuName.toUpperCase()}` : undefined;
+
     if (getMenuMemberKind(document.uri.path) !== 'commands') {
-        treeView.message = undefined;
         // "Menu mode": a menu image only allows what SDA allows on it (constants, colors and
         // attributes), so the tree hides record/file commands and new fields (package.json "when").
         vscode.commands.executeCommand('setContext', 'dspf-edit.isMenu', getMenuMemberKind(document.uri.path) === 'dds');
+        updateEmptyMenuState(document);
         return;
     };
 
@@ -179,12 +279,34 @@ function refreshMenuCommandsOnEdit(document: vscode.TextDocument): void {
 export function registerMenuMemberCommands(context: vscode.ExtensionContext): void {
     context.subscriptions.push(
         menuCommandsChanged,
-        vscode.workspace.onDidChangeTextDocument(event => refreshMenuCommandsOnEdit(event.document)),
+        vscode.workspace.onDidChangeTextDocument(event => {
+            refreshMenuCommandsOnEdit(event.document);
+            // Typed into (or emptied) by hand: "Create Menu" comes and goes with it
+            if (event.document === ExtensionState.lastDdsDocument && getMenuMemberKind(event.document.uri.path) === 'dds') {
+                updateEmptyMenuState(event.document);
+            };
+        }),
         // A commands member created after the menu image was first previewed is read again
         vscode.workspace.onDidOpenTextDocument(document => refreshMenuCommandsOnEdit(document)),
         // Closed and opened again: sent to its menu image again, as the first time
-        vscode.workspace.onDidCloseTextDocument(document => commandsMembersShown.delete(document.uri.toString())),
-        vscode.window.onDidChangeActiveTextEditor(editor => openMenuImageForCommandsMember(editor))
+        vscode.workspace.onDidCloseTextDocument(document => {
+            commandsMembersShown.delete(document.uri.toString());
+            newMenusOffered.delete(document.uri.toString());
+        }),
+        vscode.window.onDidChangeActiveTextEditor(editor => {
+            openMenuImageForCommandsMember(editor);
+            offerToCreateMenu(editor);
+        }),
+        vscode.commands.registerCommand('dspf-edit.create-menu', async () => {
+            const document = [ExtensionState.lastDdsDocument, vscode.window.activeTextEditor?.document]
+                .find(candidate => candidate !== undefined && getMenuMemberKind(candidate.uri.path) === 'dds');
+            if (!document) {
+                vscode.window.showWarningMessage('Open an empty menu image member (type MNUDDS) to create a menu in it.');
+                return;
+            };
+            await createMenu(document);
+        })
     );
     openMenuImageForCommandsMember(vscode.window.activeTextEditor);
+    offerToCreateMenu(vscode.window.activeTextEditor);
 };

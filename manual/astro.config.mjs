@@ -53,6 +53,14 @@ export default defineConfig({
 					link: '/help-and-support/',
 				},
 				{
+					label: 'Menus',
+					link: '/guides/menus/',
+					badge: {
+						variant: 'tip',
+						text: 'New',
+					},
+				},
+				{
 					label: 'Guides',
 					items: [
 						{ label: 'Schema Tree', link: '/guides/schema-tree/' },

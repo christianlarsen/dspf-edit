@@ -1,5 +1,6 @@
 import * as assert from 'assert';
-import { getMenuMemberKind, getMenuMemberPair, isCmdPromptComment, findCmdPromptConstantLine, formatRowField, parseMenuCommands, menuOptionOfConstant, menuBottomLayout, formatMenuCommandRecords, menuCommandEdit, menuCommandProblem, normalizeMenuCommand } from '../dspf-edit.utils/dspf-edit.menu';
+import { parseDocument } from '../dspf-edit.parser/dspf-edit.parser';
+import { getMenuMemberKind, getMenuMemberPair, isCmdPromptComment, findCmdPromptConstantLine, formatRowField, parseMenuCommands, menuOptionOfConstant, menuBottomLayout, formatMenuCommandRecords, menuCommandEdit, menuCommandProblem, normalizeMenuCommand, buildNewMenuSource, formatMenuConstantLines, menuTitleColumn } from '../dspf-edit.utils/dspf-edit.menu';
 
 suite('Menu members (MNUDDS + MNUCMD)', () => {
     test('recognizes both member types, ignoring case', () => {
@@ -162,5 +163,47 @@ suite('Writing menu commands (MNUCMD)', () => {
         assert.strictEqual(menuCommandProblem('X'.repeat(155)), undefined);
         assert.match(menuCommandProblem('X'.repeat(156)) ?? '', /up to 155/);
         assert.strictEqual(normalizeMenuCommand(' CALL PGM(A)\n   PARM(1) '), 'CALL PGM(A) PARM(1)');
+    });
+});
+
+suite('New menu (SDA default menu image)', () => {
+    const texts = { title: 'B_TDA000 Menu', selectText: 'Select one of the following:', promptText: 'Selección o mandato' };
+    const source = buildNewMenuSource('b_tda000', texts);
+
+    test('the prompt is written as SDA writes it: 38 characters, cut at column 80, row 021', () => {
+        const start = source.findIndex(isCmdPromptComment);
+        assert.deepStrictEqual(source.slice(start + 1), [
+            "     A                                021  2'Selección o mandato               -",
+            "     A                                          '"
+        ]);
+    });
+
+    test('the title is centered as SDA does, and options 1. to 10. go on rows 5-14', () => {
+        assert.ok(source.includes("     A                                  1 32'B_TDA000 Menu'"));
+        assert.strictEqual(menuTitleColumn('PRTCTL MENU'), 33);
+        assert.ok(source.includes("     A                                  5  7'1.'"));
+        assert.ok(source.includes("     A                                 14  6'10.'"));
+    });
+
+    test('the parser reads it as a menu with its record, prompt and option numbers', () => {
+        const elements = parseDocument(source.join('\n'));
+        assert.deepStrictEqual(elements.filter(e => e.kind === 'record').map(e => (e as { name: string }).name), ['B_TDA000']);
+        const promptLine = findCmdPromptConstantLine(source);
+        const prompt = elements.find(e => e.kind === 'constant' && e.lineIndex === promptLine) as { row: number; column: number } | undefined;
+        assert.deepStrictEqual([prompt?.row, prompt?.column], [21, 2]);
+        const options = elements
+            .filter(e => e.kind === 'constant')
+            .map(e => menuOptionOfConstant(String((e as { name: string }).name).replace(/^'|'$/g, '')))
+            .filter(o => o !== undefined);
+        assert.deepStrictEqual(options, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    });
+
+    test('long texts go on with "-" at column 80, quotes doubled', () => {
+        const lines = formatMenuConstantLines('3', 2, "Seleccione una de las siguientes opciones");
+        assert.deepStrictEqual(lines, [
+            "     A                                  3  2'Seleccione una de las siguientes o-",
+            "     A                                      pciones'"
+        ]);
+        assert.deepStrictEqual(formatMenuConstantLines('1', 2, "Menu d'Alex"), ["     A                                  1  2'Menu d''Alex'"]);
     });
 });

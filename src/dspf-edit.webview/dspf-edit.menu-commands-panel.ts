@@ -12,6 +12,7 @@ import {
     menuOptionOfConstant, MENU_COMMAND_MAX_LENGTH
 } from '../dspf-edit.utils/dspf-edit.menu';
 import { onDidChangeMenuCommands, showCommandsMember } from '../dspf-edit.commands/dspf-edit.menu-members';
+import { addSourceMember, parseSourceMemberPath } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 
 /** One row of the panel, as sent to its script. */
 interface MenuCommandRow {
@@ -68,8 +69,7 @@ export class MenuCommandsPanel {
 
     /**
      * Opens the panel for the menu the given member (image or commands) belongs to.
-     * If the commands member doesn't exist yet, a local one is created with just its header;
-     * a member on the IBM i has to be created there first (type MNUCMD).
+     * If the commands member doesn't exist yet, it offers to create it (see createCommandsMember).
      */
     static async show(menuMemberUri: vscode.Uri): Promise<void> {
         const pair = getMenuMemberPair(menuMemberUri.path);
@@ -82,16 +82,9 @@ export class MenuCommandsPanel {
         const commandsMember = path.posix.basename(pair.commandsPath, path.posix.extname(pair.commandsPath));
 
         if (!(await MenuCommandsPanel.exists(commandsUri))) {
-            if (commandsUri.scheme !== 'file') {
-                vscode.window.showWarningMessage(`Member ${commandsMember} (type MNUCMD) not found. Create it in the same source file, then open the menu commands again.`);
+            if (!(await MenuCommandsPanel.createCommandsMember(commandsUri, commandsMember, pair.menuName))) {
                 return;
             };
-            const create = await vscode.window.showInformationMessage(
-                `The menu has no commands member yet. Create ${path.posix.basename(pair.commandsPath)}?`, 'Create', 'Cancel');
-            if (create !== 'Create') {
-                return;
-            };
-            await vscode.workspace.fs.writeFile(commandsUri, Buffer.from(`${commandsMember.toUpperCase()},1\n`, 'utf8'));
         };
 
         const current = MenuCommandsPanel.current;
@@ -104,6 +97,44 @@ export class MenuCommandsPanel {
             return;
         };
         MenuCommandsPanel.current = new MenuCommandsPanel(menuImageUri, commandsUri);
+    };
+
+    /**
+     * Creates a menu's missing commands member, after asking: a local file directly, a member on
+     * the IBM i with ADDPFM (type MNUCMD, same source file). Either way it starts with its header.
+     * @returns True if the member exists now
+     */
+    private static async createCommandsMember(commandsUri: vscode.Uri, commandsMember: string, menuName: string): Promise<boolean> {
+        const header = `${commandsMember.toUpperCase()},1\n`;
+        if (commandsUri.scheme === 'file') {
+            const create = await vscode.window.showInformationMessage(
+                `The menu has no commands member yet. Create ${path.posix.basename(commandsUri.path)}?`, 'Create', 'Cancel');
+            if (create !== 'Create') {
+                return false;
+            };
+            await vscode.workspace.fs.writeFile(commandsUri, Buffer.from(header, 'utf8'));
+            return true;
+        };
+
+        const location = parseSourceMemberPath(commandsUri.path);
+        if (!location) {
+            vscode.window.showWarningMessage(`Member ${commandsMember} (type MNUCMD) not found. Create it in the same source file, then open the menu commands again.`);
+            return false;
+        };
+        const create = await vscode.window.showInformationMessage(
+            `The menu has no commands member yet. Create member ${location.member} (type MNUCMD) in ${location.library}/${location.file}?`,
+            'Create', 'Cancel');
+        if (create !== 'Create') {
+            return false;
+        };
+        try {
+            await addSourceMember(location, `Commands of menu ${menuName.toUpperCase()}`);
+            await vscode.workspace.fs.writeFile(commandsUri, Buffer.from(header, 'utf8'));
+            return true;
+        } catch (error) {
+            vscode.window.showErrorMessage(`Could not create member ${location.member}: ${error instanceof Error ? error.message : String(error)}`);
+            return false;
+        };
     };
 
     private static async exists(uri: vscode.Uri): Promise<boolean> {

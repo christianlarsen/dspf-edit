@@ -8,7 +8,7 @@
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "1.19.0",
+  "version": "1.20.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
@@ -38,7 +38,10 @@
     "rpg",
     "rpgle",
     "sqlrpgle",
-    "display"
+    "display",
+    "menu",
+    "mnudds",
+    "crtmnu"
   ],
   "engines": {
     "vscode": "^1.75.0"
@@ -316,7 +319,14 @@
       {
         "command": "dspf-edit.menu-commands",
         "title": "Menu Commands",
-        "icon": "$(terminal)"
+        "icon": "$(terminal)",
+        "category": "DSPF Edit"
+      },
+      {
+        "command": "dspf-edit.create-menu",
+        "title": "Create Menu",
+        "category": "DSPF Edit",
+        "icon": "$(add)"
       }
     ],
     "keybindings": [
@@ -604,6 +614,16 @@
           "command": "dspf-edit.menu-commands",
           "when": "view == dspf-edit.schema-view && dspf-edit.isMenu && (viewItem =~ /\\brecord\\b/ || viewItem == file)",
           "group": "records_navigation0@3"
+        },
+        {
+          "command": "dspf-edit.create-menu",
+          "when": "view == dspf-edit.schema-view && dspf-edit.isMenu && dspf-edit.isEmptyMenu && (viewItem == file || viewItem == group:records)",
+          "group": "file_navigation1@0"
+        },
+        {
+          "command": "dspf-edit.create-menu",
+          "when": "view == dspf-edit.schema-view && dspf-edit.isMenu && dspf-edit.isEmptyMenu && viewItem == group:records",
+          "group": "inline@1"
         }
       ]
     }

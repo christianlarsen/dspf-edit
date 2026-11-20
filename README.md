@@ -33,6 +33,7 @@ IBM itself lists **Code for i** among SDA's replacements. If you already write R
 - **The screen and its source, side by side and in sync.** Type in the source and the screen redraws; drag on the screen and the source changes.
 - **Run it in your head, not on the system.** Turn indicators on and off, see error messages on the message line, windows where they open, every subfile row, and each display size — without compiling.
 - **More than the screen designer ever did.** Selection fields with radio buttons and check boxes, as your emulator shows them. More than 3 indicators and OR'd conditions, with the continuation lines written for you. Keys and keywords that won't compile, caught before you compile.
+- **Menus too.** The menus STRSDA designed (`MNUDDS` + `MNUCMD`) open in the same preview, with each option's command one click away, and new ones are created from scratch.
 - **Connected to your IBM i** through Code for i: referenced fields resolved from the database, and your system's decimal format, date separator and edit codes in the preview.
 
 DSPF-edit doesn't replace your compiler — it closes the gap between writing DDS and seeing the screen it produces, matching real **STRSDA** behavior field by field, so what you preview is what you get.
@@ -50,7 +51,7 @@ Everything DSPF-edit does is explained, step by step and with screenshots, in th
 | [Structure tree](https://christianlarsen.github.io/dspf-edit/guides/schema-tree/) | [Constants](https://christianlarsen.github.io/dspf-edit/guides/constants/) | [Multiple display sizes](https://christianlarsen.github.io/dspf-edit/guides/display-sizes/) |
 | [Screen Preview](https://christianlarsen.github.io/dspf-edit/guides/screen-preview/) | [Indicators and conditions](https://christianlarsen.github.io/dspf-edit/guides/indicators/) | [Referenced fields](https://christianlarsen.github.io/dspf-edit/guides/referenced-fields/) |
 | [Configuration](https://christianlarsen.github.io/dspf-edit/guides/configuration/) | [Colors and attributes](https://christianlarsen.github.io/dspf-edit/guides/colors-attributes/) | [Column ruler](https://christianlarsen.github.io/dspf-edit/guides/column-ruler/) |
-| [Help and support](https://christianlarsen.github.io/dspf-edit/help-and-support/) | [Command keys](https://christianlarsen.github.io/dspf-edit/guides/command-keys/) | |
+| [Help and support](https://christianlarsen.github.io/dspf-edit/help-and-support/) | [Command keys](https://christianlarsen.github.io/dspf-edit/guides/command-keys/) | [Menus](https://christianlarsen.github.io/dspf-edit/guides/menus/) |
 
 ---
 
@@ -137,6 +138,29 @@ Everything DSPF-edit does is explained, step by step and with screenshots, in th
 
 📖 Manual: [Structure tree](https://christianlarsen.github.io/dspf-edit/guides/schema-tree/) · [Records](https://christianlarsen.github.io/dspf-edit/guides/records/) · [Fields](https://christianlarsen.github.io/dspf-edit/guides/fields/) · [Constants](https://christianlarsen.github.io/dspf-edit/guides/constants/) · [Indicators](https://christianlarsen.github.io/dspf-edit/guides/indicators/) · [Command keys](https://christianlarsen.github.io/dspf-edit/guides/command-keys/)
 
+### 📋 Menus (MNUDDS + MNUCMD) — new
+
+The menus created with `CRTMNU TYPE(*DSPF)`: the menu image (`MNUDDS` member) and its commands (`MENUQQ`, `MNUCMD`), worked with as one menu.
+
+**Opening a menu**
+  - A `MNUDDS` member opens as a menu: the tree says **Menu**, and the preview is the menu's. Opening its `MENUQQ` member opens the menu image too.
+  - Only what a menu takes is offered: constants, with their colors and attributes. No fields, indicators, records or windows.
+
+**The preview**
+  - The command line (`===>`) under the "Selection or command" prompt, as `CRTMNU` adds it: **Long**, **Short** or **None** (`CMDLIN`), chosen in the toolbar and remembered for each menu.
+  - Hovering an option's number shows the command it runs.
+
+**Menu Commands**
+  - "☰ Commands" in the preview, or right-click in the tree: every option (01-99) with its command, written straight into the `MENUQQ` member as STRSDA writes it, long commands included.
+  - Warns about options shown on the menu without a command, and commands whose option isn't on the menu.
+  - Creates the `MENUQQ` member when it doesn't exist, on the IBM i (after asking) or as a local file.
+
+**New menus**
+  - An empty `MNUDDS` member offers **Create Menu**: the menu STRSDA creates, with your title and texts.
+  - The "Selection or command" prompt, and SDA's `A* CMDPROMPT` comment above it, are kept as STRSDA writes them, and the prompt can't be deleted.
+
+📖 Manual: [Menus](https://christianlarsen.github.io/dspf-edit/guides/menus/)
+
 ### ✅ Help while editing the source
   - Column ruler: the DDS format line (`.....AAN01N02N03T.Name++++++RLen++TDpBLinPos...`) above the line being edited, with each column area outlined; hover an area to see its name. `Shift+F4` turns it on and off.
   - Mistakes the compiler would reject are underlined and listed in the **Problems** panel, with the compiler's message ID where confirmed and a Quick Fix where it's clear what was meant:
@@ -163,7 +187,7 @@ Through the [Code for i](https://marketplace.visualstudio.com/items?itemName=Hal
 
 ## 🚀 How to Use
 
-1. Open a DDS display file in VS Code.  
+1. Open a DDS display file (or a menu, `MNUDDS`) in VS Code.  
 2. Go to **explorer view** in VS Code.
 3. The **schema view** will appear automatically with the name "DSPF STRUCTURE".  
 4. Use **left-click** to navigate, or **right-click** to access contextual options.  
@@ -196,13 +220,12 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.19.0** - 2026-11-17
-- Added: the preview shows horizontal subfiles (`SFLLIN`) in several columns of records, as the system does.
-- Added: **Subfile Columns** on `SFLCTL` records adds, changes or removes `SFLLIN`.
-- Added: `SFLDROP`/`SFLFOLD` where `SFLPAG` equals `SFLSIZ` is flagged as an error (`CPF7885`), with Quick Fixes to make `SFLSIZ` one more than `SFLPAG` or remove the keyword.
-- Added: selection fields: **Add Field** creates single-choice (radio buttons) and multiple-choice (check boxes) fields with their choices, and **Choices** changes, adds, removes and arranges them.
-- Added: a **Display Type** setting; graphical by default, so selection fields preview with radio buttons and check boxes, as emulators show them.
-- Changed: the preview no longer offers the fold/truncate key when `SFLPAG` equals `SFLSIZ`.
+**1.20.0** - 2026-11-20
+- Added: menus (`MNUDDS` + `MNUCMD`, [#113](https://github.com/christianlarsen/dspf-edit/issues/113)). A menu image opens in the tree and the preview as a menu, offering only what a menu takes, and opening its `MENUQQ` member opens it too.
+- Added: the preview of a menu shows its command line (**Long**, **Short** or **None**, as `CRTMNU`'s `CMDLIN`), and each option's command when hovering its number.
+- Added: **Menu Commands** sets each option's command, written into the `MENUQQ` member as STRSDA writes it, and creates the member when it's missing.
+- Added: **Create Menu** writes a new menu in an empty `MNUDDS` member.
+- Fixed: **Sort Elements** dropped comment lines between the elements it sorted.
 
 ---
 
