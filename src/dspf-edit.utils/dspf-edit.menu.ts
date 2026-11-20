@@ -121,10 +121,10 @@ export function formatRowField(newRow: number, currentRowField: string): string 
 // MENU COMMANDS (MNUCMD member)
 
 // Layout, as SDA writes it (80-column records):
-//     B_TDA000QQ,1                                   <- header: member name and ",1"
-//     0001+CALL PGM(BOSTON/BSWTDA01) PARM(... (*LGL 1)   <- option (4 digits), ' ' or '+', command
+//     MENUQQ,1                                   <- header: member name and ",1"
+//     0001+CALL PGM(APPLIB/APPPGM01) PARM(... (*LGL 1)   <- option (4 digits), ' ' or '+', command
 //     ))                                             <- continuation: the whole line, glued on as is
-//     0002 CALL PGM(BOSTON/BSWTDA68) PARM(' '  'S'  ' ')
+//     0002 CALL PGM(APPLIB/APPPGM68) PARM(' '  'S'  ' ')
 // A '+' in column 5 means the command goes on in the next line(s); the text is cut at column 80,
 // so the first part is padded back to 80 columns (an editor may have trimmed its trailing blanks).
 // A command starting with '?' is prompted (F4) before it runs. Options without a command have no line.
@@ -144,7 +144,7 @@ export interface MenuCommand {
 };
 
 export interface MenuCommands {
-    /** The header line ("B_TDA000QQ,1"), if there is one. */
+    /** The header line ("MENUQQ,1"), if there is one. */
     header?: string;
     commands: MenuCommand[];
 };

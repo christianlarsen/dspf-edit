@@ -178,7 +178,7 @@ export function updateMenuTreeMessage(treeProvider: DdsTreeProvider, document: v
         return;
     };
 
-    // Next to the view's title: "Menu B_TDA000" while working with a menu (either member)
+    // Next to the view's title: "Menu MENU" while working with a menu (either member)
     const menuPair = getMenuMemberPair(document.uri.path);
     treeView.description = menuPair ? `Menu ${menuPair.menuName.toUpperCase()}` : undefined;
 

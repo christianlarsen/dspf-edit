@@ -25,8 +25,8 @@ As in STRSDA, both members are the same menu: open either one and you're working
 
 You can tell you're working with a menu:
 
-- The tree's title says **Menu B_TDA000** next to **Definition**, and its first node is **Menu (B_TDA000.MNUDDS)** instead of **File (...)**.
-- The preview's tab is **Preview: B_TDA000 (menu)**.
+- The tree's title says **Menu MENU** next to **Definition**, and its first node is **Menu (MENU.MNUDDS)** instead of **File (...)**.
+- The preview's tab is **Preview: MENU (menu)**.
 
 :::note
 Code for i opens members with their type as the extension (`.MNUDDS`, `.MNUCMD`), and DSPF-edit recognizes them. Local files need the `.mnudds` and `.mnucmd` extensions.
@@ -80,7 +80,7 @@ The function keys `CRTMNU` can add at the bottom (`DSPKEY(*YES)`) aren't drawn: 
 
 ### Each option's command
 
-Hover an option number in the preview (`1.`, `10.`, or a constant like `90. Sign off`) to see the command it runs, read from the commands member: `Option 1: CALL PGM(BOSTON/BSWTDA01)`. An option shown on the menu without a command says `Option 22: no command`. Edit the commands member and the preview follows at once, even before saving it.
+Hover an option number in the preview (`1.`, `10.`, or a constant like `90. Sign off`) to see the command it runs, read from the commands member: `Option 1: CALL PGM(APPLIB/APPPGM01)`. An option shown on the menu without a command says `Option 22: no command`. Edit the commands member and the preview follows at once, even before saving it.
 
 ## Menu Commands
 
@@ -110,10 +110,10 @@ The panel can't be opened while the preview is in **Focus** mode, as with the **
 DSPF-edit writes it as STRSDA does, so STRSDA can still open the menu:
 
 ```
-B_TDA000QQ,1
-0001+CALL PGM(BOSTON/BSWTDA01) PARM(('S' (*CHAR 1)) (0 (*DEC 3 0)) ('0' (*LGL 1)
+MENUQQ,1
+0001+CALL PGM(APPLIB/APPPGM01) PARM(('S' (*CHAR 1)) (0 (*DEC 3 0)) ('0' (*LGL 1)
 ))
-0002 CALL PGM(BOSTON/BSWTDA68)
+0002 CALL PGM(APPLIB/APPPGM68)
 0024 SIGNOFF
 ```
 
@@ -133,9 +133,9 @@ Either way, it starts with its first line, `MENUQQ,1`.
 
 ## Creating a new menu
 
-1. Create the menu image member, of type `MNUDDS` (for example, `NUEVOMNU` in `QMNUSRC`, from Code for i), or a local `nuevomnu.mnudds`.
+1. Create the menu image member, of type `MNUDDS` (for example, `MENU` in `QMNUSRC`, from Code for i), or a local `menu.mnudds`.
 2. Open it. While it's empty, DSPF-edit offers to create the menu, in a message and with the **+** button on **Records** in the tree (also on the right-click menu of **Records** and of the **Menu** node, and as **DSPF Edit: Create Menu** in the command palette).
-3. It asks for three texts, with STRSDA's English ones already filled in: the **title** (`NUEVOMNU Menu`), the **text above the options** (`Select one of the following:`) and the **text above the command line** (`Selection or command`, up to 38 characters).
+3. It asks for three texts, with STRSDA's English ones already filled in: the **title** (`MENU Menu`), the **text above the options** (`Select one of the following:`) and the **text above the command line** (`Selection or command`, up to 38 characters).
 4. It writes the menu STRSDA creates:
    - The menu's name on row 1, column 2, and the title centered on row 1.
    - The text above the options on row 3, and the options `1.` to `10.` on rows 5 to 14.
@@ -151,15 +151,15 @@ DSPF-edit doesn't create the menu on the system yet. STRSDA does it when you lea
 1. Create the display file from the menu image:
 
    ```
-   CRTDSPF FILE(MYLIB/NUEVOMNU) SRCFILE(MYLIB/QMNUSRC) SRCMBR(NUEVOMNU)
+   CRTDSPF FILE(MYLIB/MENU) SRCFILE(MYLIB/QMNUSRC) SRCMBR(MENU)
    ```
 
 2. Create the message file, with one message per option holding its command: `USR0001` for option 1, `USR0090` for option 90.
 
    ```
-   CRTMSGF MSGF(MYLIB/NUEVOMNU)
-   ADDMSGD MSGID(USR0001) MSGF(MYLIB/NUEVOMNU) MSG('CALL PGM(MYLIB/PGM1)')
-   ADDMSGD MSGID(USR0090) MSGF(MYLIB/NUEVOMNU) MSG('SIGNOFF')
+   CRTMSGF MSGF(MYLIB/MENU)
+   ADDMSGD MSGID(USR0001) MSGF(MYLIB/MENU) MSG('CALL PGM(MYLIB/PGM1)')
+   ADDMSGD MSGID(USR0090) MSGF(MYLIB/MENU) MSG('SIGNOFF')
    ```
 
    A quote inside a command is written twice in `MSG`: `MSG('CALL PGM(PGM2) PARM(''S'')')`.
@@ -167,10 +167,10 @@ DSPF-edit doesn't create the menu on the system yet. STRSDA does it when you lea
 3. Create the menu, with the command line chosen in the preview:
 
    ```
-   CRTMNU MENU(MYLIB/NUEVOMNU) TYPE(*DSPF) DSPF(MYLIB/NUEVOMNU) MSGF(MYLIB/NUEVOMNU) CMDLIN(*LONG)
+   CRTMNU MENU(MYLIB/MENU) TYPE(*DSPF) DSPF(MYLIB/MENU) MSGF(MYLIB/MENU) CMDLIN(*LONG)
    ```
 
-Run it with `GO MENU(MYLIB/NUEVOMNU)`. The message file goes with the menu: copying the menu to another system needs it too.
+Run it with `GO MENU(MYLIB/MENU)`. The message file goes with the menu: copying the menu to another system needs it too.
 
 ## Not available yet
 

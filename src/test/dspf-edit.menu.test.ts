@@ -4,26 +4,26 @@ import { getMenuMemberKind, getMenuMemberPair, isCmdPromptComment, findCmdPrompt
 
 suite('Menu members (MNUDDS + MNUCMD)', () => {
     test('recognizes both member types, ignoring case', () => {
-        assert.strictEqual(getMenuMemberKind('/samples/b_tda000.mnudds'), 'dds');
-        assert.strictEqual(getMenuMemberKind('/LIB/QMNUSRC/B_TDA000QQ.MNUCMD'), 'commands');
+        assert.strictEqual(getMenuMemberKind('/samples/menu.mnudds'), 'dds');
+        assert.strictEqual(getMenuMemberKind('/LIB/QMNUSRC/MENUQQ.MNUCMD'), 'commands');
         assert.strictEqual(getMenuMemberKind('/LIB/QDDSSRC/PANTALLA.DSPF'), undefined);
     });
 
     test('pairs a local menu image with its commands member, keeping the case', () => {
-        assert.deepStrictEqual(getMenuMemberPair('/samples/b_tda000.mnudds'), {
-            menuName: 'b_tda000',
-            ddsPath: '/samples/b_tda000.mnudds',
-            commandsPath: '/samples/b_tda000qq.mnucmd'
+        assert.deepStrictEqual(getMenuMemberPair('/samples/menu.mnudds'), {
+            menuName: 'menu',
+            ddsPath: '/samples/menu.mnudds',
+            commandsPath: '/samples/menuqq.mnucmd'
         });
     });
 
     test('pairs an IBM i commands member with its menu image', () => {
-        assert.deepStrictEqual(getMenuMemberPair('/BOSTON/QMNUSRC/B_TDA000QQ.MNUCMD'), {
-            menuName: 'B_TDA000',
-            ddsPath: '/BOSTON/QMNUSRC/B_TDA000.MNUDDS',
-            commandsPath: '/BOSTON/QMNUSRC/B_TDA000QQ.MNUCMD'
+        assert.deepStrictEqual(getMenuMemberPair('/MYLIB/QMNUSRC/MENUQQ.MNUCMD'), {
+            menuName: 'MENU',
+            ddsPath: '/MYLIB/QMNUSRC/MENU.MNUDDS',
+            commandsPath: '/MYLIB/QMNUSRC/MENUQQ.MNUCMD'
         });
-        assert.strictEqual(getMenuMemberPair('/BOSTON/QMNUSRC/B_TDA000.MNUDDS')?.commandsPath, '/BOSTON/QMNUSRC/B_TDA000QQ.MNUCMD');
+        assert.strictEqual(getMenuMemberPair('/MYLIB/QMNUSRC/MENU.MNUDDS')?.commandsPath, '/MYLIB/QMNUSRC/MENUQQ.MNUCMD');
     });
 
     test('a commands member not ending in QQ, or other members, have no pair', () => {
@@ -39,7 +39,7 @@ suite('Menu command line prompt (CMDPROMPT)', () => {
         '     A* CMDPROMPT  No suprima esta especificación DDS.',
         "     A                                021  2'Selección o mandato               -",
         "     A                                          '",
-        "     A                                  1 72' BOSTON '"
+        "     A                                  1 72' TEST '"
     ];
 
     test('finds the constant after the comment, whatever language the comment is in', () => {
@@ -63,26 +63,26 @@ suite('Menu command line prompt (CMDPROMPT)', () => {
 
 suite('Menu commands member (MNUCMD)', () => {
     const qq = [
-        'B_TDA000QQ,1',
-        "0001+CALL PGM(BOSTON/BSWTDA01) PARM(('S' (*CHAR 1)) (0 (*DEC 3 0)) ('0' (*LGL 1)",
+        'MENUQQ,1',
+        "0001+CALL PGM(APPLIB/APPPGM01) PARM(('S' (*CHAR 1)) (0 (*DEC 3 0)) ('0' (*LGL 1)",
         '))',
-        "0002 CALL PGM(BOSTON/BSWTDA68) PARM(' '  'S'  ' ')",
+        "0002 CALL PGM(APPLIB/APPPGM68) PARM(' '  'S'  ' ')",
         '0004 ? WRKLNK',
         '0024 SIGNOFF'
     ];
 
     test('reads the header and one command per option', () => {
         const parsed = parseMenuCommands(qq);
-        assert.strictEqual(parsed.header, 'B_TDA000QQ,1');
+        assert.strictEqual(parsed.header, 'MENUQQ,1');
         assert.deepStrictEqual(parsed.commands.map(c => c.option), [1, 2, 4, 24]);
-        assert.strictEqual(parsed.commands[1].command, "CALL PGM(BOSTON/BSWTDA68) PARM(' '  'S'  ' ')");
+        assert.strictEqual(parsed.commands[1].command, "CALL PGM(APPLIB/APPPGM68) PARM(' '  'S'  ' ')");
         assert.strictEqual(parsed.commands[2].command, '? WRKLNK');
         assert.deepStrictEqual([parsed.commands[3].firstLine, parsed.commands[3].lastLine], [5, 5]);
     });
 
     test('a + in column 5 glues the next line on, right where the first one was cut', () => {
         const first = parseMenuCommands(qq).commands[0];
-        assert.strictEqual(first.command, "CALL PGM(BOSTON/BSWTDA01) PARM(('S' (*CHAR 1)) (0 (*DEC 3 0)) ('0' (*LGL 1)))");
+        assert.strictEqual(first.command, "CALL PGM(APPLIB/APPPGM01) PARM(('S' (*CHAR 1)) (0 (*DEC 3 0)) ('0' (*LGL 1)))");
         assert.deepStrictEqual([first.firstLine, first.lastLine], [1, 2]);
     });
 
@@ -95,7 +95,7 @@ suite('Menu commands member (MNUCMD)', () => {
         assert.strictEqual(menuOptionOfConstant('1.'), 1);
         assert.strictEqual(menuOptionOfConstant('10.'), 10);
         assert.strictEqual(menuOptionOfConstant('90. Sign Off'), 90);
-        assert.strictEqual(menuOptionOfConstant('Mantenimiento de Tiendas'), undefined);
+        assert.strictEqual(menuOptionOfConstant('Mantenimiento de clientes'), undefined);
         assert.strictEqual(menuOptionOfConstant('3.5 kg'), undefined);
     });
 });
@@ -122,10 +122,10 @@ suite('Bottom of the created menu (CRTMNU CMDLIN)', () => {
 
 suite('Writing menu commands (MNUCMD)', () => {
     const qq = [
-        'B_TDA000QQ,1',
-        "0001+CALL PGM(BOSTON/BSWTDA01) PARM(('S' (*CHAR 1)) (0 (*DEC 3 0)) ('0' (*LGL 1)",
+        'MENUQQ,1',
+        "0001+CALL PGM(APPLIB/APPPGM01) PARM(('S' (*CHAR 1)) (0 (*DEC 3 0)) ('0' (*LGL 1)",
         '))',
-        '0004 CALL PGM(BOSTON/BSWTDA25)',
+        '0004 CALL PGM(APPLIB/APPPGM25)',
         '0024 SIGNOFF'
     ];
     const apply = (lines: readonly string[], edit: ReturnType<typeof menuCommandEdit>) => {
@@ -135,22 +135,22 @@ suite('Writing menu commands (MNUCMD)', () => {
     };
 
     test('a long command is cut at column 80 and goes on in the next line, as SDA writes it', () => {
-        const command = "CALL PGM(BOSTON/BSWTDA01) PARM(('S' (*CHAR 1)) (0 (*DEC 3 0)) ('0' (*LGL 1)))";
+        const command = "CALL PGM(APPLIB/APPPGM01) PARM(('S' (*CHAR 1)) (0 (*DEC 3 0)) ('0' (*LGL 1)))";
         assert.deepStrictEqual(formatMenuCommandRecords(1, command), [qq[1], '))']);
         assert.deepStrictEqual(formatMenuCommandRecords(90, 'SIGNOFF'), ['0090 SIGNOFF']);
         assert.deepStrictEqual(parseMenuCommands(['M,1', ...formatMenuCommandRecords(1, command)]).commands[0].command, command);
     });
 
     test('changing an option replaces only its lines, continuation included', () => {
-        assert.deepStrictEqual(apply(qq, menuCommandEdit(qq, 'B_TDA000QQ', 1, 'DSPLIBL')),
-            ['B_TDA000QQ,1', '0001 DSPLIBL', '0004 CALL PGM(BOSTON/BSWTDA25)', '0024 SIGNOFF']);
+        assert.deepStrictEqual(apply(qq, menuCommandEdit(qq, 'MENUQQ', 1, 'DSPLIBL')),
+            ['MENUQQ,1', '0001 DSPLIBL', '0004 CALL PGM(APPLIB/APPPGM25)', '0024 SIGNOFF']);
     });
 
     test('a new option goes in order, and an empty command removes the option', () => {
-        assert.deepStrictEqual(apply(qq, menuCommandEdit(qq, 'B_TDA000QQ', 5, 'WRKSPLF')).slice(3),
-            ['0004 CALL PGM(BOSTON/BSWTDA25)', '0005 WRKSPLF', '0024 SIGNOFF']);
-        assert.deepStrictEqual(apply(qq, menuCommandEdit(qq, 'B_TDA000QQ', 90, 'SIGNOFF')).slice(-1), ['0090 SIGNOFF']);
-        assert.deepStrictEqual(apply(qq, menuCommandEdit(qq, 'B_TDA000QQ', 4, '  ')),
+        assert.deepStrictEqual(apply(qq, menuCommandEdit(qq, 'MENUQQ', 5, 'WRKSPLF')).slice(3),
+            ['0004 CALL PGM(APPLIB/APPPGM25)', '0005 WRKSPLF', '0024 SIGNOFF']);
+        assert.deepStrictEqual(apply(qq, menuCommandEdit(qq, 'MENUQQ', 90, 'SIGNOFF')).slice(-1), ['0090 SIGNOFF']);
+        assert.deepStrictEqual(apply(qq, menuCommandEdit(qq, 'MENUQQ', 4, '  ')),
             [qq[0], qq[1], qq[2], '0024 SIGNOFF']);
     });
 
@@ -167,8 +167,8 @@ suite('Writing menu commands (MNUCMD)', () => {
 });
 
 suite('New menu (SDA default menu image)', () => {
-    const texts = { title: 'B_TDA000 Menu', selectText: 'Select one of the following:', promptText: 'Selección o mandato' };
-    const source = buildNewMenuSource('b_tda000', texts);
+    const texts = { title: 'MENU Menu', selectText: 'Select one of the following:', promptText: 'Selección o mandato' };
+    const source = buildNewMenuSource('menu', texts);
 
     test('the prompt is written as SDA writes it: 38 characters, cut at column 80, row 021', () => {
         const start = source.findIndex(isCmdPromptComment);
@@ -179,7 +179,7 @@ suite('New menu (SDA default menu image)', () => {
     });
 
     test('the title is centered as SDA does, and options 1. to 10. go on rows 5-14', () => {
-        assert.ok(source.includes("     A                                  1 32'B_TDA000 Menu'"));
+        assert.ok(source.includes("     A                                  1 34'MENU Menu'"));
         assert.strictEqual(menuTitleColumn('PRTCTL MENU'), 33);
         assert.ok(source.includes("     A                                  5  7'1.'"));
         assert.ok(source.includes("     A                                 14  6'10.'"));
@@ -187,7 +187,7 @@ suite('New menu (SDA default menu image)', () => {
 
     test('the parser reads it as a menu with its record, prompt and option numbers', () => {
         const elements = parseDocument(source.join('\n'));
-        assert.deepStrictEqual(elements.filter(e => e.kind === 'record').map(e => (e as { name: string }).name), ['B_TDA000']);
+        assert.deepStrictEqual(elements.filter(e => e.kind === 'record').map(e => (e as { name: string }).name), ['MENU']);
         const promptLine = findCmdPromptConstantLine(source);
         const prompt = elements.find(e => e.kind === 'constant' && e.lineIndex === promptLine) as { row: number; column: number } | undefined;
         assert.deepStrictEqual([prompt?.row, prompt?.column], [21, 2]);
