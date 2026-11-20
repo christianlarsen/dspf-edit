@@ -7,6 +7,9 @@
 import * as vscode from 'vscode';
 import { findConditionProblems } from './dspf-edit.condition-columns';
 import { findSubfileKeywordProblems, CPF_PAGE_EQUALS_SIZE } from './dspf-edit.subfile-keywords';
+import { findMenuPlacementProblems, MENU_PLACEMENT_CODE } from './dspf-edit.menu-placement';
+import { getMenuMemberKind } from '../dspf-edit.utils/dspf-edit.menu';
+import { getMenuCreateOptions, onDidChangeMenuCreateOptions } from '../dspf-edit.commands/dspf-edit.menu-members';
 
 /**
  * Source checks shown as errors or warnings in the editor and the Problems panel, for things the compiler
@@ -15,7 +18,8 @@ import { findSubfileKeywordProblems, CPF_PAGE_EQUALS_SIZE } from './dspf-edit.su
  * For now: the condition area, columns 7-16 (see dspf-edit.condition-columns.ts), with a quick fix
  * that moves the indicators to their columns when it's clear what was meant; and SFLDROP/SFLFOLD
  * when SFLPAG equals SFLSIZ (see dspf-edit.subfile-keywords.ts), with quick fixes that raise SFLSIZ
- * or remove the keyword.
+ * or remove the keyword. On a menu image (MNUDDS), text on the rows the created menu keeps for
+ * itself (see dspf-edit.menu-placement.ts).
  */
 
 const DSPF_LANGUAGE_ID = 'dds.dspf';
@@ -50,6 +54,13 @@ export function registerValidation(context: vscode.ExtensionContext): void {
     context.subscriptions.push(
         collection,
         vscode.workspace.onDidOpenTextDocument(validate),
+        // A menu's reserved rows depend on the command line and function keys chosen in the preview
+        onDidChangeMenuCreateOptions(uri => {
+            const document = vscode.workspace.textDocuments.find(d => d.uri.toString() === uri.toString());
+            if (document) {
+                validate(document);
+            };
+        }),
         vscode.workspace.onDidChangeTextDocument(event => validateLater(event.document)),
         vscode.workspace.onDidCloseTextDocument(document => {
             const key = document.uri.toString();
@@ -88,7 +99,18 @@ function buildDiagnostics(document: vscode.TextDocument): vscode.Diagnostic[] {
         return diagnostic;
     });
 
-    return [...subfileDiagnostics, ...findConditionProblems(lines).map(problem => {
+    const menuDiagnostics = getMenuMemberKind(document.uri.path) !== 'dds' ? [] :
+        findMenuPlacementProblems(lines, getMenuCreateOptions(document.uri)).map(problem => {
+            // The row and column, positions 39-44
+            const lineLength = lines[problem.lineIndex].length;
+            const range = new vscode.Range(problem.lineIndex, Math.min(38, lineLength), problem.lineIndex, Math.min(44, lineLength));
+            const diagnostic = new vscode.Diagnostic(range, problem.message, vscode.DiagnosticSeverity.Warning);
+            diagnostic.source = DIAGNOSTIC_SOURCE;
+            diagnostic.code = MENU_PLACEMENT_CODE;
+            return diagnostic;
+        });
+
+    return [...subfileDiagnostics, ...menuDiagnostics, ...findConditionProblems(lines).map(problem => {
         const lineLength = lines[problem.lineIndex].length;
         const range = new vscode.Range(
             problem.lineIndex, Math.min(problem.startCol, lineLength),

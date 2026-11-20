@@ -471,3 +471,55 @@ export async function resolveUserEditDescriptionsFromSystem(): Promise<UserEditD
     };
     return descriptions;
 };
+
+/** Where a Code for i member URI points: member:/[ASP/]LIBRARY/FILE/MEMBER.TYPE */
+export interface SourceMemberLocation {
+    library: string;
+    file: string;
+    member: string;
+    type: string;
+};
+
+/** Reads library, source file, member and type from a Code for i member URI's path. */
+export function parseSourceMemberPath(memberPath: string): SourceMemberLocation | undefined {
+    const parts = memberPath.split('/').filter(part => part !== '');
+    if (parts.length < 3) {
+        return undefined;
+    };
+    const [library, file, memberWithType] = parts.slice(-3);
+    const dot = memberWithType.lastIndexOf('.');
+    if (dot <= 0) {
+        return undefined;
+    };
+    return {
+        library: library.toUpperCase(),
+        file: file.toUpperCase(),
+        member: memberWithType.substring(0, dot).toUpperCase(),
+        type: memberWithType.substring(dot + 1).toUpperCase()
+    };
+};
+
+/**
+ * Adds a source member on the connected IBM i (ADDPFM), e.g. a menu's commands member.
+ * Throws with the system's message if there is no connection or the command fails.
+ */
+export async function addSourceMember(location: SourceMemberLocation, text: string): Promise<void> {
+    const connection = getIBMiConnection();
+    if (!connection) {
+        throw new Error('No active IBM i connection. Connect via the Code for i extension first.');
+    };
+    if (!connection.sendCommand) {
+        throw new Error('The connected Code for i version cannot run the ADDPFM command.');
+    };
+    const names = [location.library, location.file, location.member, location.type];
+    if (names.some(name => !/^[A-Z0-9_$#@]{1,10}$/.test(name))) {
+        throw new Error(`Not a valid IBM i name: ${names.join('/')}`);
+    };
+    const safeText = text.replace(/["'`\\]/g, '').substring(0, 50);
+    const command = `ADDPFM FILE(${location.library}/${location.file}) MBR(${location.member}) SRCTYPE(${location.type}) TEXT('${safeText}')`;
+    // Inside the shell's double quotes, $ (valid in IBM i names) must not be read as a variable
+    const result = await connection.sendCommand({ command: `system "${command.replace(/\$/g, '\\$')}"` });
+    if (result.code !== 0) {
+        throw new Error((result.stderr || result.stdout || `ADDPFM ended with code ${result.code}`).trim());
+    };
+};

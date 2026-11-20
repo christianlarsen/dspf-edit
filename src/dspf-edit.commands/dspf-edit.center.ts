@@ -9,6 +9,7 @@ import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { getRecordSize, getAvailableDisplayFormats, SYSTEM_FIELD_PLACEHOLDER } from '../dspf-edit.model/dspf-edit.model';
 import { resolveRecordSizeForFormat } from '../dspf-edit.parser/dspf-edit.parser';
 import { checkForEditorAndDocument, applyWorkspaceEdit, pickDisplayFormat } from '../dspf-edit.utils/dspf-edit.helper';
+import { formatRowField } from '../dspf-edit.utils/dspf-edit.menu';
 
 // POSITION CENTERING FUNCTIONALITY
 
@@ -260,7 +261,7 @@ async function applyPositionChange(
  */
 function createUpdatedLine(originalLine: string, newRow: number, newCol: number): string {
     // Format row and column with proper padding
-    const formattedRow = String(newRow).padStart(3, ' ');
+    const formattedRow = formatRowField(newRow, originalLine.substring(38, 41));
     const formattedCol = String(newCol).padStart(3, ' ');
 
     // DDS format: positions 38-40 for row, 41-43 for column

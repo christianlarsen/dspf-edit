@@ -9,6 +9,7 @@ import * as path from 'path';
 import { DdsElement, DdsGroup, DdsIndicator, groupIndicatorsByCondition } from '../dspf-edit.model/dspf-edit.model';
 import { describeDdsField, describeDdsConstant, describeDdsRecord, describeDdsFile, describeReferenceSource, formatDdsIndicators, formatIndicatorCondition } from '../dspf-edit.utils/dspf-edit.helper';
 import { ExtensionState } from '../dspf-edit.states/state';
+import { getMenuMemberKind } from '../dspf-edit.utils/dspf-edit.menu';
 import { getResolvedRef, getPendingReferencedFields } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
 import { moveRecordInSource } from '../dspf-edit.commands/dspf-edit.move-record';
 
@@ -558,7 +559,12 @@ export class DdsTreeProvider implements vscode.TreeDataProvider<DdsNode>, vscode
 		const file = elements.find(e => e.kind === 'file');
 		const editor = ExtensionState.lastDdsEditor || vscode.window.activeTextEditor;
 		const fileName = editor ? path.basename(editor.document.fileName) : 'Unknown';
-		const fileNode = file ? new DdsNode(`File (${fileName})`, this.hasVisibleChildren(file) ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None, file) : undefined;
+		// A menu image (MNUDDS) says so, so it isn't taken for a plain display file
+		const isMenu = !!editor && getMenuMemberKind(editor.document.uri.path) === 'dds';
+		const fileNode = file ? new DdsNode(`${isMenu ? 'Menu' : 'File'} (${fileName})`, this.hasVisibleChildren(file) ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None, file) : undefined;
+		if (fileNode && isMenu) {
+			fileNode.iconPath = new vscode.ThemeIcon('list-ordered');
+		};
 
 		const visibleRecords = elements.filter(e => e.kind === 'record' && this.isVisibleRecord(e.name));
 

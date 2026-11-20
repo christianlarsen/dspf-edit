@@ -9,6 +9,7 @@ import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fileSizeAttributes, fieldsPerRecords, getRecordSize, getSubfileMinDetailRow } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 import { extractMultiLineConstant, splitConstantValueAndKeywords } from '../dspf-edit.parser/dspf-edit.parser';
+import { menuPlacementRefusal } from './dspf-edit.menu-members';
 
 // TYPE DEFINITIONS
 
@@ -165,6 +166,13 @@ async function handleAddConstantCommand(node?: DdsNode): Promise<void> {
         // Get constant properties from user
         const constantInfo = await getNewConstantInfo(editor, node);
         if (!constantInfo) return;
+
+        // On a menu, nothing goes on the rows the created menu keeps for itself
+        const menuRefusal = menuPlacementRefusal(editor.document, undefined, constantInfo.row, constantInfo.column);
+        if (menuRefusal) {
+            vscode.window.showWarningMessage(menuRefusal);
+            return;
+        };
 
         // Apply the new constant
         await insertNewConstant(editor, constantInfo);

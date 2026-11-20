@@ -10,6 +10,7 @@ import { generateStructure } from '../dspf-edit.commands/dspf-edit.generate-stru
 import { ExtensionState } from '../dspf-edit.states/state';
 import { debounceUpdate, generateIfDds, clearReadOnlyCache } from '../dspf-edit.utils/dspf-edit.helper';
 import { clearResolvedRef } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
+import { updateMenuTreeMessage } from '../dspf-edit.commands/dspf-edit.menu-members';
 
 export function initializeDocumentListeners(
     context: vscode.ExtensionContext,
@@ -23,6 +24,7 @@ export function initializeDocumentListeners(
         generateStructure(treeProvider);
         debounceUpdate(treeProvider, activeDoc);
     };
+    updateMenuTreeMessage(treeProvider, activeDoc);
 
     context.subscriptions.push(
         vscode.workspace.onDidChangeTextDocument(event => {
@@ -39,7 +41,8 @@ export function initializeDocumentListeners(
     context.subscriptions.push(
         vscode.window.onDidChangeActiveTextEditor(editor => {
             generateIfDds(treeProvider, editor?.document, vscode.window.activeTextEditor);
-            
+            updateMenuTreeMessage(treeProvider, editor?.document);
+
         })
     );
     context.subscriptions.push(

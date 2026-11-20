@@ -12,6 +12,7 @@ import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
 import { parseDocument, pickForActiveFormat, getContinuationChar, joinContinuedKeywordParts } from '../dspf-edit.parser/dspf-edit.parser';
 import { ExtensionState } from '../dspf-edit.states/state';
 import { getResolvedRef, parseRefKeyword, RefKeywordTarget } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
+import { MENU_DDS_EXTENSION, getMenuMemberKind, findCmdPromptConstantLine } from './dspf-edit.menu';
 
 
 // FIELD DESCRIPTION FUNCTIONS
@@ -183,8 +184,26 @@ export function formatDdsAttributes(attributes?: DdsAttribute[]): string {
  * @returns True if the document has a DDS file extension
  */
 export function isDdsFile(document: vscode.TextDocument): boolean {
-    const ddsExtensions = ['.dspf'];
+    // A menu image (MNUDDS) is a display file too, so it gets the same tree and preview
+    const ddsExtensions = ['.dspf', MENU_DDS_EXTENSION];
     return ddsExtensions.some(ext => document.fileName.toLowerCase().endsWith(ext));
+};
+
+/** True if the document is a menu image (MNUDDS member). */
+export function isMenuImageDocument(document: vscode.TextDocument): boolean {
+    return getMenuMemberKind(document.uri.path) === 'dds';
+};
+
+/**
+ * True if the given line is the menu's command line prompt constant (the one after SDA's
+ * "A* CMDPROMPT" comment), which the menu needs and must not be deleted.
+ */
+export function isMenuCmdPromptLine(document: vscode.TextDocument, lineIndex: number): boolean {
+    if (!isMenuImageDocument(document)) {
+        return false;
+    };
+    const lines = document.getText().split(/\r?\n/);
+    return findCmdPromptConstantLine(lines) === lineIndex;
 };
 
 // UTILITY FUNCTIONS
