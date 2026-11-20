@@ -15,7 +15,8 @@ import { DdsTreeProvider } from '../dspf-edit.providers/dspf-edit.providers';
 import { ExtensionState } from '../dspf-edit.states/state';
 import {
     getMenuMemberKind, getMenuMemberPair, parseMenuCommands, MenuCommands, MenuCreateOptions, DEFAULT_MENU_CREATE_OPTIONS,
-    buildNewMenuSource, defaultNewMenuTexts, MENU_PROMPT_MAX_LENGTH
+    buildNewMenuSource, defaultNewMenuTexts, MENU_PROMPT_MAX_LENGTH, MENU_NAME_MAX_LENGTH,
+    findCmdPromptConstantLine, menuPlacementProblem
 } from '../dspf-edit.utils/dspf-edit.menu';
 
 /** Member name (no extension) of a path, as written in it. */
@@ -105,8 +106,9 @@ export async function createMenu(document: vscode.TextDocument): Promise<void> {
         return;
     };
     const menuName = memberName(document.uri.path).toUpperCase();
-    if (!/^[A-Z0-9_$#@]{1,10}$/.test(menuName)) {
-        vscode.window.showWarningMessage(`${menuName} can't be a menu name: up to 10 letters, digits, _ $ # @.`);
+    // Up to 8 characters: the commands member adds QQ, and a member name is up to 10
+    if (!new RegExp(`^[A-Z0-9_$#@]{1,${MENU_NAME_MAX_LENGTH}}$`).test(menuName)) {
+        vscode.window.showWarningMessage(`${menuName} can't be a menu name: up to ${MENU_NAME_MAX_LENGTH} letters, digits, _ $ # @ (its commands member adds QQ).`);
         return;
     };
 
@@ -217,10 +219,31 @@ export function getMenuCreateOptions(menuImage: vscode.Uri): MenuCreateOptions {
     return { ...DEFAULT_MENU_CREATE_OPTIONS, ...storedMenuCreateOptions()[menuImage.toString()] };
 };
 
+const menuCreateOptionsChanged = new vscode.EventEmitter<vscode.Uri>();
+
+/** Fires (with the menu image's URI) when the CRTMNU options chosen for a menu change. */
+export const onDidChangeMenuCreateOptions = menuCreateOptionsChanged.event;
+
 /** Remembers the CRTMNU options chosen for the menu whose image is the given URI. */
 export async function setMenuCreateOptions(menuImage: vscode.Uri, options: MenuCreateOptions): Promise<void> {
     const all = { ...storedMenuCreateOptions(), [menuImage.toString()]: options };
     await ExtensionState.context.globalState.update(MENU_CREATE_OPTIONS_KEY, all);
+    menuCreateOptionsChanged.fire(menuImage);
+};
+
+// WHERE A MENU'S TEXT CAN GO
+
+/**
+ * On a menu image, why a field or constant can't be placed at this row and column (see
+ * menuPlacementProblem), or undefined if it can, or if the document isn't a menu image.
+ * @param lineIndex - The element's source line, if it already exists (to know if it's the prompt)
+ */
+export function menuPlacementRefusal(document: vscode.TextDocument, lineIndex: number | undefined, row: number, column: number): string | undefined {
+    if (getMenuMemberKind(document.uri.path) !== 'dds') {
+        return undefined;
+    };
+    const isPrompt = lineIndex !== undefined && findCmdPromptConstantLine(document.getText().split(/\r?\n/)) === lineIndex;
+    return menuPlacementProblem(row, column, isPrompt, getMenuCreateOptions(document.uri));
 };
 
 // MENU COMMANDS FOR THE PREVIEW
@@ -279,6 +302,7 @@ function refreshMenuCommandsOnEdit(document: vscode.TextDocument): void {
 export function registerMenuMemberCommands(context: vscode.ExtensionContext): void {
     context.subscriptions.push(
         menuCommandsChanged,
+        menuCreateOptionsChanged,
         vscode.workspace.onDidChangeTextDocument(event => {
             refreshMenuCommandsOnEdit(event.document);
             // Typed into (or emptied) by hand: "Create Menu" comes and goes with it

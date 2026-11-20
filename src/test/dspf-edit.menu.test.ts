@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import { parseDocument } from '../dspf-edit.parser/dspf-edit.parser';
-import { getMenuMemberKind, getMenuMemberPair, isCmdPromptComment, findCmdPromptConstantLine, formatRowField, parseMenuCommands, menuOptionOfConstant, menuBottomLayout, formatMenuCommandRecords, menuCommandEdit, menuCommandProblem, normalizeMenuCommand, buildNewMenuSource, formatMenuConstantLines, menuTitleColumn } from '../dspf-edit.utils/dspf-edit.menu';
+import { getMenuMemberKind, getMenuMemberPair, isCmdPromptComment, findCmdPromptConstantLine, formatRowField, parseMenuCommands, menuOptionOfConstant, menuBottomLayout, formatMenuCommandRecords, menuCommandEdit, menuCommandProblem, normalizeMenuCommand, buildNewMenuSource, formatMenuConstantLines, menuTitleColumn, menuLastTextRow, menuLastPromptRow, menuPlacementProblem, defaultNewMenuTexts } from '../dspf-edit.utils/dspf-edit.menu';
+import { findMenuPlacementProblems } from '../dspf-edit.validation/dspf-edit.menu-placement';
 
 suite('Menu members (MNUDDS + MNUCMD)', () => {
     test('recognizes both member types, ignoring case', () => {
@@ -100,23 +101,66 @@ suite('Menu commands member (MNUCMD)', () => {
     });
 });
 
-suite('Bottom of the created menu (CRTMNU CMDLIN)', () => {
+suite('Bottom of the created menu (CRTMNU CMDLIN and DSPKEY)', () => {
     const rowsOf = (kind: string, parts: ReturnType<typeof menuBottomLayout>) =>
         parts.filter(p => p.kind === kind).map(p => [p.row, p.col, p.length]);
 
-    test('*LONG: "===>" under the prompt and 153 bytes over two lines', () => {
-        const parts = menuBottomLayout(19, 2, { commandLine: '*LONG' });
-        assert.deepStrictEqual(rowsOf('arrow', parts), [[20, 2, 4]]);
-        assert.deepStrictEqual(rowsOf('entry', parts), [[20, 7, 74], [21, 2, 79]]);
+    test('*LONG: "===>" on row 22 (20 with keys), 153 bytes: columns 7-80 and 1-79', () => {
+        const parts = menuBottomLayout({ commandLine: '*LONG' });
+        assert.deepStrictEqual(rowsOf('arrow', parts), [[22, 2, 4]]);
+        assert.deepStrictEqual(rowsOf('entry', parts), [[22, 7, 74], [23, 1, 79]]);
+        const withKeys = menuBottomLayout({ commandLine: '*LONG', functionKeys: true });
+        assert.deepStrictEqual(rowsOf('arrow', withKeys), [[20, 2, 4]]);
+        assert.deepStrictEqual(rowsOf('entry', withKeys).map(r => r[0]), [20, 21]);
     });
 
-    test('*SHORT: one line of 73 bytes; *NONE: a 4-byte option line', () => {
-        assert.deepStrictEqual(rowsOf('entry', menuBottomLayout(19, 2, { commandLine: '*SHORT' })), [[20, 7, 73]]);
-        assert.deepStrictEqual(rowsOf('entry', menuBottomLayout(19, 2, { commandLine: '*NONE' })), [[20, 7, 4]]);
+    test('*SHORT: "===>" on row 23 (21 with keys), 73 bytes from column 7', () => {
+        assert.deepStrictEqual(rowsOf('entry', menuBottomLayout({ commandLine: '*SHORT' })), [[23, 7, 73]]);
+        assert.deepStrictEqual(rowsOf('arrow', menuBottomLayout({ commandLine: '*SHORT', functionKeys: true })), [[21, 2, 4]]);
     });
 
-    test('the command line never goes past the last row', () => {
-        assert.deepStrictEqual(rowsOf('entry', menuBottomLayout(23, 2, { commandLine: '*LONG' })).map(r => r[0]), [24]);
+    test('*NONE: no "===>", a 4-byte option field on row 22 (20 with keys)', () => {
+        const parts = menuBottomLayout({ commandLine: '*NONE' });
+        assert.deepStrictEqual(rowsOf('arrow', parts), []);
+        assert.deepStrictEqual(rowsOf('entry', parts), [[22, 7, 4]]);
+        assert.deepStrictEqual(rowsOf('entry', menuBottomLayout({ commandLine: '*NONE', functionKeys: true })), [[20, 7, 4]]);
+    });
+
+    test('the function keys go on rows 22-23, without F4 and F9 when there is no command line', () => {
+        const keys = (commandLine: '*LONG' | '*NONE') => menuBottomLayout({ commandLine, functionKeys: true })
+            .filter(p => p.kind === 'keys').map(p => [p.row, p.text]);
+        assert.deepStrictEqual(keys('*LONG'), [
+            [22, 'F3=Exit   F4=Prompt   F9=Retrieve   F12=Cancel'],
+            [23, 'F13=Information Assistant  F16=System main menu']
+        ]);
+        assert.deepStrictEqual(keys('*NONE')[0], [22, 'F3=Exit   F12=Cancel']);
+    });
+});
+
+suite('Where a menu\'s text can go', () => {
+    const longNoKeys = { commandLine: '*LONG' as const };
+    const longKeys = { commandLine: '*LONG' as const, functionKeys: true };
+
+    test('text goes on rows 1-20, or 1-19 when the command line goes up to row 20', () => {
+        assert.strictEqual(menuLastTextRow(longNoKeys), 20);
+        assert.strictEqual(menuLastTextRow(longKeys), 19);
+        assert.strictEqual(menuLastTextRow({ commandLine: '*SHORT', functionKeys: true }), 20);
+        assert.strictEqual(menuLastTextRow({ commandLine: '*NONE', functionKeys: true }), 19);
+        assert.strictEqual(menuPlacementProblem(20, 2, false, longNoKeys), undefined);
+        assert.match(menuPlacementProblem(21, 2, false, longNoKeys) ?? '', /rows 1-20/);
+        assert.match(menuPlacementProblem(20, 2, false, longKeys) ?? '', /rows 1-19/);
+    });
+
+    test('the prompt goes up to row 21, above the command line', () => {
+        assert.strictEqual(menuPlacementProblem(21, 2, true, longNoKeys), undefined);
+        assert.match(menuPlacementProblem(22, 2, true, longNoKeys) ?? '', /rows 1-21/);
+        assert.match(menuPlacementProblem(21, 2, true, longKeys) ?? '', /rows 1-19, above the command line and the function keys/);
+        assert.strictEqual(menuLastPromptRow({ commandLine: '*SHORT', functionKeys: true }), 20);
+    });
+
+    test('row 1, column 1 is reserved', () => {
+        assert.match(menuPlacementProblem(1, 1, false, longNoKeys) ?? '', /reserved/);
+        assert.strictEqual(menuPlacementProblem(1, 2, false, longNoKeys), undefined);
     });
 });
 
@@ -205,5 +249,20 @@ suite('New menu (SDA default menu image)', () => {
             "     A                                      pciones'"
         ]);
         assert.deepStrictEqual(formatMenuConstantLines('1', 2, "Menu d'Alex"), ["     A                                  1  2'Menu d''Alex'"]);
+    });
+});
+
+suite('Menu text on reserved rows (source check)', () => {
+    const source = buildNewMenuSource('menu', defaultNewMenuTexts('menu'));
+
+    test('a new menu has nothing out of place, whatever the options', () => {
+        assert.deepStrictEqual(findMenuPlacementProblems(source, { commandLine: '*LONG' }), []);
+    });
+
+    test('text on row 22, or the prompt below the command line, is reported', () => {
+        const withText = [...source, "     A                                 22  2'Debajo'"];
+        assert.deepStrictEqual(findMenuPlacementProblems(withText, { commandLine: '*LONG' }).map(p => p.lineIndex), [withText.length - 1]);
+        const promptLine = findCmdPromptConstantLine(source) ?? -1;
+        assert.deepStrictEqual(findMenuPlacementProblems(source, { commandLine: '*LONG', functionKeys: true }).map(p => p.lineIndex), [promptLine]);
     });
 });

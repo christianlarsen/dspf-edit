@@ -32,8 +32,8 @@ import { copyFieldToPosition } from '../dspf-edit.commands/dspf-edit.copy-field'
 import { copyConstantToPosition } from '../dspf-edit.commands/dspf-edit.copy-constant';
 import { copyFormat, pasteFormat, getCopiedFormat } from '../dspf-edit.commands/dspf-edit.copy-format';
 import { HorizontalAlignment, WindowAlignment, WINDOW_ALIGNMENTS, computeAlignedColumns, computeWindowAlignedPosition } from '../dspf-edit.utils/dspf-edit.alignment';
-import { formatRowField, menuOptionOfConstant, findCmdPromptConstantLine, menuBottomLayout } from '../dspf-edit.utils/dspf-edit.menu';
-import { getMenuCommandsFor, getMenuCreateOptions, setMenuCreateOptions } from '../dspf-edit.commands/dspf-edit.menu-members';
+import { formatRowField, menuOptionOfConstant, findCmdPromptConstantLine, menuBottomLayout, menuLastTextRow } from '../dspf-edit.utils/dspf-edit.menu';
+import { getMenuCommandsFor, getMenuCreateOptions, setMenuCreateOptions, menuPlacementRefusal } from '../dspf-edit.commands/dspf-edit.menu-members';
 
 /**
  * Item sent to the webview for rendering (a single field or constant on the screen grid).
@@ -1774,7 +1774,9 @@ export class RecordPreviewPanel {
             subfileExpanded: this.resolveSubfileExpanded(),
             subfileToggleEnabled: this.canToggleSubfileFold(),
             isMenu: this.isMenu(),
-            menuOptions: this.isMenu() && ExtensionState.lastDdsDocument ? getMenuCreateOptions(ExtensionState.lastDdsDocument.uri) : null
+            menuOptions: this.isMenu() && ExtensionState.lastDdsDocument ? getMenuCreateOptions(ExtensionState.lastDdsDocument.uri) : null,
+            // Below this row (and on row 1, column 1) a menu's text can't go: drawn hatched
+            menuTextLastRow: this.isMenu() && ExtensionState.lastDdsDocument ? menuLastTextRow(getMenuCreateOptions(ExtensionState.lastDdsDocument.uri)) : null
         });
     };
 
@@ -2464,33 +2466,33 @@ export class RecordPreviewPanel {
     };
 
     /**
-     * On a menu image, what the created menu adds under the prompt constant (the one after SDA's
-     * "A* CMDPROMPT" comment): the "===>" command line, as the CRTMNU CMDLIN chosen in the
-     * preview's toolbar would show it — see menuBottomLayout. It isn't in the source, so it can't
-     * be selected or moved.
-     * @param items - The record's items, to find the prompt constant's place
+     * On a menu image, the command line the created menu adds at the bottom of the display
+     * ("===>"), as the CRTMNU options chosen in the preview's toolbar would show it — see
+     * menuBottomLayout. Its place is fixed: moving the prompt constant doesn't move it. It isn't
+     * in the source, so it can't be selected or moved.
+     * @param items - The record's items, to check the prompt constant is in this record
      */
     private buildMenuBottomItems(items: PreviewItem[]): PreviewItem[] {
         const document = ExtensionState.lastDdsDocument;
+        // Only on a menu image with its "Selection or command" prompt (the record of the menu)
         if (!document || !isMenuImageDocument(document)) {
             return [];
         };
         const promptLine = findCmdPromptConstantLine(document.getText().split(/\r?\n/));
-        const prompt = items.find(item => item.isInteractive && item.lineIndex === promptLine);
-        if (!prompt) {
+        if (!items.some(item => item.isInteractive && item.lineIndex === promptLine)) {
             return [];
         };
 
         const colors = getDdsColorMap();
-        return menuBottomLayout(prompt.row, prompt.col, getMenuCreateOptions(document.uri)).map(part => ({
+        return menuBottomLayout(getMenuCreateOptions(document.uri)).map(part => ({
             kind: 'constant',
-            name: 'Command line',
+            name: part.kind === 'keys' ? 'Function keys' : 'Command line',
             text: part.text,
             row: part.row,
             col: part.col,
             length: part.length,
             lineIndex: -1,
-            color: colors.GRN,
+            color: part.kind === 'keys' ? colors.BLU : colors.GRN,
             highIntensity: false,
             reverseImage: false,
             blink: false,
@@ -2504,6 +2506,25 @@ export class RecordPreviewPanel {
             isInputCapable: false,
             hasDefaultUnderline: false
         }));
+    };
+
+    /**
+     * On a menu image, why any of these placements can't be done (the rows the created menu keeps
+     * for itself, see menuPlacementRefusal); undefined if they all can, or if it isn't a menu.
+     * @param placements - Where each element would go; lineIndex for one that already exists
+     */
+    private menuPlacementRefusalFor(placements: Array<{ lineIndex?: number; row: number; col: number }>): string | undefined {
+        const document = ExtensionState.lastDdsDocument;
+        if (!document || !this.isMenu()) {
+            return undefined;
+        };
+        for (const placement of placements) {
+            const refusal = menuPlacementRefusal(document, placement.lineIndex, placement.row, placement.col);
+            if (refusal) {
+                return refusal;
+            };
+        };
+        return undefined;
     };
 
     /**
@@ -2614,7 +2635,7 @@ export class RecordPreviewPanel {
 
         if (message?.type === 'setMenuOptions' && ExtensionState.lastDdsDocument && this.isMenu()) {
             const commandLine = ['*LONG', '*SHORT', '*NONE'].includes(message.commandLine) ? message.commandLine : '*LONG';
-            await setMenuCreateOptions(ExtensionState.lastDdsDocument.uri, { commandLine });
+            await setMenuCreateOptions(ExtensionState.lastDdsDocument.uri, { commandLine, functionKeys: message.functionKeys === true });
             this.render();
             return;
         };
@@ -2625,6 +2646,14 @@ export class RecordPreviewPanel {
         };
 
         if (message?.type === 'move' && Array.isArray(message.moves)) {
+            // On a menu, nothing goes on the rows the created menu keeps for itself
+            const refusal = this.menuPlacementRefusalFor(message.moves.map((move: { lineIndex: number; newRow: number; newCol: number; rowOffset: number; colOffset: number }) =>
+                ({ lineIndex: move.lineIndex, row: move.newRow - move.rowOffset, col: move.newCol - move.colOffset })));
+            if (refusal) {
+                vscode.window.showWarningMessage(refusal);
+                this.render();
+                return;
+            };
             await this.moveElements(message.moves);
             return;
         };
@@ -2696,6 +2725,11 @@ export class RecordPreviewPanel {
         };
 
         if (message?.type === 'addConstantAt' && typeof message.row === 'number' && typeof message.col === 'number') {
+            const refusal = this.menuPlacementRefusalFor([{ row: message.row, col: message.col }]);
+            if (refusal) {
+                vscode.window.showWarningMessage(refusal);
+                return;
+            };
             await this.addConstantAt(message.row, message.col);
             return;
         };
@@ -2706,6 +2740,11 @@ export class RecordPreviewPanel {
         };
 
         if (message?.type === 'copyElementAt' && typeof message.row === 'number' && typeof message.col === 'number') {
+            const refusal = this.menuPlacementRefusalFor([{ row: message.row, col: message.col }]);
+            if (refusal) {
+                vscode.window.showWarningMessage(refusal);
+                return;
+            };
             await this.copyElementAt(message.row, message.col);
             return;
         };
@@ -3931,6 +3970,10 @@ export class RecordPreviewPanel {
         align-items: center;
         gap: 4px;
     }
+    #menuBar label {
+        display: inline-flex;
+        align-items: center;
+    }
     #formatBar select, #menuBar select {
         background: ${bg};
         color: ${fg};
@@ -4087,6 +4130,7 @@ export class RecordPreviewPanel {
             <option value="*SHORT">Short</option>
             <option value="*NONE">None</option>
         </select>
+        <label title="Display function keys (DSPKEY): the legend at the bottom, with the command line above it"><input type="checkbox" id="menuKeysToggle"> Function keys</label>
     </span>
     <span id="sflpagBar">
         <label>Page rows: </label>
@@ -4144,6 +4188,9 @@ export class RecordPreviewPanel {
     menuCommandsBtn.addEventListener('click', () => vscode.postMessage({ type: 'openMenuCommands' }));
     const menuBar = document.getElementById('menuBar');
     const menuCmdLinSelect = document.getElementById('menuCmdLinSelect');
+    // On a menu, the last row its own text can go on (see drawMenuReservedArea); null otherwise
+    let menuTextLastRow = null;
+    const menuKeysToggle = document.getElementById('menuKeysToggle');
     const gridDotsBtn = document.getElementById('gridDotsBtn');
     const areaSelectBtn = document.getElementById('areaSelectBtn');
     const hiddenBtn = document.getElementById('hiddenBtn');
@@ -4443,6 +4490,35 @@ export class RecordPreviewPanel {
         ctx.restore();
     }
 
+    // On a menu: the rows the created menu keeps for itself (its command line, function keys and
+    // messages; row 21 only for the "Selection or command" prompt) and row 1, column 1, hatched,
+    // since the menu's own text can't go there.
+    function drawMenuReservedArea(size) {
+        if (typeof menuTextLastRow !== 'number') {
+            return;
+        }
+        const hatch = (x, y, w, h) => {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x, y, w, h);
+            ctx.clip();
+            ctx.fillStyle = 'rgba(128, 128, 128, 0.08)';
+            ctx.fillRect(x, y, w, h);
+            ctx.strokeStyle = 'rgba(128, 128, 128, 0.22)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for (let d = -h; d < w; d += 8) {
+                ctx.moveTo(x + d, y + h);
+                ctx.lineTo(x + d + h, y);
+            }
+            ctx.stroke();
+            ctx.restore();
+        };
+        const top = menuTextLastRow * CHAR_H;
+        hatch(0, top, size.cols * CHAR_W, size.rows * CHAR_H - top);
+        hatch(0, 0, CHAR_W, CHAR_H);
+    }
+
     function draw(size, items, backgroundItems, windowFrame, windowTitles, outerFrame) {
         currentItems = items;
         currentBackgroundItems = backgroundItems || [];
@@ -4458,6 +4534,7 @@ export class RecordPreviewPanel {
         ctx.fillStyle = '${bg}';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.textBaseline = 'middle';
+        drawMenuReservedArea(size);
 
         // A "behind" background item (a genuinely different record positioned behind the window)
         // is drawn before the window's own opaque frame fill, so the frame physically covers it,
@@ -5654,9 +5731,11 @@ export class RecordPreviewPanel {
         draw(currentSize, currentItems, currentBackgroundItems, currentWindowFrame, currentWindowTitles, currentOuterFrame);
     });
 
-    menuCmdLinSelect.addEventListener('change', () => {
-        vscode.postMessage({ type: 'setMenuOptions', commandLine: menuCmdLinSelect.value });
-    });
+    function postMenuOptions() {
+        vscode.postMessage({ type: 'setMenuOptions', commandLine: menuCmdLinSelect.value, functionKeys: menuKeysToggle.checked });
+    }
+    menuCmdLinSelect.addEventListener('change', postMenuOptions);
+    menuKeysToggle.addEventListener('change', postMenuOptions);
 
     formatSelect.addEventListener('change', () => {
         vscode.postMessage({ type: 'setDisplayFormat', name: formatSelect.value || null });
@@ -5857,10 +5936,12 @@ export class RecordPreviewPanel {
             // A menu image is always 24x80 (DSPMOD(*DS3)) and only takes constants, as in SDA
             formatBar.style.display = (availableFormats.length > 0 && !message.isMenu) ? 'inline-flex' : 'none';
             addFieldBtn.style.display = message.isMenu ? 'none' : '';
+            menuTextLastRow = typeof message.menuTextLastRow === 'number' ? message.menuTextLastRow : null;
             menuCommandsBtn.style.display = message.isMenu ? '' : 'none';
             menuBar.style.display = message.menuOptions ? 'inline-flex' : 'none';
             if (message.menuOptions) {
                 menuCmdLinSelect.value = message.menuOptions.commandLine;
+                menuKeysToggle.checked = Boolean(message.menuOptions.functionKeys);
             }
             if (availableFormats.length > 0) {
                 rebuildFormatOptions(availableFormats, message.activeDisplayFormat || '');

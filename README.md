@@ -147,8 +147,9 @@ The menus created with `CRTMNU TYPE(*DSPF)`: the menu image (`MNUDDS` member) an
   - Only what a menu takes is offered: constants, with their colors and attributes. No fields, indicators, records or windows.
 
 **The preview**
-  - The command line (`===>`) under the "Selection or command" prompt, as `CRTMNU` adds it: **Long**, **Short** or **None** (`CMDLIN`), chosen in the toolbar and remembered for each menu.
+  - The command line (`===>`) as `CRTMNU` adds it: **Long**, **Short** or **None** (`CMDLIN`), with or without **Function keys** (`DSPKEY`), chosen in the toolbar and remembered for each menu.
   - Hovering an option's number shows the command it runs.
+  - The rows the created menu keeps for itself are hatched, and text can't be moved or added there; text already there is flagged in the **Problems** panel.
 
 **Menu Commands**
   - "☰ Commands" in the preview, or right-click in the tree: every option (01-99) with its command, written straight into the `MENUQQ` member as STRSDA writes it, long commands included.
@@ -222,7 +223,7 @@ See the full changelog [here](./CHANGELOG.md).
 ### Latest
 **1.20.0** - 2026-11-20
 - Added: menus (`MNUDDS` + `MNUCMD`, [#113](https://github.com/christianlarsen/dspf-edit/issues/113)). A menu image opens in the tree and the preview as a menu, offering only what a menu takes, and opening its `MENUQQ` member opens it too.
-- Added: the preview of a menu shows its command line (**Long**, **Short** or **None**, as `CRTMNU`'s `CMDLIN`), and each option's command when hovering its number.
+- Added: the preview of a menu shows its command line and function keys as `CRTMNU` adds them (`CMDLIN`, `DSPKEY`), and each option's command when hovering its number.
 - Added: **Menu Commands** sets each option's command, written into the `MENUQQ` member as STRSDA writes it, and creates the member when it's missing.
 - Added: **Create Menu** writes a new menu in an empty `MNUDDS` member.
 - Fixed: **Sort Elements** dropped comment lines between the elements it sorted.

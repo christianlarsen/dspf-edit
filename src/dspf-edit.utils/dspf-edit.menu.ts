@@ -190,10 +190,7 @@ export function parseMenuCommands(lines: readonly string[]): MenuCommands {
 
 /** First record: 4-digit option, ' ' or '+', then up to 75 characters of command. */
 const FIRST_RECORD_COMMAND_LENGTH = MENU_COMMANDS_RECORD_LENGTH - 5;
-/**
- * Longest command written: the first record plus one continuation line, which is the most seen
- * in SDA's members (how SDA would continue a second time isn't known, so it isn't written).
- */
+/** Longest menu command: the first record plus one continuation line (155 characters). */
 export const MENU_COMMAND_MAX_LENGTH = FIRST_RECORD_COMMAND_LENGTH + MENU_COMMANDS_RECORD_LENGTH;
 
 /** A command as typed (line breaks from a text area become blanks), ready to be written. */
@@ -280,58 +277,127 @@ export function menuOptionOfConstant(text: string): number | undefined {
 
 // BOTTOM OF THE MENU (added by CRTMNU, not in the source)
 
-// Under the prompt constant ("Selection or command") the created menu adds a command line, as
-// chosen with CRTMNU's CMDLIN parameter, which the source doesn't keep:
-//     *LONG (default): 153-byte command line, two lines
-//     *SHORT: 73-byte command line, one line
-//     *NONE: no command line, just a 4-byte option line
-// The "===>" goes right under the prompt, with the entry area 5 columns to its right.
-// (DSPKEY(*YES), the function key legend, isn't previewed: its text depends on the system's language.)
+// The created menu adds a command line at the bottom of the display, as chosen with CRTMNU's
+// parameters, which the source doesn't keep. Its place is fixed, whatever row the "Selection or
+// command" prompt constant is on (the prompt is just a constant):
+//
+//     CMDLIN    DSPKEY(*NO)                          DSPKEY(*YES), keys on rows 22-23
+//     *LONG     "===>" row 22; entry 22 (7-80) + 23 (1-79)   "===>" row 20; entry 20 + 21
+//     *SHORT    "===>" row 23; entry 7-79 (73 bytes)          "===>" row 21
+//     *NONE     no "===>"; 4-byte option field, row 22 col 7  row 20 col 7
+//
+// With *NONE the key legend has no F4=Prompt or F9=Retrieve, as there is no command line.
 
 export type MenuCommandLine = '*LONG' | '*SHORT' | '*NONE';
 
 export interface MenuCreateOptions {
     /** CRTMNU CMDLIN */
     commandLine: MenuCommandLine;
+    /** CRTMNU DSPKEY(*YES): the function keys take rows 22-23, so the command line goes above them. */
+    functionKeys?: boolean;
 };
 
-/** CRTMNU's own default: CMDLIN(*LONG). */
-export const DEFAULT_MENU_CREATE_OPTIONS: MenuCreateOptions = { commandLine: '*LONG' };
+/** CRTMNU's own defaults: CMDLIN(*LONG) DSPKEY(*NO). */
+export const DEFAULT_MENU_CREATE_OPTIONS: MenuCreateOptions = { commandLine: '*LONG', functionKeys: false };
 
-const MENU_SCREEN_ROWS = 24;
 const MENU_SCREEN_COLS = 80;
+const MENU_ARROW_COLUMN = 2;
+const MENU_ENTRY_COLUMN = 7;
+const MENU_FUNCTION_KEY_ROWS = [22, 23];
 const COMMAND_LINE_LENGTH: Record<MenuCommandLine, number> = { '*LONG': 153, '*SHORT': 73, '*NONE': 4 };
 
+/** The function key legend of a created menu (an English system's text), per command line. */
+export function menuFunctionKeyLegend(commandLine: MenuCommandLine): string[] {
+    return [
+        commandLine === '*NONE' ? 'F3=Exit   F12=Cancel' : 'F3=Exit   F4=Prompt   F9=Retrieve   F12=Cancel',
+        'F13=Information Assistant  F16=System main menu'
+    ];
+};
+
 export interface MenuBottomPart {
-    /** "===>", or the entry area (drawn underlined). */
-    kind: 'arrow' | 'entry';
+    /** "===>", the entry area (drawn underlined), or a line of the function key legend. */
+    kind: 'arrow' | 'entry' | 'keys';
     row: number;
     col: number;
     length: number;
     text: string;
 };
 
-/** What the created menu shows under its prompt constant (at promptRow/promptCol), for the given options. */
-export function menuBottomLayout(promptRow: number, promptCol: number, options: MenuCreateOptions): MenuBottomPart[] {
+/** Where the created menu shows its command line (and function keys), for the given CRTMNU options. */
+export function menuBottomLayout(options: MenuCreateOptions): MenuBottomPart[] {
+    const keys = options.functionKeys === true;
+    const lastRow = keys ? 21 : 23;
+    const firstRow = options.commandLine === '*SHORT' ? lastRow : lastRow - 1;
     const parts: MenuBottomPart[] = [];
-    const arrowRow = promptRow + 1;
-    if (arrowRow <= MENU_SCREEN_ROWS) {
-        parts.push({ kind: 'arrow', row: arrowRow, col: promptCol, length: 4, text: '===>' });
-
-        // The entry area starts after "===> " and wraps onto the next line from column 2
-        let remaining = COMMAND_LINE_LENGTH[options.commandLine];
-        let row = arrowRow;
-        let col = promptCol + 5;
-        while (remaining > 0 && row <= MENU_SCREEN_ROWS) {
-            const length = Math.min(remaining, MENU_SCREEN_COLS - col + 1);
-            parts.push({ kind: 'entry', row, col, length, text: '' });
-            remaining -= length;
-            row++;
-            col = 2;
-        };
+    if (options.commandLine !== '*NONE') {
+        parts.push({ kind: 'arrow', row: firstRow, col: MENU_ARROW_COLUMN, length: 4, text: '===>' });
     };
 
+    // The entry area starts at column 7 and a long one goes on in the next line from column 1
+    let remaining = COMMAND_LINE_LENGTH[options.commandLine];
+    let row = firstRow;
+    let col = MENU_ENTRY_COLUMN;
+    while (remaining > 0 && row <= lastRow) {
+        const length = Math.min(remaining, MENU_SCREEN_COLS - col + 1);
+        parts.push({ kind: 'entry', row, col, length, text: '' });
+        remaining -= length;
+        row++;
+        col = 1;
+    };
+
+    if (keys) {
+        menuFunctionKeyLegend(options.commandLine).forEach((text, index) => {
+            parts.push({ kind: 'keys', row: MENU_FUNCTION_KEY_ROWS[index], col: MENU_ARROW_COLUMN, length: text.length, text });
+        });
+    };
     return parts;
+};
+
+// WHERE A MENU'S TEXT CAN GO
+
+// The menu's own text goes on rows 1-20, as in SDA (row 21 only takes the "Selection or command"
+// prompt, rows 22-23 belong to the command line or the function keys, and row 24 to messages), and
+// above whatever the created menu shows at the bottom for the options chosen (see menuBottomLayout):
+// rows 1-19 when the command line goes up to row 20. Row 1, column 1 is SDA's attribute position.
+// The prompt can go on any row up to 21, as long as it's above the command line.
+
+const MENU_LAST_BODY_ROW = 20;
+const MENU_LAST_PROMPT_ROW = 21;
+
+/** First row the created menu uses at the bottom (command line, or function keys) for these options. */
+function firstBottomRow(options: MenuCreateOptions): number {
+    return Math.min(...menuBottomLayout(options).map(part => part.row));
+};
+
+/** Last row the menu's own text (any constant but the prompt) can go on. */
+export function menuLastTextRow(options: MenuCreateOptions): number {
+    return Math.min(MENU_LAST_BODY_ROW, firstBottomRow(options) - 1);
+};
+
+/** Last row the "Selection or command" prompt can go on. */
+export function menuLastPromptRow(options: MenuCreateOptions): number {
+    return Math.min(MENU_LAST_PROMPT_ROW, firstBottomRow(options) - 1);
+};
+
+/**
+ * Why a menu constant can't go at this row and column, or undefined if it can.
+ * @param isPrompt - It's the "Selection or command" prompt (the constant after "A* CMDPROMPT")
+ */
+export function menuPlacementProblem(row: number, column: number, isPrompt: boolean, options: MenuCreateOptions): string | undefined {
+    if (row === 1 && column <= 1) {
+        return 'Row 1, column 1 is reserved on a menu.';
+    };
+    const what = options.functionKeys ? 'the command line and the function keys' : 'the command line';
+    if (isPrompt) {
+        const lastRow = menuLastPromptRow(options);
+        return row > lastRow
+            ? `The "Selection or command" prompt goes on rows 1-${lastRow}, above ${what}.`
+            : undefined;
+    };
+    const lastRow = menuLastTextRow(options);
+    return row > lastRow
+        ? `On a menu, text goes on rows 1-${lastRow}: row 21 is for the "Selection or command" prompt, and below it go ${what} and the messages.`
+        : undefined;
 };
 
 // NEW MENU (SDA's default menu image)
@@ -344,6 +410,9 @@ export interface NewMenuTexts {
     /** The command line prompt, row 21 (SDA's default: "Selection or command"), up to 38 characters. */
     promptText: string;
 };
+
+/** Longest menu name: its commands member adds QQ, and a member name is up to 10 characters. */
+export const MENU_NAME_MAX_LENGTH = 8;
 
 /** Longest command line prompt SDA allows. */
 export const MENU_PROMPT_MAX_LENGTH = 38;

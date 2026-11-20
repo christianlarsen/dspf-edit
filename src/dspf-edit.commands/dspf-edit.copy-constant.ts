@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fieldsPerRecords, ConstantInfo, DdsConstant, AttributeWithIndicators } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument } from '../dspf-edit.utils/dspf-edit.helper';
+import { menuPlacementRefusal } from './dspf-edit.menu-members';
 
 /**
  * Interface for constant copy configuration
@@ -247,6 +248,13 @@ async function collectCopyConfiguration(editor: vscode.TextEditor, sourceConstan
     // Step 3: Get target position
     const targetPosition = await collectTargetPosition(editor, sourceConstant, targetRecord, newName || 'constant');
     if (!targetPosition) return null;
+
+    // On a menu, nothing goes on the rows the created menu keeps for itself
+    const menuRefusal = menuPlacementRefusal(editor.document, undefined, targetPosition.row, targetPosition.column);
+    if (menuRefusal) {
+        vscode.window.showWarningMessage(menuRefusal);
+        return null;
+    };
 
     return {
         sourceConstant,

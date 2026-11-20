@@ -9,6 +9,7 @@ import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fileSizeAttributes, getAvailableDisplayFormats } from '../dspf-edit.model/dspf-edit.model';
 import { checkForEditorAndDocument, applyWorkspaceEdit } from '../dspf-edit.utils/dspf-edit.helper';
 import { formatRowField } from '../dspf-edit.utils/dspf-edit.menu';
+import { menuPlacementRefusal } from './dspf-edit.menu-members';
 
 // INTERFACES AND TYPES
 
@@ -101,6 +102,13 @@ async function handleChangePositionCommand(node: DdsNode): Promise<void> {
             vscode.window.showInformationMessage(
                 `Element ${element.name} is already at row ${newPosition.row}, column ${newPosition.column}.`
             );
+            return;
+        };
+
+        // On a menu, nothing goes on the rows the created menu keeps for itself
+        const menuRefusal = menuPlacementRefusal(editor.document, element.lineIndex, newPosition.row, newPosition.column);
+        if (menuRefusal) {
+            vscode.window.showWarningMessage(menuRefusal);
             return;
         };
 

@@ -41,6 +41,18 @@ A menu image only takes what STRSDA allows on it: **constants**, with their colo
 
 In the preview, the **+ Field** button and the **Format** selector aren't shown: a menu always shows at 24 x 80.
 
+### Where the menu's text can go
+
+The bottom of the display belongs to the created menu: its [command line](#the-command-line), its function keys and the message line. The menu's own text goes above them:
+
+- **Rows 1 to 20**, or **1 to 19** when the command line goes up to row 20 (**Long** or **None** with **Function keys**).
+- **Row 21** is only for the "Selection or command" [prompt](#the-command-line-prompt), which can go on any row up to 21, as long as it's above the command line.
+- **Row 1, column 1** is reserved.
+
+In the preview, the area where the menu's text can't go is hatched. Dragging a constant there, or placing one with **+ Constant**, **Copy**, **New Constant**, **Copy Constant** or **Change Position**, is refused with a message saying where it can go.
+
+A constant already there, for example written by hand, is underlined as a warning, also listed in the **Problems** panel. Since the area depends on the **Command line** and **Function keys** chosen in the preview, changing them checks the menu again.
+
 ### The menu's size
 
 A new menu, as STRSDA creates it, declares two display sizes, `DSPSIZ(24 80 *DS3 27 132 *DS4)`, and its record has `DSPMOD(*DS3)`. That's on purpose: `DSPMOD` shows the record at 24 x 80, and the DDS reference only allows it when both sizes are declared. The menu is always shown at 24 x 80.
@@ -61,22 +73,28 @@ The comment is how the system finds it, so DSPF-edit takes care of it:
 - STRSDA writes its line with a leading zero (`021`, `019`). Moving it keeps the zero.
 - **Sort Elements** keeps the comment right above it. (Sorting no longer drops comment lines between elements of any display file.)
 - The text is up to 38 characters, padded with blanks.
+- It's only a text: it can go on any row. The command line itself doesn't follow it; see [The command line](#the-command-line).
 
 ## The preview of a menu
 
 ### The command line
 
-Under the prompt, the created menu shows a command line, `===>`, and the preview draws it there. It isn't in the source: it comes from the `CMDLIN` parameter of `CRTMNU`. Choose it in the preview's toolbar, **Command line**:
+At the bottom of the display, the created menu shows a command line, `===>`, and the preview draws it there. It isn't in the source: it comes from two parameters of `CRTMNU`, chosen in the preview's toolbar:
 
-| Choice | `CMDLIN` | What the menu shows |
+- **Command line** (`CMDLIN`): **Long** (`*LONG`, the default, as in `CRTMNU`), **Short** (`*SHORT`) or **None** (`*NONE`).
+- **Function keys** (`DSPKEY(*YES)`): the function key legend on rows 22 and 23, with the command line above it.
+
+Its place is fixed, whatever row the "Selection or command" prompt is on: moving the prompt doesn't move it. `===>` is on column 2 and what's typed starts on column 7:
+
+| Command line | Without function keys | With function keys |
 | --- | --- | --- |
-| **Long** (the default, as in `CRTMNU`) | `*LONG` | A 153-character command line, over two lines. |
-| **Short** | `*SHORT` | A 73-character command line, on one line. |
-| **None** | `*NONE` | No command line, just a 4-character option line. |
+| **Long**: 153 characters over two lines (columns 7-80, then 1-79) | `===>` on row 22, and row 23 | `===>` on row 20, and row 21 |
+| **Short**: 73 characters (columns 7-79) | `===>` on row 23 | `===>` on row 21 |
+| **None**: no `===>`, just a 4-character option field on column 7 | row 22 | row 20 |
 
-The choice is remembered for each menu. It can't be selected or moved: move the prompt and it follows.
+With function keys, the legend is `F3=Exit   F4=Prompt   F9=Retrieve   F12=Cancel` and `F13=Information Assistant  F16=System main menu`, without **F4** and **F9** when there's no command line. It's shown as on a system in English; on a system in another language, the texts are that language's.
 
-The function keys `CRTMNU` can add at the bottom (`DSPKEY(*YES)`) aren't drawn: their texts depend on the system's language.
+The choice is remembered for each menu. None of it can be selected or moved.
 
 ### Each option's command
 
@@ -133,7 +151,7 @@ Either way, it starts with its first line, `MENUQQ,1`.
 
 ## Creating a new menu
 
-1. Create the menu image member, of type `MNUDDS` (for example, `MENU` in `QMNUSRC`, from Code for i), or a local `menu.mnudds`.
+1. Create the menu image member, of type `MNUDDS` (for example, `MENU` in `QMNUSRC`, from Code for i), or a local `menu.mnudds`. Its name can be up to 8 characters, as in STRSDA: the commands member adds `QQ`, and a member's name is up to 10.
 2. Open it. While it's empty, DSPF-edit offers to create the menu, in a message and with the **+** button on **Records** in the tree (also on the right-click menu of **Records** and of the **Menu** node, and as **DSPF Edit: Create Menu** in the command palette).
 3. It asks for three texts, with STRSDA's English ones already filled in: the **title** (`MENU Menu`), the **text above the options** (`Select one of the following:`) and the **text above the command line** (`Selection or command`, up to 38 characters).
 4. It writes the menu STRSDA creates:
@@ -164,10 +182,10 @@ DSPF-edit doesn't create the menu on the system yet. STRSDA does it when you lea
 
    A quote inside a command is written twice in `MSG`: `MSG('CALL PGM(PGM2) PARM(''S'')')`.
 
-3. Create the menu, with the command line chosen in the preview:
+3. Create the menu, with the command line and function keys chosen in the preview:
 
    ```
-   CRTMNU MENU(MYLIB/MENU) TYPE(*DSPF) DSPF(MYLIB/MENU) MSGF(MYLIB/MENU) CMDLIN(*LONG)
+   CRTMNU MENU(MYLIB/MENU) TYPE(*DSPF) DSPF(MYLIB/MENU) MSGF(MYLIB/MENU) CMDLIN(*LONG) DSPKEY(*YES)
    ```
 
 Run it with `GO MENU(MYLIB/MENU)`. The message file goes with the menu: copying the menu to another system needs it too.
@@ -176,4 +194,3 @@ Run it with `GO MENU(MYLIB/MENU)`. The message file goes with the menu: copying 
 
 - **Menu help** (STRSDA's **Work with menu help**).
 - Creating the menu object from DSPF-edit.
-- Drawing the function keys of `DSPKEY(*YES)` in the preview.
