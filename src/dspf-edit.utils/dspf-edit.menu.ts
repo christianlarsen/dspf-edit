@@ -295,6 +295,8 @@ export interface MenuCreateOptions {
     commandLine: MenuCommandLine;
     /** CRTMNU DSPKEY(*YES): the function keys take rows 22-23, so the command line goes above them. */
     functionKeys?: boolean;
+    /** The library the menu objects were last created in (Compile Menu). */
+    library?: string;
 };
 
 /** CRTMNU's own defaults: CMDLIN(*LONG) DSPKEY(*NO). */
@@ -457,6 +459,14 @@ export function formatMenuConstantLines(rowField: string, column: number, text: 
 };
 
 /**
+ * The first line of a menu image: SDA's "image control record". SDA checks it exactly, case
+ * included: with any other text it says the control record is incorrect (SDA3630) and rebuilds it.
+ */
+export function menuImageControlRecord(menuName: string): string {
+    return `     A* Free Form Menu: ${menuName.toUpperCase()}`;
+};
+
+/**
  * The source of a new menu image, as SDA creates it: menu name and centered title on row 1, the
  * "select" line on row 3, options 1. to 10. on rows 5-14, and the command line prompt (its
  * "A* CMDPROMPT" comment and the constant, padded to 38 characters, on row 021).
@@ -465,7 +475,7 @@ export function buildNewMenuSource(menuName: string, texts: NewMenuTexts): strin
     const name = menuName.toUpperCase();
     const keyword = (text: string) => '     A' + ' '.repeat(38) + text;
     const lines = [
-        `     A* FREE FORM MENU: ${name}`,
+        menuImageControlRecord(name),
         keyword('DSPSIZ(24 80 *DS3                  -'),
         '     A                                             27 132 *DS4)',
         keyword('CHGINPDFT'),
@@ -494,4 +504,62 @@ export function buildNewMenuSource(menuName: string, texts: NewMenuTexts): strin
     lines.push('     A* CMDPROMPT  Do not delete this DDS spec.');
     lines.push(...formatMenuConstantLines('021', 2, texts.promptText.substring(0, MENU_PROMPT_MAX_LENGTH).padEnd(MENU_PROMPT_MAX_LENGTH, ' ')));
     return lines;
+};
+
+// COMPILING A MENU (the objects CRTMNU TYPE(*DSPF) needs)
+
+// CRTMNU TYPE(*DSPF) doesn't compile the source members: it builds the *MENU from a display file
+// and a message file that must already exist. So creating (or re-creating) a menu takes:
+//     CRTDSPF from the menu image (MNUDDS)
+//     CRTMSGF, with one message per option holding its command: USR0001 for option 1...
+//     CRTMNU naming them, with the command line and function keys chosen in the preview
+
+/** Longest first-level message text ADDMSGD takes, so the longest command a message can hold. */
+export const MENU_MESSAGE_MAX_LENGTH = 132;
+
+export interface MenuCompileSource {
+    /** Where the members are: source library and file. */
+    sourceLibrary: string;
+    sourceFile: string;
+    /** The menu's name (its MNUDDS member). */
+    menuName: string;
+    /** The library to create the objects in. */
+    library: string;
+    /** Each option's command, from the commands member. */
+    commands: readonly { option: number; command: string }[];
+    options: MenuCreateOptions;
+};
+
+export interface MenuCompileCommands {
+    crtdspf: string;
+    dltmsgf: string;
+    crtmsgf: string;
+    addmsgd: { option: number; command: string }[];
+    crtmnu: string;
+};
+
+/** The options whose command is too long for a message (see MENU_MESSAGE_MAX_LENGTH). */
+export function menuCommandsTooLong(commands: readonly { option: number; command: string }[]): number[] {
+    return commands.filter(c => c.command.length > MENU_MESSAGE_MAX_LENGTH).map(c => c.option);
+};
+
+/** The CL commands that create a menu's display file, message file and menu object. */
+export function buildMenuCompileCommands(source: MenuCompileSource): MenuCompileCommands {
+    const lib = source.library.toUpperCase();
+    const menu = source.menuName.toUpperCase();
+    const object = `${lib}/${menu}`;
+    const quote = (text: string) => `'${text.replace(/'/g, "''")}'`;
+    return {
+        crtdspf: `CRTDSPF FILE(${object}) SRCFILE(${source.sourceLibrary.toUpperCase()}/${source.sourceFile.toUpperCase()}) SRCMBR(${menu})`,
+        dltmsgf: `DLTMSGF MSGF(${object})`,
+        crtmsgf: `CRTMSGF MSGF(${object})`,
+        addmsgd: source.commands
+            .filter(c => c.command.trim() !== '')
+            .map(c => ({
+                option: c.option,
+                command: `ADDMSGD MSGID(USR${String(c.option).padStart(4, '0')}) MSGF(${object}) MSG(${quote(c.command)})`
+            })),
+        crtmnu: `CRTMNU MENU(${object}) TYPE(*DSPF) DSPF(${object}) MSGF(${object}) ` +
+            `CMDLIN(${source.options.commandLine}) DSPKEY(${source.options.functionKeys ? '*YES' : '*NO'})`
+    };
 };

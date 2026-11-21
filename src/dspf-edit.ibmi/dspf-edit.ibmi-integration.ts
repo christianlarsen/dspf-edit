@@ -25,6 +25,8 @@ const CODE_FOR_IBMI_EXTENSION_ID = 'halcyontechltd.code-for-ibmi';
 /** The slice of Code for i's `IBMi` connection this module actually calls. */
 interface MinimalIBMiConnection {
     runSQL(statements: string | string[], options?: { bindings?: (string | number | null)[] }): Promise<Record<string, string | number | null>[]>;
+    /** Runs a command; with environment 'ile', a CL command (through SQL, not the shell), its job log in stderr. */
+    runCommand?(options: { command: string; environment?: 'ile' | 'qsh' | 'pase' }): Promise<{ code: number | null; stdout: string; stderr: string }>;
     /** Runs a command in the connection's PASE shell. */
     sendCommand?(options: { command: string }): Promise<{ code: number | null; stdout: string; stderr: string }>;
     /** The connection's own settings — only its library list is read here. */
@@ -521,5 +523,31 @@ export async function addSourceMember(location: SourceMemberLocation, text: stri
     const result = await connection.sendCommand({ command: `system "${command.replace(/\$/g, '\\$')}"` });
     if (result.code !== 0) {
         throw new Error((result.stderr || result.stdout || `ADDPFM ended with code ${result.code}`).trim());
+    };
+};
+
+/** The result of a CL command run on the IBM i: whether it ended well, and its messages. */
+export interface ClCommandResult {
+    ok: boolean;
+    messages: string;
+};
+
+/**
+ * Runs a CL command on the connected IBM i, as Code for i runs its own compile actions (ILE
+ * environment, so quotes and special characters aren't read by a shell). Throws if there is no
+ * connection, or the connected Code for i version can't run it.
+ */
+export async function runClCommand(command: string): Promise<ClCommandResult> {
+    const connection = getIBMiConnection();
+    if (!connection) {
+        throw new Error('No active IBM i connection. Connect via the Code for i extension first.');
+    };
+    if (!connection.runCommand) {
+        throw new Error('The connected Code for i version cannot run CL commands.');
+    };
+    const result = await connection.runCommand({ command, environment: 'ile' });
+    return {
+        ok: result.code === 0,
+        messages: [result.stdout, result.stderr].map(text => (text ?? '').trim()).filter(text => text !== '').join('\n')
     };
 };
