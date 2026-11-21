@@ -15,9 +15,10 @@ import { PreviewColorsPanel } from './dspf-edit.webview/dspf-edit.preview-colors
 import { setReferencedLengthResolver } from './dspf-edit.parser/dspf-edit.parser';
 import { getResolvedRef } from './dspf-edit.ibmi/dspf-edit.ibmi-integration';
 import { registerValidation } from './dspf-edit.validation/dspf-edit.validation';
-import { registerMenuMemberCommands, onDidChangeMenuCommands } from './dspf-edit.commands/dspf-edit.menu-members';
+import { registerMenuMemberCommands, onDidChangeMenuCommands, onDidChangeMenuCreateOptions } from './dspf-edit.commands/dspf-edit.menu-members';
 import { RecordPreviewPanel } from './dspf-edit.webview/dspf-edit.record-preview-panel';
 import { MenuCommandsPanel } from './dspf-edit.webview/dspf-edit.menu-commands-panel';
+import { registerCompileMenu } from './dspf-edit.commands/dspf-edit.compile-menu';
 import { getMenuMemberKind } from './dspf-edit.utils/dspf-edit.menu';
 
 // Activate extension
@@ -65,8 +66,12 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Menus (MNUDDS + MNUCMD): opening the commands member opens the menu image
 	registerMenuMemberCommands(context);
+	// Compile Menu: the display file, message file and menu object, on the IBM i
+	registerCompileMenu(context);
 	// The preview shows each option's command on hover: re-render once they are read or edited
 	context.subscriptions.push(onDidChangeMenuCommands(() => RecordPreviewPanel.refreshOverlays()));
+	// ...and the command line and function keys, when Compile Menu changes them
+	context.subscriptions.push(onDidChangeMenuCreateOptions(() => RecordPreviewPanel.refreshOverlays()));
 	// "Menu Commands" (SDA's F10): from the tree, the preview's Commands button (with the member's URI), or
 	// the command palette (the menu being worked with, or the menu member in the active editor)
 	context.subscriptions.push(vscode.commands.registerCommand('dspf-edit.menu-commands', async (target?: unknown) => {

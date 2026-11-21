@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { parseDocument } from '../dspf-edit.parser/dspf-edit.parser';
-import { getMenuMemberKind, getMenuMemberPair, isCmdPromptComment, findCmdPromptConstantLine, formatRowField, parseMenuCommands, menuOptionOfConstant, menuBottomLayout, formatMenuCommandRecords, menuCommandEdit, menuCommandProblem, normalizeMenuCommand, buildNewMenuSource, formatMenuConstantLines, menuTitleColumn, menuLastTextRow, menuLastPromptRow, menuPlacementProblem, defaultNewMenuTexts } from '../dspf-edit.utils/dspf-edit.menu';
+import { getMenuMemberKind, getMenuMemberPair, isCmdPromptComment, findCmdPromptConstantLine, formatRowField, parseMenuCommands, menuOptionOfConstant, menuBottomLayout, formatMenuCommandRecords, menuCommandEdit, menuCommandProblem, normalizeMenuCommand, buildNewMenuSource, formatMenuConstantLines, menuTitleColumn, menuLastTextRow, menuLastPromptRow, menuPlacementProblem, defaultNewMenuTexts, menuImageControlRecord, buildMenuCompileCommands, menuCommandsTooLong } from '../dspf-edit.utils/dspf-edit.menu';
 import { findMenuPlacementProblems } from '../dspf-edit.validation/dspf-edit.menu-placement';
 
 suite('Menu members (MNUDDS + MNUCMD)', () => {
@@ -210,6 +210,13 @@ suite('Writing menu commands (MNUCMD)', () => {
     });
 });
 
+suite('Menu image control record (SDA3630)', () => {
+    test('the first line is written exactly as SDA expects it, case included', () => {
+        assert.strictEqual(menuImageControlRecord('test1'), '     A* Free Form Menu: TEST1');
+        assert.strictEqual(buildNewMenuSource('test1', defaultNewMenuTexts('test1'))[0], '     A* Free Form Menu: TEST1');
+    });
+});
+
 suite('New menu (SDA default menu image)', () => {
     const texts = { title: 'MENU Menu', selectText: 'Select one of the following:', promptText: 'Selección o mandato' };
     const source = buildNewMenuSource('menu', texts);
@@ -264,5 +271,28 @@ suite('Menu text on reserved rows (source check)', () => {
         assert.deepStrictEqual(findMenuPlacementProblems(withText, { commandLine: '*LONG' }).map(p => p.lineIndex), [withText.length - 1]);
         const promptLine = findCmdPromptConstantLine(source) ?? -1;
         assert.deepStrictEqual(findMenuPlacementProblems(source, { commandLine: '*LONG', functionKeys: true }).map(p => p.lineIndex), [promptLine]);
+    });
+});
+
+suite('Compiling a menu (CRTDSPF, message file, CRTMNU)', () => {
+    const source = {
+        sourceLibrary: 'mylib', sourceFile: 'qmnusrc', menuName: 'test2', library: 'objlib',
+        commands: [{ option: 1, command: 'WRKACTJOB' }, { option: 90, command: "CALL PGM(APPLIB/PGM2) PARM('S')" }],
+        options: { commandLine: '*SHORT' as const, functionKeys: true }
+    };
+
+    test('builds each step, a message per option with its quotes doubled', () => {
+        const commands = buildMenuCompileCommands(source);
+        assert.strictEqual(commands.crtdspf, 'CRTDSPF FILE(OBJLIB/TEST2) SRCFILE(MYLIB/QMNUSRC) SRCMBR(TEST2)');
+        assert.strictEqual(commands.crtmsgf, 'CRTMSGF MSGF(OBJLIB/TEST2)');
+        assert.deepStrictEqual(commands.addmsgd.map(a => a.command), [
+            "ADDMSGD MSGID(USR0001) MSGF(OBJLIB/TEST2) MSG('WRKACTJOB')",
+            "ADDMSGD MSGID(USR0090) MSGF(OBJLIB/TEST2) MSG('CALL PGM(APPLIB/PGM2) PARM(''S'')')"
+        ]);
+        assert.strictEqual(commands.crtmnu, 'CRTMNU MENU(OBJLIB/TEST2) TYPE(*DSPF) DSPF(OBJLIB/TEST2) MSGF(OBJLIB/TEST2) CMDLIN(*SHORT) DSPKEY(*YES)');
+    });
+
+    test('commands longer than a message can hold are found', () => {
+        assert.deepStrictEqual(menuCommandsTooLong([{ option: 1, command: 'X'.repeat(132) }, { option: 2, command: 'X'.repeat(133) }]), [2]);
     });
 });

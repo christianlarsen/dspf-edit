@@ -8,7 +8,7 @@
     "url": "https://www.linkedin.com/in/christianlarsenvalverde/"
   },
   "publisher": "ChristianLarsen",
-  "version": "1.20.0",
+  "version": "1.20.1",
   "repository": {
     "type": "git",
     "url": "https://github.com/christianlarsen/dspf-edit"
@@ -327,6 +327,11 @@
         "title": "Create Menu",
         "category": "DSPF Edit",
         "icon": "$(add)"
+      },
+      {
+        "command": "dspf-edit.compile-menu",
+        "title": "Compile Menu",
+        "category": "DSPF Edit"
       }
     ],
     "keybindings": [
@@ -624,6 +629,11 @@
           "command": "dspf-edit.create-menu",
           "when": "view == dspf-edit.schema-view && dspf-edit.isMenu && dspf-edit.isEmptyMenu && viewItem == group:records",
           "group": "inline@1"
+        },
+        {
+          "command": "dspf-edit.compile-menu",
+          "when": "view == dspf-edit.schema-view && dspf-edit.isMenu && !dspf-edit.isEmptyMenu && (viewItem =~ /\\brecord\\b/ || viewItem == file)",
+          "group": "records_navigation0@4"
         }
       ]
     }

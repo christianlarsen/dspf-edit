@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.20.1] - 2026-11-21
+### Added
+- Menus: **Compile Menu**, with the **▶ Compile** button in the preview of a menu, or on the right-click menu of the menu's record and **Menu** node. `CRTMNU TYPE(*DSPF)` doesn't compile the source members, so it creates what it needs, through the Code for i connection: the display file (`CRTDSPF`), a message file with one message per option's command (`CRTMSGF` and `ADDMSGD USR00nn`), and the menu (`CRTMNU`). It saves both members first and asks for the library to create them in (remembered for each menu). Before compiling, it shows the **Command line** (Long, Short or None) and **Function keys** the menu will be created with, as chosen in the preview's toolbar, and lets them be changed; a change is kept for the menu and the preview follows. Its progress shows in a notification, and every command it runs, with the system's messages, in the **DSPF-edit: Compile Menu** output; the first step that fails stops it. Run again after changing the menu, it replaces the three objects. A command longer than 132 characters, the most a message holds, is reported and the menu isn't compiled.
+
+### Fixed
+- Menus: **Create Menu** wrote the menu's first line as `A* FREE FORM MENU: MENU`, so STRSDA said the menu source was incorrect when opening it (`SDA3630`) and wrote it again. It's now `A* Free Form Menu: MENU`, as STRSDA writes it.
+
 ## [1.20.0] - 2026-11-20
 ### Added
 - Menus ([#113](https://github.com/christianlarsen/dspf-edit/issues/113)): the menus created with `CRTMNU TYPE(*DSPF)`, which STRSDA designs with **Design menus**, are made of a menu image (a member of type `MNUDDS`, a display file with one record named like the menu) and its commands (a member named like the menu plus `QQ`, type `MNUCMD`). DSPF-edit now works with both as one menu. Everything about menus is in the manual's new **Menus** guide.

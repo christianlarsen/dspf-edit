@@ -155,6 +155,7 @@ Either way, it starts with its first line, `MENUQQ,1`.
 2. Open it. While it's empty, DSPF-edit offers to create the menu, in a message and with the **+** button on **Records** in the tree (also on the right-click menu of **Records** and of the **Menu** node, and as **DSPF Edit: Create Menu** in the command palette).
 3. It asks for three texts, with STRSDA's English ones already filled in: the **title** (`MENU Menu`), the **text above the options** (`Select one of the following:`) and the **text above the command line** (`Selection or command`, up to 38 characters).
 4. It writes the menu STRSDA creates:
+   - Its first line, `A* Free Form Menu: MENU`, which STRSDA checks when it opens the menu. On a system in another language STRSDA expects it in that language: it then says the line is incorrect (`SDA3630`, information only) and writes it again itself. It doesn't affect the menu or creating it.
    - The menu's name on row 1, column 2, and the title centered on row 1.
    - The text above the options on row 3, and the options `1.` to `10.` on rows 5 to 14.
    - The command line prompt, with its `A* CMDPROMPT` comment, on row 21.
@@ -164,7 +165,24 @@ The change is left unsaved, like any other edit. Then add each option's text nex
 
 ## Creating the menu object
 
-DSPF-edit doesn't create the menu on the system yet. STRSDA does it when you leave it; without it, `CRTMNU TYPE(*DSPF)` doesn't compile the members: it uses a display file and a message file that must already exist. Once both members are saved, it takes three steps:
+`CRTMNU TYPE(*DSPF)` doesn't compile the members: it builds the menu from a display file and a message file that must already exist. STRSDA creates them when you leave it; DSPF-edit does it with **Compile Menu**.
+
+### Compile Menu
+
+Click **▶ Compile** in the preview of a menu, or right-click the menu's record or the **Menu** node in the tree and choose **Compile Menu**. It works with menus opened from the IBM i, through your Code for i connection.
+
+1. It saves both members, if they have unsaved changes: the objects are made from the members on the IBM i.
+2. It asks for the library to create the objects in: the source's library the first time, then the last one used for that menu.
+3. It shows how the menu will be created: the **Command line** (Long, Short or None) and **Function keys** chosen in the preview's toolbar. Choose **Compile**, or change either of them first; a change is kept for the menu, so the preview shows it too.
+4. It creates the display file, the message file with each option's command, and the menu (the steps below).
+
+Its progress shows in a notification, and each command it runs, with the system's messages, in the **DSPF-edit: Compile Menu** output. The first step that fails stops it, saying which; if it's the display file, its compile listing is in your spooled files. When it's done, run the menu with `GO MENU(MYLIB/MENU)`.
+
+Run it again after changing the menu or its commands: it replaces the three objects. A command can be up to 132 characters in the message file, so a longer one (the **Menu Commands** panel takes up to 155) is reported, and the menu isn't compiled until it's shortened.
+
+### The steps, by hand
+
+What **Compile Menu** runs, to do it from a 5250 session or a CL program. Once both members are saved, it takes three steps:
 
 1. Create the display file from the menu image:
 
@@ -190,7 +208,12 @@ DSPF-edit doesn't create the menu on the system yet. STRSDA does it when you lea
 
 Run it with `GO MENU(MYLIB/MENU)`. The message file goes with the menu: copying the menu to another system needs it too.
 
+:::caution
+- `CRTMNU` creates the `*MENU` even when the display file or the message file don't exist yet: it only warns that they aren't found, and the menu fails when it's run. Create them first.
+- Name their library in `DSPF` and `MSGF`. They default to the menu's name in the library list (`*LIBL`), which may find another object with the same name, perhaps one you aren't authorized to.
+- Parameters such as `OPTION` and `SRCFILE` only apply to `TYPE(*UIM)` menus: with `TYPE(*DSPF)` there's no source to compile, so `CRTMNU` refuses them.
+:::
+
 ## Not available yet
 
 - **Menu help** (STRSDA's **Work with menu help**).
-- Creating the menu object from DSPF-edit.

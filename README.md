@@ -156,6 +156,9 @@ The menus created with `CRTMNU TYPE(*DSPF)`: the menu image (`MNUDDS` member) an
   - Warns about options shown on the menu without a command, and commands whose option isn't on the menu.
   - Creates the `MENUQQ` member when it doesn't exist, on the IBM i (after asking) or as a local file.
 
+**Compile Menu**
+  - "▶ Compile" in the preview, or right-click in the tree: creates the menu on the IBM i through Code for i, its display file, its message file with each option's command and the menu object, with the command line and function keys chosen in the preview. Run it again after any change.
+
 **New menus**
   - An empty `MNUDDS` member offers **Create Menu**: the menu STRSDA creates, with your title and texts.
   - The "Selection or command" prompt, and SDA's `A* CMDPROMPT` comment above it, are kept as STRSDA writes them, and the prompt can't be deleted.
@@ -221,12 +224,9 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.20.0** - 2026-11-20
-- Added: menus (`MNUDDS` + `MNUCMD`, [#113](https://github.com/christianlarsen/dspf-edit/issues/113)). A menu image opens in the tree and the preview as a menu, offering only what a menu takes, and opening its `MENUQQ` member opens it too.
-- Added: the preview of a menu shows its command line and function keys as `CRTMNU` adds them (`CMDLIN`, `DSPKEY`), and each option's command when hovering its number.
-- Added: **Menu Commands** sets each option's command, written into the `MENUQQ` member as STRSDA writes it, and creates the member when it's missing.
-- Added: **Create Menu** writes a new menu in an empty `MNUDDS` member.
-- Fixed: **Sort Elements** dropped comment lines between the elements it sorted.
+**1.20.1** - 2026-11-21
+- Added: **Compile Menu** creates the menu on the IBM i through Code for i: its display file, a message file with each option's command, and the menu object, with the command line and function keys shown, and changeable, before compiling.
+- Fixed: **Create Menu** wrote a first line STRSDA reported as incorrect (`SDA3630`) when opening the menu.
 
 ---
 

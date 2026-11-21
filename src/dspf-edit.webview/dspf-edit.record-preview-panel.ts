@@ -2633,6 +2633,11 @@ export class RecordPreviewPanel {
             return;
         };
 
+        if (message?.type === 'compileMenu' && ExtensionState.lastDdsDocument && this.isMenu()) {
+            await vscode.commands.executeCommand('dspf-edit.compile-menu', ExtensionState.lastDdsDocument.uri);
+            return;
+        };
+
         if (message?.type === 'setMenuOptions' && ExtensionState.lastDdsDocument && this.isMenu()) {
             const commandLine = ['*LONG', '*SHORT', '*NONE'].includes(message.commandLine) ? message.commandLine : '*LONG';
             await setMenuCreateOptions(ExtensionState.lastDdsDocument.uri, { commandLine, functionKeys: message.functionKeys === true });
@@ -4144,6 +4149,7 @@ export class RecordPreviewPanel {
         <button id="addFieldBtn" title="Click, then click a point in the screen to place a new field there">+ Field</button>
         <button id="addConstantBtn" title="Click, then click a point in the screen to place a new constant there">+ Constant</button>
         <button id="menuCommandsBtn" title="The command each option of the menu runs (its MENUQQ member)">☰ Commands</button>
+        <button id="compileMenuBtn" title="Create the menu on the IBM i: its display file, message file and menu object">▶ Compile</button>
         <button id="gridDotsBtn" title="Show a dot in every empty character cell, to see spacing between fields/constants">⋅ Grid</button>
         <button id="hiddenBtn" title="Show the elements that aren't visible right now (conditioned on indicators that are off, or DSPATR(ND)) as dotted outlines. They can't be selected">◌ Hidden</button>
         <button id="areaSelectBtn" title="Drag a rectangle to select every field/constant it touches (Ctrl/Cmd adds to the current selection). While on, clicking an element doesn't select or move it, and a window is moved by dragging its border">⬚ Area</button>
@@ -4186,6 +4192,9 @@ export class RecordPreviewPanel {
     const menuCommandsBtn = document.getElementById('menuCommandsBtn');
     menuCommandsBtn.style.display = 'none';
     menuCommandsBtn.addEventListener('click', () => vscode.postMessage({ type: 'openMenuCommands' }));
+    const compileMenuBtn = document.getElementById('compileMenuBtn');
+    compileMenuBtn.style.display = 'none';
+    compileMenuBtn.addEventListener('click', () => vscode.postMessage({ type: 'compileMenu' }));
     const menuBar = document.getElementById('menuBar');
     const menuCmdLinSelect = document.getElementById('menuCmdLinSelect');
     // On a menu, the last row its own text can go on (see drawMenuReservedArea); null otherwise
@@ -5938,6 +5947,7 @@ export class RecordPreviewPanel {
             addFieldBtn.style.display = message.isMenu ? 'none' : '';
             menuTextLastRow = typeof message.menuTextLastRow === 'number' ? message.menuTextLastRow : null;
             menuCommandsBtn.style.display = message.isMenu ? '' : 'none';
+            compileMenuBtn.style.display = message.isMenu ? '' : 'none';
             menuBar.style.display = message.menuOptions ? 'inline-flex' : 'none';
             if (message.menuOptions) {
                 menuCmdLinSelect.value = message.menuOptions.commandLine;
