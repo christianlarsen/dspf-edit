@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
+## [1.21.0] - 2026-11-25
+### Added
+- Subfiles: **Subfile Messages**, on the right-click menu of a `SFLCTL` record. A window to add, change and remove the record's `SFLMSG` keywords, the messages the program shows on the message line, each with its text, response indicator and the indicators that show it. It works like **Error Messages** on a field.
+- Fields: **Edit Field** opens a menu with the field's name, kind, size and usage, each with its current value, instead of asking for all of them one after the other. Picking one changes only that, and the menu comes back with the new values until it's closed. In the preview, the **Actions** menu of a field offers it as **Edit Field...**, in place of **Rename...**.
+- Fields: **Edit Field** changes the usage of an output, input or input/output field between those three. Keywords the new usage doesn't allow (validity checks and other input-only keywords when it becomes output; editing and other output-only keywords when it becomes input) are listed and removed after confirming, with their indicator lines. Only the input-only values of a `DSPATR` are removed: `DSPATR(PR HI)` becomes `DSPATR(HI)`.
+
+### Changed
+- Fields: keywords **Edit Field** removes when changing a field's kind now go with their indicator lines, when they have a line of their own.
+
+### Fixed
+- Fields: changing the size of a numeric field with a blank type column (e.g. `5 0`) didn't change its decimal positions.
+
 ## [1.20.1] - 2026-11-21
 ### Added
 - Menus: **Compile Menu**, with the **▶ Compile** button in the preview of a menu, or on the right-click menu of the menu's record and **Menu** node. `CRTMNU TYPE(*DSPF)` doesn't compile the source members, so it creates what it needs, through the Code for i connection: the display file (`CRTDSPF`), a message file with one message per option's command (`CRTMSGF` and `ADDMSGD USR00nn`), and the menu (`CRTMNU`). It saves both members first and asks for the library to create them in (remembered for each menu). Before compiling, it shows the **Command line** (Long, Short or None) and **Function keys** the menu will be created with, as chosen in the preview's toolbar, and lets them be changed; a change is kept for the menu and the preview follows. Its progress shows in a notification, and every command it runs, with the system's messages, in the **DSPF-edit: Compile Menu** output; the first step that fails stops it. Run again after changing the menu, it replaces the three objects. A command longer than 132 characters, the most a message holds, is reported and the menu isn't compiled.

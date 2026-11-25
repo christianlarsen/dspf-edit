@@ -45,6 +45,22 @@ interface ErrorMessageItem extends vscode.QuickPickItem {
     add?: ErrorMessageContent['kind'];
 };
 
+/**
+ * What one window manages: a field's error messages (ERRMSG, ERRMSGID), or a subfile control
+ * record's subfile messages (SFLMSG) — both written and conditioned the same way.
+ */
+interface MessageSetup {
+    /** The keyword of a message with its own text. */
+    textKeyword: 'ERRMSG' | 'SFLMSG';
+    /** The keyword of a message from a message file, when the window offers those. */
+    fileKeyword?: 'ERRMSGID';
+    /** What the window calls one of its messages. */
+    noun: string;
+};
+
+const FIELD_ERROR_MESSAGES: MessageSetup = { textKeyword: 'ERRMSG', fileKeyword: 'ERRMSGID', noun: 'error message' };
+const SUBFILE_MESSAGES: MessageSetup = { textKeyword: 'SFLMSG', noun: 'subfile message' };
+
 type ErrorMessageWindowOutcome =
     | { action: 'edit' | 'indicators' | 'remove'; messageIndex: number }
     | { action: 'add'; kind: ErrorMessageContent['kind'] }
@@ -61,8 +77,37 @@ export function addErrorMessage(context: vscode.ExtensionContext): void {
     context.subscriptions.push(
         vscode.commands.registerCommand("dspf-edit.add-error-message", async (node: DdsNode) => {
             await handleAddErrorMessageCommand(node);
+        }),
+        vscode.commands.registerCommand("dspf-edit.subfile-messages", async (node: DdsNode) => {
+            await handleSubfileMessagesCommand(node);
         })
     );
+};
+
+/**
+ * Handles the subfile messages command for a subfile control record: the messages its program
+ * shows on the message line by setting their indicators on an output to the record.
+ * @param node - The DDS node containing the record
+ */
+async function handleSubfileMessagesCommand(node: DdsNode): Promise<void> {
+    try {
+        const { editor, document } = checkForEditorAndDocument();
+        if (!document || !editor) {
+            return;
+        };
+
+        const record: any = node.ddsElement;
+        if (record.kind !== 'record' || !(record.attributes ?? []).some((attr: DdsAttribute) => /^SFLCTL\(/i.test(attr.value))) {
+            vscode.window.showWarningMessage('Subfile messages can only be added to a subfile control record.');
+            return;
+        };
+
+        await manageErrorMessages(editor, record, SUBFILE_MESSAGES);
+
+    } catch (error) {
+        console.error('Error managing subfile messages:', error);
+        vscode.window.showErrorMessage('An error occurred while managing subfile messages.');
+    };
 };
 
 // COMMAND HANDLER
@@ -96,7 +141,7 @@ async function handleAddErrorMessageCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        await manageErrorMessages(editor, field);
+        await manageErrorMessages(editor, field, FIELD_ERROR_MESSAGES);
 
     } catch (error) {
         console.error('Error managing error messages:', error);
@@ -133,13 +178,13 @@ const REMOVE_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon(
  * @param editor - The active text editor
  * @param field - The field
  */
-async function manageErrorMessages(editor: vscode.TextEditor, field: any): Promise<void> {
+async function manageErrorMessages(editor: vscode.TextEditor, field: any, setup: MessageSetup): Promise<void> {
     let focusKeyword: string | undefined;
 
     while (true) {
-        const messages = readErrorMessages(field);
-        const items = buildErrorMessageItems(messages);
-        const outcome = await showErrorMessageWindow(items, messages.length > 0, field.name,
+        const messages = readErrorMessages(field, setup);
+        const items = buildErrorMessageItems(messages, setup);
+        const outcome = await showErrorMessageWindow(items, messages.length > 0, field.name, setup,
             items.find(item => item.messageIndex >= 0 && messages[item.messageIndex].value.keywordText === focusKeyword));
         if (!outcome) return;
 
@@ -149,10 +194,10 @@ async function manageErrorMessages(editor: vscode.TextEditor, field: any): Promi
         let done: boolean;
         switch (outcome.action) {
             case 'add':
-                done = await addOneErrorMessage(editor, field, outcome.kind);
+                done = await addOneErrorMessage(editor, field, outcome.kind, setup);
                 break;
             case 'edit':
-                done = await editErrorMessage(editor, message!);
+                done = await editErrorMessage(editor, message!, setup);
                 focusKeyword = undefined;
                 break;
             case 'indicators':
@@ -161,11 +206,11 @@ async function manageErrorMessages(editor: vscode.TextEditor, field: any): Promi
                 break;
             case 'remove':
                 done = await removeWholeKeyword(editor, field, message!.value);
-                if (done) vscode.window.showInformationMessage(`Removed error message ${describeMessage(message!.content)} from ${field.name}.`);
+                if (done) vscode.window.showInformationMessage(`Removed ${setup.noun} ${describeMessage(message!.content)} from ${field.name}.`);
                 break;
             case 'removeAll':
-                done = await removeAllErrorMessages(editor, field, messages);
-                if (done) vscode.window.showInformationMessage(`Removed all error messages from ${field.name}.`);
+                done = await removeAllErrorMessages(editor, field, messages, setup);
+                if (done) vscode.window.showInformationMessage(`Removed all ${setup.noun}s from ${field.name}.`);
                 break;
         };
 
@@ -175,8 +220,8 @@ async function manageErrorMessages(editor: vscode.TextEditor, field: any): Promi
     };
 };
 
-/** The window's rows: every message the field has, in source order, then the two add rows. */
-function buildErrorMessageItems(messages: ErrorMessage[]): ErrorMessageItem[] {
+/** The window's rows: every message the field (or record) has, in source order, then the add rows. */
+function buildErrorMessageItems(messages: ErrorMessage[], setup: MessageSetup): ErrorMessageItem[] {
     const items: ErrorMessageItem[] = messages.map((message, index) => ({
         messageIndex: index,
         label: describeMessage(message.content),
@@ -191,10 +236,10 @@ function buildErrorMessageItems(messages: ErrorMessage[]): ErrorMessageItem[] {
     if (items.length > 0) {
         items.push({ messageIndex: -1, label: '', kind: vscode.QuickPickItemKind.Separator });
     };
-    items.push(
-        { messageIndex: -1, add: 'text', label: '$(add) Add error message...' },
-        { messageIndex: -1, add: 'file', label: '$(add) Add error message from a message file...' }
-    );
+    items.push({ messageIndex: -1, add: 'text', label: `$(add) Add ${setup.noun}...` });
+    if (setup.fileKeyword) {
+        items.push({ messageIndex: -1, add: 'file', label: `$(add) Add ${setup.noun} from a message file...` });
+    };
     return items;
 };
 
@@ -212,6 +257,7 @@ function showErrorMessageWindow(
     items: ErrorMessageItem[],
     canRemoveAll: boolean,
     fieldName: string,
+    setup: MessageSetup,
     focus: ErrorMessageItem | undefined
 ): Promise<ErrorMessageWindowOutcome | undefined> {
     const removeAllButton: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('trash'), tooltip: 'Remove all' };
@@ -220,7 +266,7 @@ function showErrorMessageWindow(
         const quickPick = vscode.window.createQuickPick<ErrorMessageItem>();
         quickPick.items = items;
         if (focus) quickPick.activeItems = [focus];
-        quickPick.title = `Error messages for ${fieldName}`;
+        quickPick.title = `${setup.noun.charAt(0).toUpperCase()}${setup.noun.slice(1)}s for ${fieldName}`;
         quickPick.placeholder = 'Select a message to change it — its buttons set indicators or remove it';
         quickPick.buttons = canRemoveAll ? [removeAllButton] : [];
         quickPick.ignoreFocusOut = true;
@@ -259,10 +305,10 @@ function showErrorMessageWindow(
  * whether on its own definition line or on lines below it, continued or not.
  * @param field - The DDS field element
  */
-function readErrorMessages(field: any): ErrorMessage[] {
+function readErrorMessages(field: any, setup: MessageSetup): ErrorMessage[] {
     const attributes = (field.attributes || []) as DdsAttribute[];
     return attributes.flatMap(attr => {
-        const content = parseErrorMessage(attr.value);
+        const content = parseErrorMessage(attr.value, setup);
         return content ? [{
             content,
             value: {
@@ -283,14 +329,14 @@ function readErrorMessages(field: any): ErrorMessage[] {
  * @param keywordText - The keyword, exactly as parsed
  * @returns The message, or undefined when the keyword is neither
  */
-function parseErrorMessage(keywordText: string): ErrorMessageContent | undefined {
+function parseErrorMessage(keywordText: string, setup: MessageSetup): ErrorMessageContent | undefined {
     // A quote inside the text is written twice, as in every DDS literal.
-    const errmsg = keywordText.match(/^ERRMSG\(\s*'((?:[^']|'')*)'\s*(\d{1,2})?\s*\)$/i);
+    const errmsg = keywordText.match(new RegExp(`^${setup.textKeyword}\\(\\s*'((?:[^']|'')*)'\\s*(\\d{1,2})?\\s*\\)$`, 'i'));
     if (errmsg) {
         return { kind: 'text', text: errmsg[1].replace(/''/g, "'"), responseIndicator: errmsg[2]?.padStart(2, '0') };
     };
 
-    const errmsgid = keywordText.match(/^ERRMSGID\(\s*(.*?)\s*\)$/i);
+    const errmsgid = setup.fileKeyword ? keywordText.match(new RegExp(`^${setup.fileKeyword}\\(\\s*(.*?)\\s*\\)$`, 'i')) : null;
     if (errmsgid) {
         const [messageId, messageFile, ...rest] = errmsgid[1].split(/\s+/);
         if (!messageId || !messageFile) return undefined;
@@ -307,13 +353,22 @@ function parseErrorMessage(keywordText: string): ErrorMessageContent | undefined
 };
 
 /** The keyword a message is written as. */
-function errorMessageKeyword(content: ErrorMessageContent): string {
+function errorMessageKeyword(content: ErrorMessageContent, setup: MessageSetup): string {
     if (content.kind === 'text') {
         const response = content.responseIndicator ? ` ${content.responseIndicator}` : '';
-        return `ERRMSG('${content.text.replace(/'/g, "''")}'${response})`;
+        return `${setup.textKeyword}('${content.text.replace(/'/g, "''")}'${response})`;
     };
     const parts = [content.messageId, content.messageFile, content.responseIndicator, content.messageData && `&${content.messageData}`];
-    return `ERRMSGID(${parts.filter(Boolean).join(' ')})`;
+    return `${setup.fileKeyword ?? 'ERRMSGID'}(${parts.filter(Boolean).join(' ')})`;
+};
+
+/** A subfile control record's SFLMSG messages, as the Subfile Messages window lists them. */
+export function readSubfileMessages(record: any): { text: string; responseIndicator?: string; conditionText: string }[] {
+    return readErrorMessages(record, SUBFILE_MESSAGES).map(message => ({
+        text: (message.content as TextMessage).text,
+        responseIndicator: message.content.responseIndicator,
+        conditionText: message.value.conditionText
+    }));
 };
 
 // SOURCE EDITS
@@ -324,15 +379,16 @@ function errorMessageKeyword(content: ErrorMessageContent): string {
  * without them would show on every output to the record.
  * @returns True when the message was added
  */
-async function addOneErrorMessage(editor: vscode.TextEditor, field: any, kind: ErrorMessageContent['kind']): Promise<boolean> {
-    const content = kind === 'text' ? await collectTextMessage() : await collectFileMessage();
+async function addOneErrorMessage(editor: vscode.TextEditor, field: any, kind: ErrorMessageContent['kind'], setup: MessageSetup): Promise<boolean> {
+    const content = kind === 'text' ? await collectTextMessage(setup) : await collectFileMessage();
     if (!content) return false;
 
-    const added = await addConditionedKeywordLine(editor, findElementInsertionPoint(editor, field), errorMessageKeyword(content));
+    // For a record, the insertion point is after its own keyword lines, before its first field.
+    const added = await addConditionedKeywordLine(editor, findElementInsertionPoint(editor, field), errorMessageKeyword(content, setup));
     if (added) {
-        vscode.window.showInformationMessage(`Added error message ${describeMessage(content)} to ${field.name}.`);
+        vscode.window.showInformationMessage(`Added ${setup.noun} ${describeMessage(content)} to ${field.name}.`);
     } else {
-        vscode.window.showInformationMessage('No indicators entered: the error message was not added.');
+        vscode.window.showInformationMessage(`No indicators entered: the ${setup.noun} was not added.`);
     };
     return added;
 };
@@ -341,11 +397,11 @@ async function addOneErrorMessage(editor: vscode.TextEditor, field: any, kind: E
  * Changes a message where it is, keeping its indicators and any keyword beside it.
  * @returns True when it was changed
  */
-async function editErrorMessage(editor: vscode.TextEditor, message: ErrorMessage): Promise<boolean> {
-    const content = message.content.kind === 'text' ? await collectTextMessage(message.content) : await collectFileMessage(message.content);
+async function editErrorMessage(editor: vscode.TextEditor, message: ErrorMessage, setup: MessageSetup): Promise<boolean> {
+    const content = message.content.kind === 'text' ? await collectTextMessage(setup, message.content) : await collectFileMessage(message.content);
     if (!content) return false;
 
-    const newKeywordText = errorMessageKeyword(content);
+    const newKeywordText = errorMessageKeyword(content, setup);
     if (newKeywordText === message.value.keywordText) return false;
 
     const { lineIndex, lastLineIndex, keywordText } = message.value;
@@ -356,9 +412,9 @@ async function editErrorMessage(editor: vscode.TextEditor, message: ErrorMessage
  * Removes every message, from the last line up so that each one still to remove is where it was
  * read — two on one line share it, so each removal re-reads the field first.
  */
-async function removeAllErrorMessages(editor: vscode.TextEditor, field: any, messages: ErrorMessage[]): Promise<boolean> {
+async function removeAllErrorMessages(editor: vscode.TextEditor, field: any, messages: ErrorMessage[], setup: MessageSetup): Promise<boolean> {
     for (const target of [...messages].sort((a, b) => b.value.lineIndex - a.value.lineIndex)) {
-        const current = readErrorMessages(field).find(message =>
+        const current = readErrorMessages(field, setup).find(message =>
             message.value.keywordText === target.value.keywordText && message.value.lineIndex === target.value.lineIndex);
         if (!current) continue;
         if (!(await removeWholeKeyword(editor, field, current.value))) return false;
@@ -374,17 +430,17 @@ async function removeAllErrorMessages(editor: vscode.TextEditor, field: any, mes
  * Asks for a message with its own text, prefilled with `current` when changing one.
  * @returns The message, or undefined if cancelled
  */
-async function collectTextMessage(current?: TextMessage): Promise<TextMessage | undefined> {
+async function collectTextMessage(setup: MessageSetup, current?: TextMessage): Promise<TextMessage | undefined> {
     const text = await vscode.window.showInputBox({
-        title: 'Error Message Text',
-        prompt: 'Enter the error message text to display',
+        title: setup === SUBFILE_MESSAGES ? 'Subfile Message Text' : 'Error Message Text',
+        prompt: `Enter the ${setup.noun} text to display`,
         value: current?.text,
         placeHolder: 'No stock available',
         ignoreFocusOut: true,
         validateInput: value => {
-            if (!value.trim()) return 'Error message text cannot be empty';
+            if (!value.trim()) return 'The message text cannot be empty';
             // Practical length limit (can be longer due to continuation lines)
-            if (value.trim().length > 200) return 'Error message text should be 200 characters or fewer';
+            if (value.trim().length > 200) return 'The message text should be 200 characters or fewer';
             return null;
         }
     });

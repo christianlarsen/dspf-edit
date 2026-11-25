@@ -3478,9 +3478,9 @@ export class RecordPreviewPanel {
      * arms `pendingCopySource` and puts the webview into its click-to-place mode (see
      * `copyElementAt`) — the same "click a spot in the preview" gesture the "+ Field"/"+ Constant"
      * buttons already use, just for a copy of an existing element instead of a brand-new one.
-     * Rename (fields)/Edit Text (constants), Indicators, and the field-only Validity Checks/
+     * Edit Field (fields)/Edit Text (constants), Indicators, and the field-only Validity Checks/
      * Editing Keywords/Error Messages are also single-selection only — like Copy, they just
-     * delegate straight to the tree's own `dspf-edit.rename-field`/`dspf-edit.edit-constant`/
+     * delegate straight to the tree's own `dspf-edit.edit-field`/`dspf-edit.edit-constant`/
      * `dspf-edit.add-indicators`/`dspf-edit.add-validity-check`/`dspf-edit.add-editing-keywords`/
      * `dspf-edit.add-error-message` commands (same prompt/validation/confirmation as right-clicking
      * the element in the tree), and indicators specifically aren't a value that makes sense shared
@@ -3515,7 +3515,7 @@ export class RecordPreviewPanel {
                 );
             };
             const editOption = kind === 'field'
-                ? { label: '$(edit) Rename...', command: 'rename-field' }
+                ? { label: '$(edit) Edit Field...', command: 'edit-field' }
                 : { label: '$(edit) Edit Text...', command: 'edit-constant' };
             options.push(editOption);
             // A menu has no program to set indicators, so SDA offers none on a menu image

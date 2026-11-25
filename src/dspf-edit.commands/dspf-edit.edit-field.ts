@@ -9,7 +9,8 @@ import { collectNewChoices, buildSelectionFieldLines, insertControlFields } from
 import { DdsNode } from '../dspf-edit.providers/dspf-edit.providers';
 import { fileSizeAttributes, fieldsPerRecords, getRecordSize, getSubfileMinDetailRow, AttributeWithIndicators, attributesFileLevel, FieldInfo } from '../dspf-edit.model/dspf-edit.model';
 import { RefKeywordTarget, parseRefKeyword } from '../dspf-edit.ibmi/dspf-edit.ibmi-integration';
-import { checkForEditorAndDocument, parseSize, removeKeywordTextFromLines } from '../dspf-edit.utils/dspf-edit.helper';
+import { checkForEditorAndDocument, parseSize, replaceKeywordTextInLines } from '../dspf-edit.utils/dspf-edit.helper';
+import { removeWholeKeyword, reparseElement } from './dspf-edit.conditioned-keywords';
 
 /**
  * Interface defining the structure of a field's size properties
@@ -242,8 +243,21 @@ export function editField(context: vscode.ExtensionContext): void {
 
 // EDIT FIELD FUNCTIONALITY 
 
+/** One row of the "Edit Field" menu: what can be changed, and its current value. */
+type EditFieldProperty = 'name' | 'kind' | 'size' | 'usage';
+
+/** What one change asks for: the field's name, kind, size and usage once it's applied. */
+export interface FieldEditTarget {
+    name: string;
+    isNumeric: boolean;
+    size: FieldSize;
+    usage?: EditableUsage;
+};
+
 /**
- * Main command handler for editing DDS fields
+ * Main command handler for editing DDS fields: a menu listing the field's name, kind, size and
+ * usage with their current values. Picking one asks only for that, applies it at once, and the
+ * menu comes back with the values refreshed, until it's closed with Escape.
  * 
  * @param node - The selected DDS node from the tree view
  */
@@ -262,61 +276,26 @@ async function handleEditFieldCommand(node: DdsNode): Promise<void> {
             return;
         };
 
-        const element = node.ddsElement;
+        let element: any = node.ddsElement;
+        let focus: EditFieldProperty | undefined;
 
-        // Get new field name from user
-        const newName = await promptForFieldName(element);
-        if (!newName) {
-            return; // User cancelled
-        };
-
-        // Get the field's kind (alphanumeric/numeric) — keep as-is, or switch it
-        const currentIsNumeric = isNumericFieldForEdit(element);
-        const newIsNumeric = await promptForFieldKind(currentIsNumeric, newName);
-        if (newIsNumeric === undefined) {
-            return; // User cancelled
-        };
-        const kindChanged = newIsNumeric !== currentIsNumeric;
-
-        // Get new field size from user
-        const newSize = await promptForFieldSize(element, newName, newIsNumeric);
-        if (!newSize) {
-            return; // User cancelled
-        };
-
-        // Switching kind can leave keywords that no longer apply (EDTCDE/EDTWRD/EDTMSK need a
-        // numeric field; CHECK(LC)/LOWER need a character one) — confirm removing them before
-        // touching anything, so the field never ends up in an uncompilable in-between state.
-        let removedKeywords: string[] = [];
-        if (kindChanged) {
-            const incompatible = findIncompatibleKeywords(element, newIsNumeric);
-            if (incompatible.length > 0) {
-                removedKeywords = incompatible.map(attr => attr.value);
-                const confirmation = await vscode.window.showWarningMessage(
-                    `Changing '${(element as any).name}' to ${newIsNumeric ? 'numeric' : 'alphanumeric'} requires removing: ${removedKeywords.join(', ')}. Remove them and continue?`,
-                    { modal: true },
-                    'Remove and Continue'
-                );
-                if (confirmation !== 'Remove and Continue') {
-                    return;
-                };
-                if (!(await removeIncompatibleKeywords(editor, element, incompatible))) {
-                    return;
-                };
+        while (true) {
+            const property = await showEditFieldMenu(element, focus);
+            if (!property) {
+                return;
             };
-        };
+            focus = property;
 
-        // Apply the changes to the document
-        await applyFieldChanges(editor, element, newName, newSize, kindChanged ? newIsNumeric : undefined);
-        await vscode.commands.executeCommand('cursorRight');
-        await vscode.commands.executeCommand('cursorLeft');
+            const target = await collectFieldEditTarget(element, property);
+            if (target && await applyFieldEdit(editor, element, target)) {
+                await vscode.commands.executeCommand('cursorRight');
+                await vscode.commands.executeCommand('cursorLeft');
+            };
 
-        if ('name' in element) {
-            const sizeSummary = (newSize.decimals) ? `${newSize.length},${newSize.decimals}` : `${newSize.length}`;
-            const removalSummary = removedKeywords.length > 0 ? ` (removed ${removedKeywords.join(', ')})` : '';
-            vscode.window.showInformationMessage(
-                `Field '${element.name}' successfully updated to '${newName}' with size ${sizeSummary}${removalSummary}`
-            );
+            element = reparseElement(editor, element);
+            if (!element) {
+                return;
+            };
         };
 
     } catch (error) {
@@ -324,6 +303,141 @@ async function handleEditFieldCommand(node: DdsNode): Promise<void> {
         vscode.window.showErrorMessage(`Failed to edit field: ${errorMessage}`);
         console.error('Error in editField command:', error);
     };
+};
+
+/** The field's size as the menu and the size prompt show it: 10, or 7,2. */
+function sizeText(length: number, decimals?: number): string {
+    return decimals && decimals > 0 ? `${length},${decimals}` : `${length}`;
+};
+
+/**
+ * Shows the "Edit Field" menu and resolves to the property picked, or undefined when closed.
+ * Usage is only listed for an output, input or input/output field.
+ * @param focus - The row to start on: the one changed last
+ */
+function showEditFieldMenu(element: any, focus: EditFieldProperty | undefined): Promise<EditFieldProperty | undefined> {
+    const usage = editableUsageOf(element);
+    const items: (vscode.QuickPickItem & { property: EditFieldProperty })[] = [
+        { property: 'name', label: '$(edit) Name', description: element.name },
+        { property: 'kind', label: '$(symbol-type-parameter) Kind', description: isNumericFieldForEdit(element) ? 'Numeric' : 'Alphanumeric' },
+        { property: 'size', label: '$(symbol-ruler) Size', description: sizeText(element.length, element.decimals) },
+        ...(usage ? [{ property: 'usage' as EditFieldProperty, label: '$(arrow-swap) Usage', description: USAGE_LABELS[usage] }] : [])
+    ];
+
+    return new Promise(resolve => {
+        const quickPick = vscode.window.createQuickPick<typeof items[number]>();
+        quickPick.items = items;
+        const focused = items.find(item => item.property === focus);
+        if (focused) quickPick.activeItems = [focused];
+        quickPick.title = `Edit field ${element.name}`;
+        quickPick.placeholder = 'Select what to change — Escape to close';
+        quickPick.ignoreFocusOut = true;
+
+        let settled = false;
+        const finish = (result: EditFieldProperty | undefined) => {
+            if (settled) return;
+            settled = true;
+            resolve(result);
+            quickPick.hide();
+        };
+        quickPick.onDidAccept(() => finish(quickPick.selectedItems[0]?.property));
+        quickPick.onDidHide(() => {
+            finish(undefined);
+            quickPick.dispose();
+        });
+        quickPick.show();
+    });
+};
+
+/**
+ * Asks for the one property picked in the menu, keeping the rest as they are.
+ * Switching kind keeps the length (a numeric field gets no decimals, and only asks for the size
+ * when the length is more than a numeric field can have).
+ * @returns The field once changed, or undefined when cancelled or left as it was
+ */
+async function collectFieldEditTarget(element: any, property: EditFieldProperty): Promise<FieldEditTarget | undefined> {
+    const current: FieldEditTarget = {
+        name: element.name,
+        isNumeric: isNumericFieldForEdit(element),
+        size: { length: element.length, decimals: isNumericFieldForEdit(element) ? (element.decimals ?? 0) : undefined },
+        usage: editableUsageOf(element)
+    };
+
+    switch (property) {
+        case 'name': {
+            const name = await promptForFieldName(element);
+            return name && name !== current.name ? { ...current, name } : undefined;
+        };
+        case 'kind': {
+            const isNumeric = await promptForFieldKind(current.isNumeric, current.name);
+            if (isNumeric === undefined || isNumeric === current.isNumeric) return undefined;
+            let size: FieldSize | undefined = { length: current.size.length, decimals: isNumeric ? 0 : undefined };
+            if (isNumeric && size.length > MAX_NUMERIC_LENGTH) {
+                size = await promptForFieldSize(element, current.name, true);
+                if (!size) return undefined;
+            };
+            return { ...current, isNumeric, size };
+        };
+        case 'size': {
+            const size = await promptForFieldSize(element, current.name, current.isNumeric);
+            if (!size || (size.length === current.size.length && (size.decimals ?? 0) === (current.size.decimals ?? 0))) return undefined;
+            return { ...current, size };
+        };
+        case 'usage': {
+            const usage = await promptForFieldUsage(element, current.usage!, current.name);
+            return usage && usage !== current.usage ? { ...current, usage } : undefined;
+        };
+    };
+};
+
+/**
+ * Writes the field's new name, kind, size and usage. Switching kind or usage can leave keywords
+ * that no longer apply (EDTCDE/EDTWRD/EDTMSK need a numeric field, CHECK(LC)/LOWER a character
+ * one; validity checks need an input-capable field, editing an output-capable one) — confirm
+ * removing them before touching anything, so the field never ends up in an uncompilable
+ * in-between state.
+ * @returns True when the field was changed
+ */
+export async function applyFieldEdit(editor: vscode.TextEditor, element: any, target: FieldEditTarget): Promise<boolean> {
+    const kindChanged = target.isNumeric !== isNumericFieldForEdit(element);
+    const usageChanged = target.usage !== editableUsageOf(element);
+
+    const removals: KeywordRemoval[] = [
+        ...(kindChanged ? findIncompatibleKeywords(element, target.isNumeric).map(attr => ({ attr })) : []),
+        ...(usageChanged ? findUsageIncompatibleKeywords(element, target.usage!) : [])
+    ];
+    const removedKeywords = removals.map(removal => removal.replacement !== undefined
+        ? `${removal.removedCodes!.join(' ')} from ${removal.attr.value}` : removal.attr.value);
+    if (removals.length > 0) {
+        const change = kindChanged ? `to ${target.isNumeric ? 'numeric' : 'alphanumeric'}` : `to ${USAGE_LABELS[target.usage!].toLowerCase()}`;
+        const confirmation = await vscode.window.showWarningMessage(
+            `Changing '${element.name}' ${change} requires removing: ${removedKeywords.join(', ')}. Remove them and continue?`,
+            { modal: true },
+            'Remove and Continue'
+        );
+        if (confirmation !== 'Remove and Continue') {
+            return false;
+        };
+        if (!(await removeIncompatibleKeywords(editor, element, removals))) {
+            return false;
+        };
+    };
+
+    await applyFieldChanges(editor, element, target.name, target.size, kindChanged ? target.isNumeric : undefined, usageChanged ? target.usage : undefined);
+
+    const removalSummary = removedKeywords.length > 0 ? ` (removed ${removedKeywords.join(', ')})` : '';
+    const summary = target.name !== element.name ? `renamed to '${target.name}'`
+        : kindChanged ? `now ${target.isNumeric ? 'numeric' : 'alphanumeric'}, size ${sizeText(target.size.length, target.size.decimals)}`
+        : usageChanged ? `now ${USAGE_LABELS[target.usage!].toLowerCase()}`
+        : `now size ${sizeText(target.size.length, target.size.decimals)}`;
+    vscode.window.showInformationMessage(`Field '${element.name}' ${summary}${removalSummary}.`);
+
+    if (usageChanged && target.usage !== 'I' && hasKeyword(element, /^DFT\(/i) && !hasKeyword(element, /^OVRDTA\b/i)) {
+        vscode.window.showWarningMessage(
+            `'${target.name}' has a default value (DFT): on an output-capable field it also needs OVRDTA on the field and PUTOVR on the record.`
+        );
+    };
+    return true;
 };
 
 // ADD FIELD FUNCTIONALITY
@@ -1716,6 +1830,13 @@ function validateFieldName(value: string, element: any): string | null {
     if (value.trim().length > 10) {
         return "Field name cannot exceed 10 characters.";
     };
+
+    // Another field of the same record can't have it
+    const name = value.trim().toUpperCase();
+    const recordEntry = fieldsPerRecords.find(r => r.record === element.recordname);
+    if (name !== element.name.toUpperCase() && recordEntry?.fields.some(f => f.name.toUpperCase() === name)) {
+        return `Field "${name}" already exists in record "${element.recordname}".`;
+    };
     
     return null;
 };
@@ -1847,33 +1968,142 @@ function isNumericFieldForEdit(element: any): boolean {
  * @param element - The DDS field element being edited
  * @param becomingNumeric - The kind the field is switching to
  */
-function findIncompatibleKeywords(element: any, becomingNumeric: boolean): AttributeWithIndicators[] {
-    const recordInfo = fieldsPerRecords.find(r => r.record === element.recordname);
-    const fieldInfo = recordInfo?.fields.find(f => f.name === element.name);
-    if (!fieldInfo?.attributes) {
+function findIncompatibleKeywords(element: any, becomingNumeric: boolean): { value: string; lineIndex: number; lastLineIndex?: number }[] {
+    // Read from the element itself rather than the shared model, which may not have caught up
+    // with a change just made from the same menu.
+    const attributes = (element.attributes ?? []) as { value: string; lineIndex: number; lastLineIndex?: number }[];
+    const patterns = becomingNumeric ? ALPHA_ONLY_KEYWORD_PATTERNS : NUMERIC_ONLY_KEYWORD_PATTERNS;
+    return attributes.filter(attr => patterns.some(pattern => pattern.test(attr.value.trim())));
+};
+
+// FIELD USAGE
+
+/** The usages a field can be switched between in "Edit Field". */
+export type EditableUsage = 'O' | 'I' | 'B';
+
+/** Position 38 of the DDS line, zero-based. */
+const USAGE_COLUMN = 37;
+
+const USAGE_LABELS: Record<EditableUsage, string> = { O: 'Output', I: 'Input', B: 'Input/Output' };
+
+/** One keyword to take off the field: whole, or (`replacement`) only some of its values. */
+export interface KeywordRemoval {
+    attr: { value: string; lineIndex: number; lastLineIndex?: number };
+    /** The keyword left once `removedCodes` are taken out — DSPATR(HI) for PR out of DSPATR(PR HI). */
+    replacement?: string;
+    removedCodes?: string[];
+};
+
+/**
+ * Keywords only valid on an input-capable field (usage I or B), removed when it becomes output
+ * only: validity checks and the keywords that work on what the user types.
+ */
+const INPUT_CAPABLE_KEYWORD_PATTERNS = [
+    /^CHECK\(/i, /^CHGINPDFT\b/i, /^CHKMSGID\(/i, /^COMP\(/i, /^CMP\(/i, /^RANGE\(/i, /^VALUES\(/i,
+    /^DUP\b/i, /^BLANKS\(/i, /^AUTO\(/i, /^LOWER\b/i, /^CNTFLD\(/i, /^EDTMSK\(/i, /^ENTFLDATR\b/i,
+    /^FLDCSRPRG\(/i, /^VALNUM\b/i, /^SFLROLVAL\b/i
+];
+
+/** DSPATR values only valid on an input-capable field. */
+const INPUT_CAPABLE_DSPATR_CODES = ['PR', 'MDT', 'OID', 'SP'];
+
+/**
+ * Keywords only valid on an output-capable field (usage O or B), removed when it becomes input
+ * only: editing (EDTMSK goes with the EDTCDE/EDTWRD it needs) and the keywords that work on what
+ * the program writes.
+ */
+const OUTPUT_CAPABLE_KEYWORD_PATTERNS = [
+    /^EDTCDE\(/i, /^EDTWRD\(/i, /^EDTMSK\(/i, /^DFTVAL\(/i, /^OVRDTA\b/i, /^FLTFIXDEC\b/i, /^MSGID\(/i, /^SFLRCDNBR\b/i
+];
+
+/** Keywords that make a field a selection field or push buttons, which must be input-capable. */
+const SELECTION_FIELD_PATTERN = /^(SNGCHCFLD|MLTCHCFLD|PSHBTNFLD)\b/i;
+
+/** The field's usage when it is one "Edit Field" can change (blank is output), otherwise undefined. */
+function editableUsageOf(element: any): EditableUsage | undefined {
+    const usage = (element.usage || ' ').trim().toUpperCase() || 'O';
+    return usage === 'O' || usage === 'I' || usage === 'B' ? usage : undefined;
+};
+
+/** True when the field has a keyword matching the pattern. */
+function hasKeyword(element: any, pattern: RegExp): boolean {
+    return (element.attributes ?? []).some((attr: { value: string }) => pattern.test(attr.value.trim()));
+};
+
+/**
+ * Asks for the field's usage, its current one first so Enter keeps it. A selection field or push
+ * buttons can't become output only, so that choice isn't offered for them.
+ * @returns The usage, or undefined if cancelled
+ */
+async function promptForFieldUsage(element: any, currentUsage: EditableUsage, fieldName: string): Promise<EditableUsage | undefined> {
+    const mustBeInputCapable = hasKeyword(element, SELECTION_FIELD_PATTERN);
+    const usages: EditableUsage[] = (['O', 'I', 'B'] as EditableUsage[])
+        .filter(usage => !(mustBeInputCapable && usage === 'O'))
+        .sort((a, b) => Number(b === currentUsage) - Number(a === currentUsage));
+
+    const options: (vscode.QuickPickItem & { usage: EditableUsage })[] = usages.map(usage => ({
+        label: USAGE_LABELS[usage],
+        description: usage === currentUsage ? '(current)' : undefined,
+        usage
+    }));
+
+    const selection = await vscode.window.showQuickPick(options, {
+        title: `Set usage for field '${fieldName}'`,
+        placeHolder: "Choose the field's usage — switching removes any keyword that no longer applies"
+    });
+
+    return selection?.usage;
+};
+
+/**
+ * Finds the field's own keywords that would no longer be valid once its usage becomes `newUsage`:
+ * input-only keywords when it becomes output only, output-only keywords when it becomes input
+ * only. Input/output keeps them all.
+ * @param element - The DDS field element being edited
+ * @param newUsage - The usage the field is switching to
+ */
+export function findUsageIncompatibleKeywords(element: any, newUsage: EditableUsage): KeywordRemoval[] {
+    if (newUsage === 'B') {
         return [];
     };
+    const attributes = (element.attributes ?? []) as { value: string; lineIndex: number; lastLineIndex?: number }[];
+    const patterns = newUsage === 'O' ? INPUT_CAPABLE_KEYWORD_PATTERNS : OUTPUT_CAPABLE_KEYWORD_PATTERNS;
 
-    const patterns = becomingNumeric ? ALPHA_ONLY_KEYWORD_PATTERNS : NUMERIC_ONLY_KEYWORD_PATTERNS;
-    return fieldInfo.attributes.filter(attr => patterns.some(pattern => pattern.test(attr.value.trim())));
+    return attributes.flatMap((attr): KeywordRemoval[] => {
+        const value = attr.value.trim();
+        if (patterns.some(pattern => pattern.test(value))) {
+            return [{ attr }];
+        };
+        if (newUsage === 'O' && /^DSPATR\(/i.test(value)) {
+            const codes = value.substring(value.indexOf('(') + 1, value.lastIndexOf(')')).trim().split(/\s+/);
+            const removedCodes = codes.filter(code => INPUT_CAPABLE_DSPATR_CODES.includes(code.toUpperCase()));
+            if (removedCodes.length === 0) return [];
+            const kept = codes.filter(code => !removedCodes.includes(code));
+            return [kept.length === 0 ? { attr } : { attr, replacement: `DSPATR(${kept.join(' ')})`, removedCodes }];
+        };
+        return [];
+    });
 };
 
 /**
  * Removes the given (already user-confirmed) incompatible keywords from the field, last line first
  * so an earlier removal never shifts the line index of one still pending — same reasoning as
- * removeEditingFromField in dspf-edit.add-editing-keywords.ts. A field's own attribute lines are
- * always at or after its definition line, so this never touches (or shifts) `element.lineIndex`
- * itself.
+ * removeEditingFromField in dspf-edit.add-editing-keywords.ts. A keyword on a line of its own goes
+ * with its line and its indicators; one sharing a DSPATR with values that still apply only loses
+ * those values. A field's own attribute lines are always at or after its definition line, so this
+ * never touches (or shifts) `element.lineIndex` itself.
  * @param editor - The active text editor
  * @param element - The DDS field element the keywords belong to
- * @param attributes - The keywords to remove, from findIncompatibleKeywords
+ * @param removals - The keywords to remove
  */
-async function removeIncompatibleKeywords(editor: vscode.TextEditor, element: any, attributes: AttributeWithIndicators[]): Promise<boolean> {
-    const sorted = [...attributes].sort((a, b) => b.lineIndex - a.lineIndex);
-    for (const attr of sorted) {
-        const preserveFirstLine = attr.lineIndex === element.lineIndex;
-        const lastLineIndex = attr.lastLineIndex ?? attr.lineIndex;
-        if (!(await removeKeywordTextFromLines(editor, attr.lineIndex, lastLineIndex, attr.value, preserveFirstLine))) {
+export async function removeIncompatibleKeywords(editor: vscode.TextEditor, element: any, removals: KeywordRemoval[]): Promise<boolean> {
+    const sorted = [...removals].sort((a, b) => b.attr.lineIndex - a.attr.lineIndex);
+    for (const { attr, replacement } of sorted) {
+        const value = { keywordText: attr.value, lineIndex: attr.lineIndex, lastLineIndex: attr.lastLineIndex ?? attr.lineIndex };
+        const done = replacement !== undefined
+            ? await replaceKeywordTextInLines(editor, value.lineIndex, value.lastLineIndex, value.keywordText, replacement)
+            : await removeWholeKeyword(editor, element, value);
+        if (!done) {
             return false;
         };
     };
@@ -1888,12 +2118,18 @@ async function applyFieldChanges(
     element: any,
     newName: string,
     newSize: FieldSize,
-    newKindIsNumeric?: boolean
+    newKindIsNumeric?: boolean,
+    newUsage?: EditableUsage
 ): Promise<void> {
     const lineIndex = element.lineIndex;
     const originalLine = editor.document.lineAt(lineIndex).text;
     
-    const updatedLine = buildUpdatedLine(originalLine, newName, newSize, newKindIsNumeric);
+    let updatedLine = buildUpdatedLine(originalLine, newName, newSize, newKindIsNumeric);
+    if (newUsage) {
+        // Output is written blank, as DDS defaults it — unless the line already spelled out an 'O'.
+        const usageChar = newUsage === 'O' && updatedLine.charAt(USAGE_COLUMN) !== 'O' ? ' ' : newUsage;
+        updatedLine = updatedLine.substring(0, USAGE_COLUMN) + usageChar + updatedLine.substring(USAGE_COLUMN + 1);
+    };
     
     const workspaceEdit = new vscode.WorkspaceEdit();
     const documentUri = editor.document.uri;
@@ -1948,7 +2184,9 @@ function buildUpdatedLine(originalLine: string, newName: string, newSize: FieldS
     };
 
     const typeCharacter = line.substring(FIELD_CONSTANTS.TYPE_COLUMN, FIELD_CONSTANTS.TYPE_COLUMN + 1);
-    const isNumericField = FIELD_CONSTANTS.NUMERIC_TYPES.includes(typeCharacter as any);
+    // A blank type is numeric too when the field has decimal positions (e.g. "5 0B").
+    const isNumericField = FIELD_CONSTANTS.NUMERIC_TYPES.includes(typeCharacter as any)
+        || (typeCharacter === ' ' && line.substring(FIELD_CONSTANTS.DECIMAL_COLUMN_START, FIELD_CONSTANTS.DECIMAL_COLUMN_END).trim() !== '');
 
     if (isNumericField && newSize.decimals !== undefined) {
         const decimalString = newSize.decimals.toString().padStart(2, ' ').substring(0, 2);

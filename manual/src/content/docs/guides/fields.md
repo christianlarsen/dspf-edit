@@ -23,8 +23,15 @@ A numeric field can have up to 63 digits.
 
 ## Edit / Rename / Remove
 
-- **Edit Field** — change a field's name, size, and kind (alphanumeric ↔ numeric). Switching kind writes the type column the same way the quick **New Field** flow does, and — if the switch would leave keywords that no longer apply (`EDTCDE`/`EDTWRD`/`EDTMSK` need a numeric field; `CHECK(LC)`/`LOWER` need a character one) — asks to confirm removing them first, listing exactly what will go.
-- **Rename** — change a field's name, updating references to it.
+- **Edit Field** — opens a menu with the field's **Name**, **Kind**, **Size** and **Usage**, each with its current value. Pick one to change only that: it's written at once and the menu comes back with the new values, so several can be changed in a row; `Escape` closes it.
+  - **Kind** switches between alphanumeric and numeric, writing the type column the same way the quick **New Field** flow does. The length stays (a field becoming numeric gets no decimals; it asks for the size only when the length is over 63, the most a numeric field can have). If the switch would leave keywords that no longer apply (`EDTCDE`/`EDTWRD`/`EDTMSK` need a numeric field; `CHECK(LC)`/`LOWER` need a character one), it asks to confirm removing them first, listing exactly what will go.
+  - **Usage** is listed on an output (`O`), input (`I`) or input/output (`B`) field, and changes it between those three. Keywords the new usage doesn't allow are listed and removed after confirming, with their indicator lines:
+    - **To output**: the ones that need an input-capable field — `CHECK`, `CHGINPDFT`, `CHKMSGID`, `COMP`, `CMP`, `RANGE`, `VALUES`, `DUP`, `BLANKS`, `AUTO`, `LOWER`, `CNTFLD`, `EDTMSK`, `ENTFLDATR`, `FLDCSRPRG`, `VALNUM`, `SFLROLVAL`, and the `DSPATR` values `PR`, `MDT`, `OID` and `SP` (the rest of the `DSPATR` stays: `DSPATR(PR HI)` becomes `DSPATR(HI)`).
+    - **To input**: the ones that need an output-capable field — `EDTCDE`, `EDTWRD`, `EDTMSK`, `DFTVAL`, `OVRDTA`, `FLTFIXDEC`, `MSGID` and `SFLRCDNBR`.
+    - **To input/output**: nothing; both kinds of keyword are allowed.
+
+    A selection field or push buttons (`SNGCHCFLD`, `MLTCHCFLD`, `PSHBTNFLD`) must be input-capable, so output isn't offered for them. A field with `DFT` that becomes output or input/output also needs `OVRDTA` on the field and `PUTOVR` on the record; a warning says so.
+- **Rename** — change a field's name. Like **Edit Field**'s **Name**, it changes the field's own line; a name already used by another field of the record is refused.
 - **Remove field** — delete it from the record.
 - **Copy Field** — duplicate it, to the same record or a different one.
 
