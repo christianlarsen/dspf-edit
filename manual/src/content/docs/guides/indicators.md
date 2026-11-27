@@ -42,6 +42,6 @@ When it's clear what was meant (the indicators are right, only in the wrong colu
 
 ## Simulating indicators in the preview
 
-The [Screen Preview](/dspf-edit/guides/screen-preview/)'s **Indicators** toggle lets you turn indicators on/off and see which fields, constants, and attributes become visible or hidden — without compiling or connecting to a 5250 session. This setting persists when switching which record is being previewed in the same panel.
+The [Screen Preview](/dspf-edit/guides/screen-preview/)'s **Indicators** toggle lets you turn indicators on/off and see which fields, constants, and attributes become visible or hidden — without compiling or connecting to a 5250 session. This setting persists when switching which record is being previewed in the same panel, and each record keeps its own indicators. Combinations you look at often can be saved with a name and applied again with one click — see [Saved indicator sets](/dspf-edit/guides/screen-preview/#saved-indicator-sets).
 
 The preview's **◌ Hidden** toggle shows the fields and constants hidden by their indicators as dotted outlines, and hovering one shows the condition it needs — see [Showing hidden elements](/dspf-edit/guides/screen-preview/#showing-hidden-elements).

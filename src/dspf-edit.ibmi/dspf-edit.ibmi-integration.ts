@@ -31,6 +31,10 @@ interface MinimalIBMiConnection {
     sendCommand?(options: { command: string }): Promise<{ code: number | null; stdout: string; stderr: string }>;
     /** The connection's own settings — only its library list is read here. */
     getConfig?(): { currentLibrary?: string; libraryList?: string[] } | undefined;
+    /** The host the connection is to (its name or address, as entered in the connection). */
+    currentHost?: string;
+    /** The connection's own name, as the user called it in Code for i. */
+    currentConnectionName?: string;
 };
 
 /** The slice of Code for i's exported API this module actually calls. */
@@ -54,6 +58,16 @@ export interface ResolvedRefInfo {
 export function getIBMiConnection(): MinimalIBMiConnection | undefined {
     const codeForIBMi = vscode.extensions.getExtension<MinimalCodeForIBMi>(CODE_FOR_IBMI_EXTENSION_ID);
     return codeForIBMi?.exports?.instance?.getConnection();
+};
+
+/**
+ * The IBM i the active connection is to: its host, or the connection's name when the host isn't
+ * known. Code for i's member and stream file URIs don't name the system, so this tells apart the
+ * same source on two systems. Undefined when not connected.
+ */
+export function getIBMiSystemName(): string | undefined {
+    const connection = getIBMiConnection();
+    return connection?.currentHost || connection?.currentConnectionName || undefined;
 };
 
 /** The file (and optional library and record format) named by a REF() keyword. */

@@ -34,6 +34,7 @@ import { copyFormat, pasteFormat, getCopiedFormat } from '../dspf-edit.commands/
 import { HorizontalAlignment, WindowAlignment, WINDOW_ALIGNMENTS, computeAlignedColumns, computeWindowAlignedPosition } from '../dspf-edit.utils/dspf-edit.alignment';
 import { formatRowField, menuOptionOfConstant, findCmdPromptConstantLine, menuBottomLayout, menuLastTextRow } from '../dspf-edit.utils/dspf-edit.menu';
 import { getMenuCommandsFor, getMenuCreateOptions, setMenuCreateOptions, menuPlacementRefusal } from '../dspf-edit.commands/dspf-edit.menu-members';
+import { getIndicatorSets, saveIndicatorSet, deleteIndicatorSet } from '../dspf-edit.utils/dspf-edit.indicator-sets';
 
 /**
  * Item sent to the webview for rendering (a single field or constant on the screen grid).
@@ -1339,6 +1340,24 @@ function getEffectiveSize(recordName: string, activeFormat?: string): DdsSize | 
 };
 
 /**
+ * The indicators turned on in the preview for each record (keyed by the source's URI and the
+ * record), so coming back to a record shows it as it was left: another record's indicators are
+ * usually different ones. Kept for the session only, also after closing the preview.
+ */
+const activeIndicatorsPerRecord = new Map<string, Set<number>>();
+
+/** The indicators on for a record of the current source: the same Set every time, so changing it is remembered. */
+function activeIndicatorsFor(recordName: string): Set<number> {
+    const key = `${ExtensionState.lastDdsDocument?.uri.toString() ?? ''}|${recordName}`;
+    let active = activeIndicatorsPerRecord.get(key);
+    if (!active) {
+        active = new Set();
+        activeIndicatorsPerRecord.set(key, active);
+    };
+    return active;
+};
+
+/**
  * Read-only visual preview panel for a single DDS record.
  * Shows fields/constants positioned on a monospace grid matching the record's screen size.
  * WINDOW records are drawn at their real screen position, on a canvas sized to the full display,
@@ -1360,7 +1379,8 @@ export class RecordPreviewPanel {
     /** The DDS document the overlay selection belongs to; switching to another file clears it. */
     private overlayFileUri: string | undefined = ExtensionState.lastDdsDocument?.uri.toString();
     private indicatorsEnabled = false;
-    private activeIndicators: Set<number> = new Set();
+    /** The indicators on for the previewed record (see activeIndicatorsFor): the rest are off. */
+    private activeIndicators: Set<number>;
     /** Simulates a subfile's SFLDROP/SFLFOLD toggle, once the user has actually clicked it — only
      * meaningful while previewing the SFLCTL (header) record, since the detail record's own preview
      * always forces folded regardless (see resolveSubfileExpanded/canToggleSubfileFold), so editing
@@ -1387,6 +1407,7 @@ export class RecordPreviewPanel {
 
     private constructor(recordName: string) {
         this.recordName = recordName;
+        this.activeIndicators = activeIndicatorsFor(recordName);
 
         this.panel = vscode.window.createWebviewPanel(
             'dspfEditRecordPreview',
@@ -1524,7 +1545,9 @@ export class RecordPreviewPanel {
             // selected DSPSIZ format, e.g. *DS3) are deliberately NOT reset here — they're panel-wide
             // view preferences (formats are file-level, not per-record) that should stay as the user
             // left them when switching which record is previewed.
-            existing.activeIndicators = new Set();
+            // Each record keeps its own indicators (see activeIndicatorsFor): another record
+            // usually has different ones, and coming back shows it as it was left.
+            existing.activeIndicators = activeIndicatorsFor(recordName);
             existing.panel.title = RecordPreviewPanel.titleFor(recordName);
             // Reveal without forcing a column: the user may have moved the panel elsewhere
             // (e.g. to a bottom group), and switching records shouldn't snap it back to "Beside".
@@ -1684,6 +1707,14 @@ export class RecordPreviewPanel {
         };
 
         const availableIndicators = this.collectIndicatorNumbers(recordInfo).sort((a, b) => a - b);
+        const indicatorSets = this.currentIndicatorSets();
+        // The saved set that matches what's on now (only the record's own indicators count), shown selected
+        const sameOn = (on: number[]) => {
+            const setOn = on.filter(number => availableIndicators.includes(number));
+            const nowOn = availableIndicators.filter(number => this.activeIndicators.has(number));
+            return setOn.length === nowOn.length && setOn.every(number => this.activeIndicators.has(number));
+        };
+        const matchingIndicatorSet = indicatorSets.find(set => sameOn(set.on))?.name ?? null;
 
         // Referenced fields still shown as a 1-character marker (previewed record and overlays):
         // until they're resolved their real size is unknown, and so is the position of anything
@@ -1764,6 +1795,7 @@ export class RecordPreviewPanel {
             pendingReferencedCount,
             indicatorsEnabled: this.indicatorsEnabled,
             activeIndicators: [...this.activeIndicators],
+            matchingIndicatorSet,
             availableFormats,
             activeDisplayFormat: this.activeDisplayFormat ?? null,
             minDetailRow,
@@ -2407,6 +2439,137 @@ export class RecordPreviewPanel {
      * its own record-level attributes (e.g. a record-level ERRMSG()) — used to populate the
      * indicator toggle list in the toolbar.
      */
+    /** The indicator sets saved for the previewed record of the current source. */
+    private currentIndicatorSets() {
+        const source = ExtensionState.lastDdsDocument?.uri;
+        return source ? getIndicatorSets(source, this.recordName) : [];
+    };
+
+    /**
+     * Turns on the given indicators (a saved set's, or all of them), and off every other one.
+     * Indicators the record no longer has are left out.
+     */
+    private setActiveIndicators(on: number[]): void {
+        const available = this.lastRecordInfo ? this.collectIndicatorNumbers(this.lastRecordInfo) : [];
+        // Changed in place: it's the Set remembered for this record (see activeIndicatorsFor)
+        this.activeIndicators.clear();
+        for (const number of on) {
+            if (available.includes(number)) {
+                this.activeIndicators.add(number);
+            };
+        };
+        this.render();
+    };
+
+    /**
+     * The ⋮ menu next to the Indicators toggle: the record's saved sets first (picking one turns
+     * its indicators on and the rest off; its trash button deletes it, and the menu stays open),
+     * then turning every indicator on or off, and saving the indicators on now as a set.
+     */
+    private async showIndicatorMenu(): Promise<void> {
+        const source = ExtensionState.lastDdsDocument?.uri;
+        if (!this.lastRecordInfo || !source) {
+            return;
+        };
+        const recordName = this.recordName;
+        const available = this.collectIndicatorNumbers(this.lastRecordInfo).sort((a, b) => a - b);
+        const describeOn = (on: number[]) => on.length > 0 ? `on: ${on.map(number => String(number).padStart(2, '0')).join(', ')}` : 'all off';
+        const deleteButton: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('trash'), tooltip: 'Delete this set' };
+
+        type MenuItem = vscode.QuickPickItem & { setName?: string; run?: () => void | Promise<void> };
+        const buildItems = (): MenuItem[] => {
+            const sets = getIndicatorSets(source, recordName);
+            const nowOn = available.filter(number => this.activeIndicators.has(number));
+            const isOnNow = (on: number[]) => {
+                const setOn = on.filter(number => available.includes(number));
+                return setOn.length === nowOn.length && setOn.every(number => this.activeIndicators.has(number));
+            };
+            const items: MenuItem[] = [];
+            if (sets.length > 0) {
+                items.push({ label: 'Saved sets', kind: vscode.QuickPickItemKind.Separator });
+                for (const set of sets) {
+                    items.push({
+                        label: `${isOnNow(set.on) ? '$(check)' : '$(blank)'} ${set.name}`,
+                        description: describeOn(set.on.filter(number => available.includes(number))),
+                        buttons: [deleteButton],
+                        setName: set.name,
+                        run: () => this.setActiveIndicators(set.on)
+                    });
+                };
+            };
+            items.push({ label: 'Indicators', kind: vscode.QuickPickItemKind.Separator });
+            if (nowOn.length < available.length) {
+                items.push({ label: 'All Indicators On', description: 'turn on every indicator of this record', run: () => this.setActiveIndicators(available) });
+            };
+            if (nowOn.length > 0) {
+                items.push({ label: 'All Indicators Off', description: 'turn off every indicator of this record', run: () => this.setActiveIndicators([]) });
+            };
+            items.push({ label: 'Save Indicator Set...', description: `save the indicators as they are now (${describeOn(nowOn)})`, run: () => this.saveCurrentIndicatorSet() });
+            return items;
+        };
+
+        const quickPick = vscode.window.createQuickPick<MenuItem>();
+        quickPick.title = `Indicators (${recordName})`;
+        quickPick.placeholder = 'Pick a saved set, or what to do';
+        quickPick.items = buildItems();
+
+        quickPick.onDidTriggerItemButton(async event => {
+            if (event.button === deleteButton && event.item.setName !== undefined) {
+                await deleteIndicatorSet(source, recordName, event.item.setName);
+                quickPick.items = buildItems();
+                this.render();
+            };
+        });
+        quickPick.onDidAccept(() => {
+            const picked = quickPick.selectedItems[0];
+            quickPick.hide();
+            void picked?.run?.();
+        });
+        quickPick.onDidHide(() => quickPick.dispose());
+        quickPick.show();
+    };
+
+    /** Asks for a name and saves the indicators on now as a set of the previewed record. */
+    private async saveCurrentIndicatorSet(): Promise<void> {
+        const source = ExtensionState.lastDdsDocument?.uri;
+        if (!source || !this.lastRecordInfo) {
+            return;
+        };
+        const recordName = this.recordName;
+        const available = this.collectIndicatorNumbers(this.lastRecordInfo);
+        const on = available.filter(number => this.activeIndicators.has(number)).sort((a, b) => a - b);
+        const existing = getIndicatorSets(source, recordName);
+        const describeOn = (numbers: number[]) => numbers.length > 0
+            ? `on: ${numbers.map(number => String(number).padStart(2, '0')).join(', ')}, the rest off`
+            : 'all off';
+
+        const name = (await vscode.window.showInputBox({
+            title: `Save Indicator Set (${recordName})`,
+            prompt: `A name for the indicators as they are now (${describeOn(on)})`,
+            placeHolder: 'e.g. New customer, Change mode, Error',
+            value: existing.find(set => set.on.join() === on.join())?.name ?? '',
+            validateInput: value => value.trim() ? undefined : 'Type a name for the set.'
+        }))?.trim();
+        if (!name) {
+            return;
+        };
+
+        const replaced = existing.find(set => set.name === name);
+        if (replaced && replaced.on.join() !== on.join()) {
+            const answer = await vscode.window.showWarningMessage(
+                `Record ${recordName} already has a set named "${name}" (${describeOn(replaced.on)}). Replace it?`,
+                { modal: true },
+                'Replace'
+            );
+            if (answer !== 'Replace') {
+                return;
+            };
+        };
+
+        await saveIndicatorSet(source, recordName, name, on);
+        this.render();
+    };
+
     private collectIndicatorNumbers(recordInfo: FieldsPerRecord): number[] {
         const numbers = new Set<number>();
         for (const attr of recordInfo.attributes ?? []) {
@@ -2786,6 +2949,11 @@ export class RecordPreviewPanel {
                 this.activeIndicators.add(message.number);
             };
             this.render();
+            return;
+        };
+
+        if (message?.type === 'indicatorMenu') {
+            void this.showIndicatorMenu();
             return;
         };
 
@@ -3478,9 +3646,9 @@ export class RecordPreviewPanel {
      * arms `pendingCopySource` and puts the webview into its click-to-place mode (see
      * `copyElementAt`) — the same "click a spot in the preview" gesture the "+ Field"/"+ Constant"
      * buttons already use, just for a copy of an existing element instead of a brand-new one.
-     * Rename (fields)/Edit Text (constants), Indicators, and the field-only Validity Checks/
+     * Edit Field (fields)/Edit Text (constants), Indicators, and the field-only Validity Checks/
      * Editing Keywords/Error Messages are also single-selection only — like Copy, they just
-     * delegate straight to the tree's own `dspf-edit.rename-field`/`dspf-edit.edit-constant`/
+     * delegate straight to the tree's own `dspf-edit.edit-field`/`dspf-edit.edit-constant`/
      * `dspf-edit.add-indicators`/`dspf-edit.add-validity-check`/`dspf-edit.add-editing-keywords`/
      * `dspf-edit.add-error-message` commands (same prompt/validation/confirmation as right-clicking
      * the element in the tree), and indicators specifically aren't a value that makes sense shared
@@ -3515,7 +3683,7 @@ export class RecordPreviewPanel {
                 );
             };
             const editOption = kind === 'field'
-                ? { label: '$(edit) Rename...', command: 'rename-field' }
+                ? { label: '$(edit) Edit Field...', command: 'edit-field' }
                 : { label: '$(edit) Edit Text...', command: 'edit-constant' };
             options.push(editOption);
             // A menu has no program to set indicators, so SDA offers none on a menu image
@@ -4062,6 +4230,19 @@ export class RecordPreviewPanel {
         background: ${fg};
         border-color: ${fg};
     }
+    /* The indicators' menu (saved sets, all on/off...), next to the Indicators toggle: as small as the indicator buttons, in the preview's colors */
+    #indicatorMenuBtn {
+        display: none;
+        background: ${bg};
+        color: ${fg};
+        border: 1px solid #555555;
+        font-family: inherit;
+        font-size: 11px;
+        padding: 0 2px;
+        min-width: 18px;
+        height: 18px;
+        cursor: pointer;
+    }
     canvas {
         background: ${bg};
         border: 1px solid #333333;
@@ -4159,6 +4340,7 @@ export class RecordPreviewPanel {
 </div>
 <div id="toolbarRow4" class="toolbar-row">
     <label id="indicatorBar"><input type="checkbox" id="indicatorsToggle"> Indicators</label>
+    <button id="indicatorMenuBtn" title="Saved indicator sets, and turning every indicator on or off">⋮</button>
     <span id="selectionLabel"></span>
 </div>
 <div id="indicatorList"></div>
@@ -4182,6 +4364,8 @@ export class RecordPreviewPanel {
     const indicatorBar = document.getElementById('indicatorBar');
     const indicatorsToggle = document.getElementById('indicatorsToggle');
     const indicatorList = document.getElementById('indicatorList');
+    const indicatorMenuBtn = document.getElementById('indicatorMenuBtn');
+    indicatorMenuBtn.addEventListener('click', () => vscode.postMessage({ type: 'indicatorMenu' }));
     const functionKeyList = document.getElementById('functionKeyList');
     const sflpagBar = document.getElementById('sflpagBar');
     const sflpagMinusBtn = document.getElementById('sflpagMinusBtn');
@@ -5977,6 +6161,9 @@ export class RecordPreviewPanel {
             indicatorsToggle.checked = Boolean(message.indicatorsEnabled);
             indicatorList.style.display = (hasIndicators && message.indicatorsEnabled) ? 'block' : 'none';
             rebuildIndicatorList(message.availableIndicators || [], message.activeIndicators || []);
+            indicatorMenuBtn.style.display = (hasIndicators && message.indicatorsEnabled) ? 'inline-block' : 'none';
+            indicatorMenuBtn.title = 'Saved indicator sets, and turning every indicator on or off'
+                + (message.matchingIndicatorSet ? '. On now: ' + message.matchingIndicatorSet : '');
 
             // Always shown (no on/off toggle, unlike indicators) — a programmer benefits from
             // seeing which function keys are defined at a glance, without an extra click.

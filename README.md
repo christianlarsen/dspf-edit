@@ -71,7 +71,8 @@ Everything DSPF-edit does is explained, step by step and with screenshots, in th
   - Turn indicators on and off to see which fields, constants and attributes show.
   - "◌ Hidden" shows what isn't visible right now — conditioned on indicators that are off, or with `DSPATR(ND)` — as dotted outlines. Hovering one says why it's hidden.
   - For files with more than one `DSPSIZ` format (`*DS3`/`*DS4`), switch which one is previewed: window positions and sizes and conditioned elements are resolved for it, and changes made in the preview only affect that size.
-  - The indicators and the display format chosen stay when switching to another record.
+  - The display format chosen stays when switching to another record, and each record keeps its own indicators.
+  - Save the indicators on with a name ("New customer", "Error"...) and apply them again from the "⋮" menu next to "Indicators", which also turns them all on or off. Kept for each record, for you only, without touching the source.
 
 **Editing on the screen**
   - Drag fields and constants to move them.
@@ -118,11 +119,11 @@ Everything DSPF-edit does is explained, step by step and with screenshots, in th
   - Add field, add constant, add "buttons" (constants for the record's command keys).
   - Command keys and indicators, as at file level; Change Input Default for the record.
   - Overlay (`OVERLAY`) and Return Cursor Location (`RTNCSRLOC`, and `SFLCSRRRN` on subfiles), creating and deleting their hidden fields.
-  - Subfile control records: Add Commands Record, Subfile Drop/Fold (`SFLDROP`/`SFLFOLD`), Subfile End (`SFLEND`), Subfile Record Number (`SFLRCDNBR`) and Subfile Columns (`SFLLIN`).
+  - Subfile control records: Add Commands Record, Subfile Drop/Fold (`SFLDROP`/`SFLFOLD`), Subfile End (`SFLEND`), Subfile Record Number (`SFLRCDNBR`), Subfile Columns (`SFLLIN`) and Subfile Messages (`SFLMSG`).
   - Window records: Change Window Size (every display size at once), Change Window Position and Change Window Title.
 
 **Fields**
-  - Edit (name, size, alphanumeric ↔ numeric, offering to remove keywords that no longer apply), rename, copy, remove.
+  - Edit (name, size, alphanumeric ↔ numeric, usage output/input/both, offering to remove keywords that no longer apply), rename, copy, remove.
   - Position: absolute, relative to another element, or centered.
   - Colors and attributes; indicators, with up to 9 ANDed indicators (continuation lines written for you) and OR'd conditions.
   - Validity checks, keying options (`CHECK`), editing keywords (`EDTCDE`/`EDTWRD`/`EDTMSK`) and error messages (`ERRMSG`/`ERRMSGID`).
@@ -224,9 +225,11 @@ No known blocking issues right now. Please [open an issue](https://github.com/ch
 See the full changelog [here](./CHANGELOG.md).
 
 ### Latest
-**1.20.1** - 2026-11-21
-- Added: **Compile Menu** creates the menu on the IBM i through Code for i: its display file, a message file with each option's command, and the menu object, with the command line and function keys shown, and changeable, before compiling.
-- Fixed: **Create Menu** wrote a first line STRSDA reported as incorrect (`SDA3630`) when opening the menu.
+**1.21.0** - 2026-11-25
+- Added: **Subfile Messages** on a subfile control record, to add, change and remove its `SFLMSG` messages, with their indicators and response indicator.
+- Added: **Edit Field** is a menu with the field's name, kind, size and usage: pick only what to change. Usage can now be changed between output, input and input/output, offering to remove the keywords the new usage doesn't allow.
+- Added: **indicator sets** in the preview: save the indicators on with a name and apply them again from the "⋮" menu next to "Indicators" (which also turns them all on or off), for each record, without writing anything into the source. Each record also keeps its own indicators when switching between records.
+- Changed: keywords **Edit Field** removes now go with their indicator lines.
 
 ---
 

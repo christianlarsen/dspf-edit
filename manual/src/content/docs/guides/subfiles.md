@@ -1,6 +1,6 @@
 ---
 title: Subfiles
-description: Previewing SFL/SFLCTL records, their paired header/detail record, horizontal subfiles, and adding a commands record.
+description: Previewing SFL/SFLCTL records, their paired header/detail record, horizontal subfiles, subfile messages, and adding a commands record.
 ---
 
 Subfile (`SFL`/`SFLCTL`) records are recognized and rendered specially in the [Screen Preview](/dspf-edit/guides/screen-preview/).
@@ -59,6 +59,18 @@ The preview lays them out the same way. As many records fit side by side as the 
 Right-click a `SFLCTL` record and choose **Subfile Columns** to add `SFLLIN`, giving the spaces between columns (5 by default). It's written with four digits, `SFLLIN(0005)`, like `SFLPAG` and `SFLSIZ`. On a record that already has it, the same command changes the spaces or removes it, showing the subfile in a single column again. When there's one `SFLLIN` per display size, each one is listed with its size.
 
 It isn't offered on a message subfile, or when a field of the subfile record has `SFLCSRPRG`: the DDS reference doesn't allow `SFLLIN` there. Option indicators aren't valid on `SFLLIN` either, so it doesn't ask for any.
+
+## Subfile messages (SFLMSG)
+
+Right-click a `SFLCTL` record and choose **Subfile Messages** to manage its `SFLMSG` keywords: the messages the program shows on the message line by setting their indicators on an output to the control record, for an error it found in the subfile. Unlike `ERRMSG`, the program itself positions the cursor and reverses the image of the fields in error. `SFLDSP` must be in effect for them to show.
+
+The window works like [Error messages](/dspf-edit/guides/fields/#error-messages) on a field: one row per message, with the indicators that show it and its response indicator. Select a row (or its ✏️ button) to change the text, use the indicators button to change its indicators, and the 🗑️ buttons to remove one or all of them. **Add subfile message...** asks for the text, the response indicator (usually the same indicator that shows it; DDS turns it off once the message is shown) and the indicators that show it. It isn't added without indicators, since it would show on every output of the record. The keyword is written after the record's other keywords, before its first field:
+
+```
+     A  40                                  SFLMSG('Option not valid' 40)
+```
+
+A record can have several; when more than one is selected, the first one shows.
 
 ## Subfile end (SFLEND)
 

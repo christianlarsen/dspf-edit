@@ -56,7 +56,7 @@ Each field shows its name, length, type, position (row/column), and flags such a
 
 Right-click a field for:
 
-- **Edit field.**
+- **Edit field** — name, size, kind and usage. See [Fields](/dspf-edit/guides/fields/#edit--rename--remove).
 - **Copy field** — to the same record or a different one.
 - **Remove field.**
 - **Center field on screen.**
