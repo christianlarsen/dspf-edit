@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - More DDS features and improvements planned.
 - Bug fixes and stability enhancements.
 
-## [1.21.0] - 2026-11-25
+## [1.21.0] - 2026-11-27
 ### Added
 - Subfiles: **Subfile Messages**, on the right-click menu of a `SFLCTL` record. A window to add, change and remove the record's `SFLMSG` keywords, the messages the program shows on the message line, each with its text, response indicator and the indicators that show it. It works like **Error Messages** on a field.
 - Fields: **Edit Field** opens a menu with the field's name, kind, size and usage, each with its current value, instead of asking for all of them one after the other. Picking one changes only that, and the menu comes back with the new values until it's closed. In the preview, the **Actions** menu of a field offers it as **Edit Field...**, in place of **Rename...**.
