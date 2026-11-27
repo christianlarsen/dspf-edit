@@ -87,9 +87,22 @@ Alignment isn't done, and a message says why, when:
 
 Toggle **Indicators** in the toolbar to simulate indicators on/off and preview conditional fields, constants, and attributes without compiling or connecting to a 5250 session. See [Indicators and Conditions](/dspf-edit/guides/indicators/) for how conditions are built.
 
-The Indicators toggle, and the selected display format, persist when you switch which record is being previewed in the same panel.
+The Indicators toggle, and the selected display format, persist when you switch which record is being previewed in the same panel. Each record keeps its own indicators: coming back to a record shows the ones you left on, until VS Code is closed.
 
 ![Simulating indicators in the preview](/dspf-edit/screenshots/captura7.png)
+
+### Saved indicator sets
+
+A screen is usually shown in a few known ways: a new customer, change mode, an error. To get back to one without clicking each indicator again, turn on its indicators, click **⋮** next to the **Indicators** toggle and pick **Save Indicator Set...**. Give it a name, and the set keeps which indicators are on; any other one is off.
+
+The **⋮** menu lists the record's saved sets first, each with the indicators it turns on, and a check mark on the one that matches the indicators on now. Picking a set turns its indicators on, and the rest off; its trash button deletes it, and the menu stays open. Below them:
+
+- **All Indicators On** and **All Indicators Off**, for every indicator of the record.
+- **Save Indicator Set...**, which asks before replacing a set with the same name.
+
+Hovering **⋮** says which saved set is on now, if any. An indicator the record no longer uses is left out when a set is applied.
+
+Sets are kept for each record of each source, for you only, and nothing is written into the source. A source is told apart by where it is: the path of a local file, or, on the IBM i, the system plus its library, source file and member, or its IFS path. The same member on two systems has its own sets.
 
 ## Showing hidden elements
 

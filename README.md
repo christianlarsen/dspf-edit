@@ -71,7 +71,8 @@ Everything DSPF-edit does is explained, step by step and with screenshots, in th
   - Turn indicators on and off to see which fields, constants and attributes show.
   - "◌ Hidden" shows what isn't visible right now — conditioned on indicators that are off, or with `DSPATR(ND)` — as dotted outlines. Hovering one says why it's hidden.
   - For files with more than one `DSPSIZ` format (`*DS3`/`*DS4`), switch which one is previewed: window positions and sizes and conditioned elements are resolved for it, and changes made in the preview only affect that size.
-  - The indicators and the display format chosen stay when switching to another record.
+  - The display format chosen stays when switching to another record, and each record keeps its own indicators.
+  - Save the indicators on with a name ("New customer", "Error"...) and apply them again from the "⋮" menu next to "Indicators", which also turns them all on or off. Kept for each record, for you only, without touching the source.
 
 **Editing on the screen**
   - Drag fields and constants to move them.
@@ -227,6 +228,7 @@ See the full changelog [here](./CHANGELOG.md).
 **1.21.0** - 2026-11-25
 - Added: **Subfile Messages** on a subfile control record, to add, change and remove its `SFLMSG` messages, with their indicators and response indicator.
 - Added: **Edit Field** is a menu with the field's name, kind, size and usage: pick only what to change. Usage can now be changed between output, input and input/output, offering to remove the keywords the new usage doesn't allow.
+- Added: **indicator sets** in the preview: save the indicators on with a name and apply them again from the "⋮" menu next to "Indicators" (which also turns them all on or off), for each record, without writing anything into the source. Each record also keeps its own indicators when switching between records.
 - Changed: keywords **Edit Field** removes now go with their indicator lines.
 
 ---

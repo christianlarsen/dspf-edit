@@ -13,9 +13,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Subfiles: **Subfile Messages**, on the right-click menu of a `SFLCTL` record. A window to add, change and remove the record's `SFLMSG` keywords, the messages the program shows on the message line, each with its text, response indicator and the indicators that show it. It works like **Error Messages** on a field.
 - Fields: **Edit Field** opens a menu with the field's name, kind, size and usage, each with its current value, instead of asking for all of them one after the other. Picking one changes only that, and the menu comes back with the new values until it's closed. In the preview, the **Actions** menu of a field offers it as **Edit Field...**, in place of **Rename...**.
 - Fields: **Edit Field** changes the usage of an output, input or input/output field between those three. Keywords the new usage doesn't allow (validity checks and other input-only keywords when it becomes output; editing and other output-only keywords when it becomes input) are listed and removed after confirming, with their indicator lines. Only the input-only values of a `DSPATR` are removed: `DSPATR(PR HI)` becomes `DSPATR(HI)`.
+- Preview: **indicator sets**. With **Indicators** on, the **⋮** next to it opens a menu with the record's saved sets first (picking one turns its indicators on, and the rest off; its trash button deletes it), then **All Indicators On**, **All Indicators Off** and **Save Indicator Set...**, which saves the indicators on now with a name. They're kept for each record of each source, for the user only, without writing anything into the source: a local file by its path, and a source on the IBM i by the system it's on plus its member or IFS path. An indicator the record no longer uses is left out when applying a set.
 
 ### Changed
 - Fields: keywords **Edit Field** removes when changing a field's kind now go with their indicator lines, when they have a line of their own.
+- Preview: each record keeps the indicators turned on in it, instead of turning them all off when switching to another record. Coming back to a record shows it as it was left, until VS Code is closed.
 
 ### Fixed
 - Fields: changing the size of a numeric field with a blank type column (e.g. `5 0`) didn't change its decimal positions.
